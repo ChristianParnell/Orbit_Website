@@ -5,35 +5,29 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Orbit Portfolio</title>
 
-  <!-- Absolute repo paths + cache-bust -->
-  <link rel="stylesheet" href="/Orbit_Website/styles.css?v=4" />
+  <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Avoid favicon.ico 404 on GitHub Pages -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
 </head>
 
 <body>
   <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
 
-  <div id="loader" class="loader" aria-live="polite">
-    <div class="loader__card">
-      <div class="loader__title">Loading orbit…</div>
-      <div class="loader__bar"><div id="loaderFill" class="loader__fill"></div></div>
-      <div id="loaderPct" class="loader__pct">0%</div>
-      <div class="loader__note">Scroll or drag once loaded</div>
-    </div>
-  </div>
+  <!-- This makes the page scrollable (scroll drives orbit) -->
+  <div id="scrollArea" aria-hidden="true"></div>
 
+  <!-- HUD -->
   <div id="hud">
     <div class="brand">
       <div class="brand__name">YOUR NAME</div>
-      <div class="brand__tag">Scroll / drag to orbit • Click folders • ESC closes</div>
+      <div class="brand__tag">Scroll to orbit • Drag to rotate • Click folders</div>
     </div>
 
-    <div class="bottomRow">
-      <div class="hint" id="hint">Loading…</div>
-      <div class="chapters" id="chapters" aria-label="Chapters"></div>
-    </div>
+    <div class="hint">Scroll to rotate • Drag to orbit • Click folders to open</div>
   </div>
 
+  <!-- Panel -->
   <div id="panel" class="panel" aria-hidden="true">
     <div class="panel__topbar">
       <div id="panelTitle" class="panel__title">Title</div>
@@ -42,7 +36,7 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
-  <!-- Absolute repo path + cache-bust -->
-  <script type="module" src="/Orbit_Website/main.js?v=4"></script>
+  <!-- IMPORTANT: ES module -->
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
