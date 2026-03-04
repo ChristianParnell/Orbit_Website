@@ -1,5 +1,4 @@
 // main.js (GitHub Pages safe, no importmap needed)
-// Uses esm.sh so GLTFLoader works in the browser without bundlers.
 
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
@@ -49,7 +48,7 @@ if (!hintEl) hardFail("HUD #hint not found. Check index.html has <div id='hint'>
 if (!chaptersEl) hardFail("HUD #chapters not found. Check index.html has <div id='chapters'>.");
 
 console.log("✅ Orbit main.js running:", import.meta.url);
-hintEl.textContent = "main.js loaded ✅ building corkscrew…";
+hintEl.textContent = "main.js loaded ✅ building scene…";
 
 // Helpers
 const u = (p) => new URL(p, BASE_URL).href;
@@ -64,6 +63,10 @@ function smoothstep(edge0, edge1, x) {
 const ASSETS = {
   modelMeOnHill: u("assets/models/me_on_hill.glb"),
   backgroundSphereTex: u("assets/backgrounds/sky_sphere.jpg"),
+
+  // Add these files:
+  fogJpg: u("assets/textures/fog.jpg"),
+  bgAudio: u("assets/audio/ambient.mp3"),
 };
 
 // Chapters
@@ -75,39 +78,47 @@ const CHAPTERS = [
 ];
 
 // ============================================================
-// 🔥 Corkscrew tuning knobs (these are your “make it feel right” controls)
+// TUNING (big model + slow scroll + slow rotation + corkscrew)
 // ============================================================
 const TUNING = {
-  // BIGGER model presence
-  modelTargetSize: 9.0,   // << make this 10–12 if you want it even more massive
+  // BIG model
+  modelTargetSize: 10.8, // increase to 12+ if you want even larger
 
   // Slow scroll/orbit
-  scrollSensitivity: 0.00022, // lower = slower scroll response
-  dragSensitivity: 0.024,     // lower = slower drag orbit
-  inertia: 0.91,              // higher = more floaty glide
-  lerp: 0.045,                // lower = slower easing / “heavier” movement
+  scrollSensitivity: 0.00016, // much slower
+  dragSensitivity: 0.016,     // much slower
+  inertia: 0.92,
+  lerp: 0.040,
 
-  // Camera orbit (slower + closer so model looks bigger)
-  camRadius: 6.2,         // smaller = closer = bigger model on screen
-  camYBase: 3.15,
-  camYPerStep: 0.42,      // camera drifts downward while scrolling (stronger corkscrew feel)
-  lookYBase: 0.95,
-  lookYPerStep: 0.22,
+  // Camera orbit (close = big model)
+  camRadius: 6.6,
+  camYBase: 3.35,
+  camYPerStep: 0.46,
+  lookYBase: 1.05,
+  lookYPerStep: 0.25,
 
-  // Spiral (folders corkscrew downward around model)
-  spiralRadius: 3.0,
-  spiralAngleStep: 0.70,  // lower = slower rotation around model
-  spiralYStep: 0.92,      // higher = more “downward corkscrew”
-  spiralYOffset: 1.55,
+  // Corkscrew (folders)
+  spiralRadius: 3.10,
+  spiralAngleStep: 0.56, // slower around model
+  spiralYStep: 1.05,
+  spiralYOffset: 1.75,
+  radiusGrow: 0.12,
 
-  // Keep folders panning IN FRONT of model (camera-facing bias)
-  frontFacingBlend: 0.85, // 0..1, higher = more folders pulled to camera-facing side
-  frontPush: 1.15,        // how much the “front” folder is pushed outward (towards camera)
-  radiusGrow: 0.12,       // growth as items move away in the spiral
+  // Force “in front” pass (camera-facing bias)
+  frontFacingBlend: 0.85,
+  frontPush: 1.15,
 
-  // Visibility shaping
-  visibleRange: 2.9,
-  fadeSoftness: 0.75,
+  // Visibility
+  visibleRange: 3.0,
+  fadeSoftness: 0.85,
+
+  // Tile look
+  tileSize: { w: 1.75, h: 1.10 },
+  tileCurve: 0.20,
+
+  // Title placement
+  titleOffsetY: 0.78,
+  titleScale: 0.92,
 };
 // ============================================================
 
@@ -150,7 +161,7 @@ manager.onProgress = (_url, loaded, total) => {
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  if (hintEl) hintEl.textContent = "Scroll / drag to corkscrew • Click folders";
+  if (hintEl) hintEl.textContent = "Scroll / drag • Click tiles • (sound starts on interaction)";
 };
 
 // Three.js setup
@@ -160,17 +171,17 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x070A0C, 9, 30);
+scene.fog = new THREE.Fog(0x070A0C, 9, 34);
 scene.background = new THREE.Color(0x070A0C);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 240);
-camera.position.set(0, 2.5, 6.5);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 260);
+camera.position.set(0, 2.7, 6.8);
 
 const clock = new THREE.Clock();
 
 // Lights
 scene.add(new THREE.HemisphereLight(0x9fd3ff, 0x0b0f12, 0.95));
-const key = new THREE.DirectionalLight(0xffffff, 1.1);
+const key = new THREE.DirectionalLight(0xffffff, 1.05);
 key.position.set(3.6, 4.6, 2.6);
 scene.add(key);
 const rim = new THREE.DirectionalLight(0xb7c6ff, 0.55);
@@ -181,15 +192,7 @@ scene.add(rim);
 const center = new THREE.Group();
 scene.add(center);
 
-// Ground placeholder
-{
-  const groundGeo = new THREE.CircleGeometry(2.8, 72);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2a22, roughness: 1, metalness: 0 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1.18;
-  center.add(ground);
-}
+// ✅ REMOVED base circle/ground completely (was clipping into model)
 
 // Procedural sky fallback
 function makeSkyTexture() {
@@ -226,7 +229,7 @@ function makeSkyTexture() {
 // Background sphere (fog disabled)
 let backgroundSphere = null;
 {
-  const geo = new THREE.SphereGeometry(76, 48, 48);
+  const geo = new THREE.SphereGeometry(78, 48, 48);
   const mat = new THREE.MeshBasicMaterial({
     map: makeSkyTexture(),
     color: 0xffffff,
@@ -253,27 +256,305 @@ texLoader.load(
   () => {}
 );
 
-// Folder spiral group
-const folderGroup = new THREE.Group();
-scene.add(folderGroup);
+// =======================
+// Fog (JPG black -> transparent)
+// =======================
+const fogGroup = new THREE.Group();
+scene.add(fogGroup);
 
-const folderMeshes = [];
-createFolderSpiral();
+const fogTex = new THREE.TextureLoader(manager).load(
+  ASSETS.fogJpg,
+  (t) => {
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.minFilter = THREE.LinearFilter;
+    t.magFilter = THREE.LinearFilter;
+  },
+  undefined,
+  () => {
+    console.warn("Fog texture failed to load:", ASSETS.fogJpg);
+  }
+);
 
-function createFolderSpiral() {
-  for (const ch of CHAPTERS) {
-    const texture = makeFolderTexture(ch.label);
-    texture.colorSpace = THREE.SRGBColorSpace;
+// Shader: key out black using luminance
+function makeFogMaterial() {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.NormalBlending,
+    uniforms: {
+      uMap: { value: fogTex },
+      uOpacity: { value: 0.22 },
+      uBlackCut: { value: 0.10 },  // raise if too much black shows
+      uSoft: { value: 0.30 },      // softness of fade
+      uTint: { value: new THREE.Color(0xe8eef2) }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D uMap;
+      uniform float uOpacity;
+      uniform float uBlackCut;
+      uniform float uSoft;
+      uniform vec3 uTint;
 
-    const geo = new THREE.PlaneGeometry(1.65, 1.02, 30, 1);
+      void main(){
+        vec3 c = texture2D(uMap, vUv).rgb;
+        float luma = dot(c, vec3(0.299, 0.587, 0.114));
+
+        // black -> transparent
+        float a = smoothstep(uBlackCut, uBlackCut + uSoft, luma);
+
+        // soften edges a bit
+        float edge = smoothstep(0.02, 0.22, vUv.x) * smoothstep(0.02, 0.22, vUv.y) *
+                     smoothstep(0.02, 0.22, 1.0 - vUv.x) * smoothstep(0.02, 0.22, 1.0 - vUv.y);
+
+        a *= edge;
+
+        if(a < 0.01) discard;
+
+        vec3 col = mix(vec3(0.0), uTint, 0.96);
+        gl_FragColor = vec4(col, a * uOpacity);
+      }
+    `
+  });
+}
+
+const fogPuffs = [];
+(function createFogPuffs(){
+  const puffCount = 22;
+  const geo = new THREE.PlaneGeometry(2.2, 2.2, 1, 1);
+
+  for (let i = 0; i < puffCount; i++) {
+    const mat = makeFogMaterial();
+    mat.uniforms.uOpacity.value = 0.14 + Math.random() * 0.20;
+
+    const m = new THREE.Mesh(geo, mat);
+
+    // orbit params
+    const radius = 1.8 + Math.random() * 2.6;
+    const ang = Math.random() * Math.PI * 2;
+    const y = -0.4 + Math.random() * 3.0;
+    const speed = 0.10 + Math.random() * 0.18;
+    const bobAmp = 0.10 + Math.random() * 0.25;
+    const spin = (Math.random() * 2 - 1) * 0.35;
+
+    m.userData = { radius, ang, y, speed, bobAmp, spin, seed: Math.random() * 1000 };
+    m.position.set(Math.cos(ang) * radius, y, Math.sin(ang) * radius);
+    m.rotation.z = Math.random() * Math.PI * 2;
+    m.scale.setScalar(0.7 + Math.random() * 1.3);
+
+    fogGroup.add(m);
+    fogPuffs.push(m);
+  }
+
+  fogGroup.rotation.y = 0.2;
+})();
+
+// =======================
+// Audio (loop + muffle when panel opens)
+// =======================
+const audioState = {
+  ctx: null,
+  src: null,
+  gain: null,
+  filter: null,
+  buffer: null,
+  started: false,
+  targetMuffled: false,
+};
+
+async function ensureAudio() {
+  if (audioState.started) return;
+  audioState.started = true;
+
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+
+    const res = await fetch(ASSETS.bgAudio, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Audio HTTP ${res.status}`);
+    const arr = await res.arrayBuffer();
+    const buffer = await ctx.decodeAudioData(arr);
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 18000;
+    filter.Q.value = 0.7;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0.52;
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    src.start(0);
+
+    audioState.ctx = ctx;
+    audioState.src = src;
+    audioState.filter = filter;
+    audioState.gain = gain;
+    audioState.buffer = buffer;
+
+    hintEl.textContent = "Scroll / drag • Click tiles • ESC closes";
+  } catch (e) {
+    console.warn("Audio failed to start:", e);
+    hintEl.textContent = "Scroll / drag • Click tiles • (audio missing?)";
+  }
+}
+
+function setMuffle(isMuffled) {
+  audioState.targetMuffled = isMuffled;
+  if (!audioState.ctx || !audioState.filter || !audioState.gain) return;
+
+  const now = audioState.ctx.currentTime;
+
+  // Smooth transition
+  const targetFreq = isMuffled ? 700 : 18000;
+  const targetGain = isMuffled ? 0.28 : 0.52;
+
+  audioState.filter.frequency.cancelScheduledValues(now);
+  audioState.gain.gain.cancelScheduledValues(now);
+
+  audioState.filter.frequency.setTargetAtTime(targetFreq, now, 0.08);
+  audioState.gain.gain.setTargetAtTime(targetGain, now, 0.10);
+}
+
+// Start audio on first real user gesture (browser autoplay rules)
+function gestureKick() { ensureAudio().catch(()=>{}); }
+window.addEventListener("pointerdown", gestureKick, { once: true });
+window.addEventListener("wheel", gestureKick, { once: true, passive: true });
+window.addEventListener("keydown", gestureKick, { once: true });
+
+// =======================
+// Tiles (not folder style): black/white cover + external title
+// =======================
+const tileGroup = new THREE.Group();
+scene.add(tileGroup);
+
+const clickableMeshes = []; // raycast targets
+const tileItems = [];       // { coverMesh, titleSprite, chapter }
+
+function makeCoverTexture() {
+  const w = 1024, h = 640;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+
+  // background black
+  ctx.fillStyle = "#070A0C";
+  ctx.fillRect(0, 0, w, h);
+
+  // subtle noise lines
+  ctx.globalAlpha = 0.10;
+  ctx.strokeStyle = "#E8EEF2";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 32; i++) {
+    const y = (i / 32) * h;
+    ctx.beginPath();
+    ctx.moveTo(0, y + (Math.random() * 10 - 5));
+    ctx.lineTo(w, y + (Math.random() * 10 - 5));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // white border
+  ctx.strokeStyle = "rgba(232,238,242,0.90)";
+  ctx.lineWidth = 14;
+  ctx.strokeRect(26, 26, w - 52, h - 52);
+
+  // inner border
+  ctx.strokeStyle = "rgba(232,238,242,0.18)";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(54, 54, w - 108, h - 108);
+
+  // little corner marks
+  ctx.strokeStyle = "rgba(232,238,242,0.65)";
+  ctx.lineWidth = 4;
+  const m = 90;
+  ctx.beginPath();
+  ctx.moveTo(54, 54 + m); ctx.lineTo(54, 54); ctx.lineTo(54 + m, 54);
+  ctx.moveTo(w - 54 - m, 54); ctx.lineTo(w - 54, 54); ctx.lineTo(w - 54, 54 + m);
+  ctx.moveTo(54, h - 54 - m); ctx.lineTo(54, h - 54); ctx.lineTo(54 + m, h - 54);
+  ctx.moveTo(w - 54 - m, h - 54); ctx.lineTo(w - 54, h - 54); ctx.lineTo(w - 54, h - 54 - m);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+function makeTitleTexture(text) {
+  const w = 1024, h = 256;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+
+  ctx.clearRect(0, 0, w, h);
+
+  // faint pill behind text
+  ctx.fillStyle = "rgba(7,10,12,0.55)";
+  roundRect(ctx, 48, 60, w - 96, 136, 64);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(232,238,242,0.22)";
+  ctx.lineWidth = 6;
+  roundRect(ctx, 48, 60, w - 96, 136, 64);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(232,238,242,0.95)";
+  ctx.font = "800 84px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text.toUpperCase(), w / 2, h / 2 + 4);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+(function createTiles(){
+  const coverTex = makeCoverTexture();
+
+  for (let i = 0; i < CHAPTERS.length; i++) {
+    const ch = CHAPTERS[i];
+
+    // Cover mesh (black/white, no label inside)
+    const geo = new THREE.PlaneGeometry(TUNING.tileSize.w, TUNING.tileSize.h, 30, 1);
 
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
+      side: THREE.DoubleSide,
       uniforms: {
-        uMap: { value: texture },
+        uMap: { value: coverTex },
         uOpacity: { value: 0.0 },
-        uCurve: { value: 0.26 },
+        uCurve: { value: TUNING.tileCurve },
         uWobble: { value: 0.0 }
       },
       vertexShader: `
@@ -295,81 +576,57 @@ function createFolderSpiral() {
         uniform float uOpacity;
         void main(){
           vec4 tex = texture2D(uMap, vUv);
-          if(tex.a < 0.02) discard;
-          gl_FragColor = vec4(tex.rgb, tex.a * uOpacity);
+          gl_FragColor = vec4(tex.rgb, uOpacity);
         }
       `
     });
 
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.userData.chapter = ch;
-    folderGroup.add(mesh);
-    folderMeshes.push(mesh);
+    const cover = new THREE.Mesh(geo, mat);
+    cover.userData.chapter = ch;
+
+    // External title (sprite)
+    const titleTex = makeTitleTexture(ch.label);
+    const titleMat = new THREE.SpriteMaterial({
+      map: titleTex,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.0
+    });
+    const title = new THREE.Sprite(titleMat);
+    title.scale.set(1.9 * TUNING.titleScale, 0.48 * TUNING.titleScale, 1);
+
+    // Group
+    const g = new THREE.Group();
+    g.add(cover);
+    g.add(title);
+
+    // Put title “just outside” (above)
+    title.position.set(0, TUNING.titleOffsetY, 0);
+
+    tileGroup.add(g);
+    clickableMeshes.push(cover);
+    tileItems.push({ group: g, cover, title, chapter: ch, index: i });
   }
-}
+})();
 
-function makeFolderTexture(label) {
-  const w = 768, h = 512;
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const ctx = c.getContext("2d");
-
-  ctx.clearRect(0, 0, w, h);
-
-  const pad = 52;
-  const x = pad, y = 120, fw = w - pad * 2, fh = h - 170;
-
-  ctx.fillStyle = "rgba(232,238,242,0.94)";
-  roundRect(ctx, x, y - 56, fw * 0.46, 78, 28);
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(232,238,242,0.90)";
-  roundRect(ctx, x, y, fw, fh, 36);
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(7,10,12,0.22)";
-  ctx.lineWidth = 10;
-  roundRect(ctx, x + 18, y + 18, fw - 36, fh - 36, 28);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(7,10,12,0.82)";
-  ctx.font = "800 64px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label.toUpperCase(), w / 2, y + fh / 2 + 10);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.anisotropy = 8;
-  return tex;
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
-// Model loading (with fallback)
+// =======================
+// Model
+// =======================
 const gltfLoader = new GLTFLoader(manager);
 
 function addFallbackModel() {
   const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.7, 1.4, 10, 18),
+    new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
     new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
   );
   body.position.y = -0.45;
   center.add(body);
 
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, 20, 20),
+    new THREE.SphereGeometry(0.55, 20, 20),
     new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.9 })
   );
-  head.position.y = 1.1;
+  head.position.y = 1.15;
   center.add(head);
 }
 
@@ -382,7 +639,7 @@ gltfLoader.load(
     const size = new THREE.Vector3();
     box.getSize(size);
 
-    // WAY bigger scale target
+    // Big scale
     const maxAxis = Math.max(size.x, size.y, size.z);
     const scale = TUNING.modelTargetSize / Math.max(0.0001, maxAxis);
     model.scale.setScalar(scale);
@@ -393,8 +650,8 @@ gltfLoader.load(
     box2.getCenter(centerPoint);
     model.position.sub(centerPoint);
 
-    // Sit on ground
-    model.position.y += -1.22;
+    // Sit nicely
+    model.position.y += -1.28;
 
     center.add(model);
   },
@@ -402,34 +659,17 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// Picking (click folders)
-const raycaster = new THREE.Raycaster();
-const pointerNdc = new THREE.Vector2();
-
-canvas.addEventListener("click", (e) => {
-  if (panel?.classList.contains("is-open")) return;
-
-  const rect = canvas.getBoundingClientRect();
-  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-
-  raycaster.setFromCamera(pointerNdc, camera);
-  const hits = raycaster.intersectObjects(folderMeshes, false);
-  if (!hits.length) return;
-
-  const ch = hits[0].object.userData.chapter;
-  if (!ch) return;
-
-  timeline.target = ch.progress;
-  openPanel(ch).catch(() => {});
-});
-
+// =======================
 // Panel
+// =======================
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
 async function openPanel(ch) {
   if (!panel || !panelTitle || !panelBody) return;
+
+  // Muffle audio when opening any tile/page
+  setMuffle(true);
 
   panelTitle.textContent = ch.label;
   panel.classList.add("is-open");
@@ -446,13 +686,46 @@ async function openPanel(ch) {
 
 function closePanel() {
   if (!panel || !panelTitle || !panelBody) return;
+
   panel.classList.remove("is-open");
   panel.setAttribute("aria-hidden", "true");
   panelTitle.textContent = "";
   panelBody.innerHTML = "";
+
+  // Un-muffle when closing
+  setMuffle(false);
 }
 
+// =======================
+// Picking (click tiles)
+// =======================
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+
+canvas.addEventListener("click", async (e) => {
+  if (panel?.classList.contains("is-open")) return;
+
+  // ensure audio starts on click gesture
+  await ensureAudio().catch(()=>{});
+
+  const rect = canvas.getBoundingClientRect();
+  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(clickableMeshes, false);
+  if (!hits.length) return;
+
+  const ch = hits[0].object.userData.chapter;
+  if (!ch) return;
+
+  timeline.target = ch.progress;
+  openPanel(ch).catch(() => {});
+});
+
+// =======================
 // Timeline controls
+// =======================
 const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: performance.now() };
 
 function normalizeWheel(e) {
@@ -517,103 +790,131 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
 });
 
-// Temp vectors (avoid GC)
+// Temp vectors
 const vCamDir = new THREE.Vector3();
 const vDir = new THREE.Vector3();
 const vBlend = new THREE.Vector3();
+const vToCam = new THREE.Vector3();
 
+// =======================
 // Render loop
+// =======================
 requestAnimationFrame(tick);
 function tick() {
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // Heavy + slow motion
+  // Heavy slow motion
   timeline.velocity *= Math.pow(TUNING.inertia, dt * 60);
   timeline.target = clamp01(timeline.target + timeline.velocity);
   timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, TUNING.lerp);
 
   // Gentle snap when idle
   const idleMs = performance.now() - timeline.lastInteractT;
-  if (!dragging && idleMs > 620) {
+  if (!dragging && idleMs > 720) {
     const near = nearestChapter(timeline.value);
-    timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.012);
+    timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.010);
     if (activeChapterId !== near.id) {
       activeChapterId = near.id;
       setActiveDot(activeChapterId);
-      hintEl.textContent = `${near.label} • Click folder to open`;
+      hintEl.textContent = `${near.label} • Click tile to open`;
     }
   }
 
   // Corkscrew driver
-  const t = chapterT(timeline.value);     // 0..1
+  const t = chapterT(timeline.value);
   const steps = (CHAPTERS.length - 1);
   const centerIdx = t * steps;
 
-  // Camera angle synced to helix (slow)
-  const baseAngle = 1.05;
+  // Camera angle synced (slow)
+  const baseAngle = 1.08;
   const camAngle = baseAngle + centerIdx * TUNING.spiralAngleStep;
 
-  // Camera position (closer = model bigger)
+  // Camera position
   const camY = TUNING.camYBase - centerIdx * TUNING.camYPerStep;
   const camX = Math.cos(camAngle) * TUNING.camRadius;
   const camZ = Math.sin(camAngle) * TUNING.camRadius;
   camera.position.set(camX, camY, camZ);
 
-  // Look target (drifts down with scroll)
+  // Look target
   const lookY = TUNING.lookYBase - centerIdx * TUNING.lookYPerStep;
   camera.lookAt(0, lookY, 0);
 
-  // Camera direction on ground plane (origin -> camera)
+  // camera dir on ground plane
   vCamDir.set(Math.cos(camAngle), 0, Math.sin(camAngle));
 
   // Background drift
-  backgroundSphere.rotation.y = camAngle * 0.16 + 0.35;
+  backgroundSphere.rotation.y = camAngle * 0.15 + 0.35;
   backgroundSphere.rotation.x = Math.sin(camAngle * 0.11) * 0.028;
 
-  // Folders: corkscrew down, and bias toward camera-facing side so they PAN IN FRONT of the model
-  for (let i = 0; i < folderMeshes.length; i++) {
-    const mesh = folderMeshes[i];
-    const rel = i - centerIdx;
+  // Fog motion (slow orbit + billboarding)
+  fogGroup.rotation.y += dt * 0.06;
+  for (const puff of fogPuffs) {
+    const d = puff.userData;
+    d.ang += dt * d.speed;
+    const y = d.y + Math.sin(time * 0.7 + d.seed) * d.bobAmp;
+    puff.position.set(Math.cos(d.ang) * d.radius, y, Math.sin(d.ang) * d.radius);
+    puff.rotation.z += dt * d.spin;
 
-    // how “front” this tile is (1 at center, 0 far away)
+    // billboard fog to camera
+    puff.lookAt(camera.position);
+  }
+
+  // Tiles: corkscrew down, bias front pass, BUT do NOT constantly face camera
+  for (const item of tileItems) {
+    const { group, cover, title, index } = item;
+    const rel = index - centerIdx;
+
+    // “frontness” near the current tile
     const front = clamp01(1.0 - Math.abs(rel) / 1.15);
 
-    // helix angle + vertical position
+    // helix angle + vertical
     const ang = camAngle + rel * TUNING.spiralAngleStep;
-    const y = TUNING.spiralYOffset - rel * TUNING.spiralYStep + Math.sin(time * 1.1 + i * 0.7) * 0.03;
+    const y = TUNING.spiralYOffset - rel * TUNING.spiralYStep + Math.sin(time * 1.05 + index * 0.7) * 0.03;
 
-    // radius: center items pushed outward (toward camera) so they pass in front more clearly
+    // radius, pushed outward near front so it passes between camera and model
     let r = TUNING.spiralRadius + front * TUNING.frontPush + Math.abs(rel) * TUNING.radiusGrow;
-    r = Math.min(r, TUNING.camRadius - 0.75);
+    r = Math.min(r, TUNING.camRadius - 0.85);
 
-    // direction around model, blended toward camera-facing direction for “in front” pan
+    // direction around model, blended toward camera-facing direction for “in front” motion
     vDir.set(Math.cos(ang), 0, Math.sin(ang));
     const blend = clamp01(front * TUNING.frontFacingBlend);
     vBlend.copy(vDir).lerp(vCamDir, blend).normalize();
 
-    mesh.position.set(vBlend.x * r, y, vBlend.z * r);
+    group.position.set(vBlend.x * r, y, vBlend.z * r);
 
-    // face camera (readable, UI-like)
-    mesh.lookAt(camera.position.x, y, camera.position.z);
+    // ✅ Orbit better: tile faces OUTWARD from center (not camera billboard)
+    // outward direction = from center to tile (vBlend)
+    group.lookAt(0, y, 0);
+    group.rotateY(Math.PI); // flip to face outward
 
-    // opacity window
-    const d = Math.abs(rel);
+    // opacity window based on distance in spiral
+    const dAbs = Math.abs(rel);
     const fadeStart = TUNING.visibleRange - TUNING.fadeSoftness;
     const fadeEnd = TUNING.visibleRange + TUNING.fadeSoftness;
-    const vis = 1.0 - smoothstep(fadeStart, fadeEnd, d);
-    mesh.material.uniforms.uOpacity.value = clamp01(vis);
+    const vis = 1.0 - smoothstep(fadeStart, fadeEnd, dAbs);
 
-    // wobble feel
-    mesh.material.uniforms.uWobble.value = time * 1.7 + timeline.velocity * 55.0;
+    // cover opacity
+    cover.material.uniforms.uOpacity.value = clamp01(vis);
+    cover.material.uniforms.uWobble.value = time * 1.5 + timeline.velocity * 40.0;
 
-    // scale emphasis on front folder
+    // scale emphasis when front
     const s = 0.92 + front * 0.18;
-    mesh.scale.setScalar(s);
+    group.scale.setScalar(s);
+
+    // Title: billboard to camera for readability, BUT fade when not in front
+    title.lookAt(camera.position);
+
+    // fade away when tile isn’t on camera-facing side
+    vToCam.copy(camera.position).sub(group.position).normalize();
+    const facing = clamp01(vBlend.dot(vToCam)); // 1 = on the front side, 0 = behind
+    const titleVis = clamp01(smoothstep(0.18, 0.55, facing) * vis);
+
+    title.material.opacity = titleVis;
   }
 
-  // Keep the hero stable (so corkscrew reads clean)
-  center.rotation.y = Math.sin(time * 0.10) * 0.012;
+  // Keep hero stable
+  center.rotation.y = Math.sin(time * 0.10) * 0.010;
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
