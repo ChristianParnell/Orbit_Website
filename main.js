@@ -33,11 +33,22 @@ if (!chaptersEl) hardFail("HUD #chapters not found.");
 console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
 hintEl.textContent = "Scene starting…";
 
-// Assets (YOU MUST MATCH THESE FILES)
+// Palette (from your Adobe colors)
+const PAL = {
+  sky:   new THREE.Color("#91C6FF"),
+  sand:  new THREE.Color("#BD9C64"),
+  sun:   new THREE.Color("#FCBA47"),
+  slate: new THREE.Color("#6786A7"),
+  moss:  new THREE.Color("#7D7361"),
+  deep:  new THREE.Color("#464C52"),
+  text:  new THREE.Color("#E8EEF2"),
+};
+
+// Assets (MATCH THESE FILES)
 const ASSETS = {
   model: u("assets/models/me_on_hill.glb"),
-  sky: u("assets/backgrounds/sky_sphere.jpg"),
-  fog: u("assets/textures/fog.jpg"),
+  sky:   u("assets/backgrounds/sky_sphere.jpg"),
+  fog:   u("assets/textures/fog.jpg"),
   audio: u("assets/audio/ambient.mp3"),
 };
 
@@ -49,36 +60,40 @@ const CHAPTERS = [
   { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
 ];
 
-// Tuning
+// Tuning (bigger spacing + tilted corkscrew)
 const T = {
   scrollSensitivity: 0.00014,
   dragSensitivity: 0.014,
   inertia: 0.92,
-  lerp: 0.038,
+  lerp: 0.040,
 
-  modelTargetSize: 8.6,
+  modelTargetSize: 9.2,
 
   orbitTurns: 1.55,
-  camRadius: 18.0,
-  camYBase: 5.4,
-  camYAmplitude: 1.2,
-  lookY: 1.2,
+  camRadius: 26.5,         // bigger orbit so you see the whole model
+  camYBase: 6.6,
+  camYAmplitude: 1.35,
+  lookY: 1.25,
 
-  spiralRadius: 13.2,
-  spiralYStep: 4.2,
-  spiralYOffset: 4.0,
-  tileAngleStep: 2.55,
-  frontPush: 2.2,
-  radiusGrow: 0.55,
+  // corkscrew spacing
+  spiralRadius: 21.5,      // farther from center
+  spiralYStep: 8.0,        // much farther apart vertically
+  spiralYOffset: 8.5,
+  tileAngleStep: 3.35,     // stronger twist per tile
+  frontPush: 1.0,
+  radiusGrow: 1.25,
 
-  visibleRange: 2.4,
-  fadeSoftness: 1.2,
+  spiralTiltDeg: 18,       // tilt the whole helix (the “angle corkscrew” feel)
 
-  tileW: 2.05,
-  tileH: 1.28,
-  tileCurve: 0.14,
+  visibleRange: 1.45,      // keep only nearby tiles clearly visible
+  fadeSoftness: 1.15,
 
-  titleOffset: { x: 1.35, y: 0.35, z: 0.42 },
+  tileW: 2.10,
+  tileH: 1.32,
+  tileCurve: 0.10,
+
+  // Title offset: slightly in front + left side-middle
+  titleOffset: { x: -1.08, y: 0.02, z: 0.52 },
 };
 
 // Loading manager
@@ -98,23 +113,25 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x070A0C);
-scene.fog = new THREE.Fog(0x070A0C, 14, 70);
+scene.background = PAL.deep.clone();
+scene.fog = new THREE.Fog(PAL.deep.getHex(), 20, 120);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 800);
-camera.position.set(0, 5.0, T.camRadius);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 900);
+camera.position.set(0, 6.2, T.camRadius);
 
 const clock = new THREE.Clock();
 
-// Lights
-scene.add(new THREE.HemisphereLight(0x9fd3ff, 0x0b0f12, 0.95));
-const key = new THREE.DirectionalLight(0xffffff, 1.05);
-key.position.set(3.6, 4.6, 2.6);
+// Softer lights (less harsh / more airy)
+scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.05));
+const key = new THREE.DirectionalLight(0xffffff, 0.95);
+key.position.set(4.2, 5.8, 3.2);
 scene.add(key);
-const rim = new THREE.DirectionalLight(0xb7c6ff, 0.55);
-rim.position.set(-5.4, 2.2, -3.2);
+const rim = new THREE.DirectionalLight(PAL.sky.getHex(), 0.55);
+rim.position.set(-6.0, 2.6, -3.8);
 scene.add(rim);
 
 // Center group (model)
@@ -129,18 +146,26 @@ function makeSkyTexture(){
   const ctx = c.getContext("2d");
 
   const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, "#061018");
-  g.addColorStop(0.55, "#05080C");
-  g.addColorStop(1, "#040507");
+  g.addColorStop(0, "#91C6FF");
+  g.addColorStop(0.38, "#6786A7");
+  g.addColorStop(1, "#464C52");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
+  // soft “sun glow”
+  const sun = ctx.createRadialGradient(w*0.72, h*0.30, 10, w*0.72, h*0.30, 260);
+  sun.addColorStop(0, "rgba(252,186,71,0.26)");
+  sun.addColorStop(1, "rgba(252,186,71,0.0)");
+  ctx.fillStyle = sun;
+  ctx.fillRect(0,0,w,h);
+
+  // stars (very subtle)
   ctx.fillStyle = "rgba(255,255,255,0.9)";
-  for (let i = 0; i < 1000; i++){
+  for (let i = 0; i < 700; i++){
     const x = Math.random() * w;
     const y = Math.random() * h;
-    const r = Math.random() * 1.3;
-    ctx.globalAlpha = 0.18 + Math.random() * 0.65;
+    const r = Math.random() * 1.2;
+    ctx.globalAlpha = 0.08 + Math.random() * 0.30;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -154,7 +179,7 @@ function makeSkyTexture(){
 }
 
 const bg = new THREE.Mesh(
-  new THREE.SphereGeometry(140, 48, 48),
+  new THREE.SphereGeometry(160, 48, 48),
   new THREE.MeshBasicMaterial({ map: makeSkyTexture(), side: THREE.BackSide })
 );
 bg.material.fog = false;
@@ -174,34 +199,71 @@ texLoader.load(
   () => {}
 );
 
-// Fog (jpg black -> transparent)
+// Fog texture fallback (so fog is ALWAYS visible even if fog.jpg is missing)
+function makeFogTextureFallback(){
+  const w=512, h=512;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d");
+
+  ctx.fillStyle="black";
+  ctx.fillRect(0,0,w,h);
+
+  for(let i=0;i<90;i++){
+    const x=Math.random()*w, y=Math.random()*h;
+    const r=40+Math.random()*140;
+    const grd=ctx.createRadialGradient(x,y,0,x,y,r);
+    grd.addColorStop(0, "rgba(255,255,255,0.9)");
+    grd.addColorStop(1, "rgba(0,0,0,0.0)");
+    ctx.globalAlpha = 0.18 + Math.random()*0.22;
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
+// Fog (swirling around the center model)
 const fogGroup = new THREE.Group();
 scene.add(fogGroup);
 
-const fogTex = new THREE.TextureLoader(manager).load(
+let fogTex = makeFogTextureFallback();
+
+new THREE.TextureLoader(manager).load(
   ASSETS.fog,
   (t) => {
     t.colorSpace = THREE.SRGBColorSpace;
     t.minFilter = THREE.LinearFilter;
     t.magFilter = THREE.LinearFilter;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    fogTex = t;
+    // update existing fog mats
+    for (const m of fogMats) m.uniforms.uMap.value = fogTex;
   },
   undefined,
-  () => console.warn("Fog failed to load:", ASSETS.fog)
+  () => console.warn("Fog failed to load, using fallback fog texture.")
 );
 
+const fogMats = [];
 function makeFogMaterial(){
-  return new THREE.ShaderMaterial({
+  const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     depthTest: false,
     blending: THREE.NormalBlending,
     uniforms: {
-      uMap: { value: fogTex },
-      uOpacity: { value: 0.60 },
+      uMap:      { value: fogTex },
+      uOpacity:  { value: 0.70 },   // more visible
       uBlackCut: { value: 0.02 },
-      uSoft: { value: 0.80 },
-      uTint: { value: new THREE.Color(0xe8eef2) }
+      uSoft:     { value: 0.85 },
+      uTint:     { value: PAL.sky.clone().lerp(PAL.text, 0.55) }
     },
     vertexShader: `
       varying vec2 vUv;
@@ -218,46 +280,40 @@ function makeFogMaterial(){
         vec3 c = texture2D(uMap, vUv).rgb;
         float luma = dot(c, vec3(0.299,0.587,0.114));
         float a = smoothstep(uBlackCut, uBlackCut + uSoft, luma);
-        float edge = smoothstep(0.02,0.25,vUv.x)*smoothstep(0.02,0.25,vUv.y)*
-                     smoothstep(0.02,0.25,1.0-vUv.x)*smoothstep(0.02,0.25,1.0-vUv.y);
+
+        // soft edge fade so planes don’t look like cards
+        float edge = smoothstep(0.02,0.22,vUv.x)*smoothstep(0.02,0.22,vUv.y)*
+                     smoothstep(0.02,0.22,1.0-vUv.x)*smoothstep(0.02,0.22,1.0-vUv.y);
         a *= edge;
+
         if(a < 0.01) discard;
         gl_FragColor = vec4(uTint, a * uOpacity);
       }
     `
   });
+  fogMats.push(mat);
+  return mat;
 }
 
-const fogBelt = [];
 const fogPuffs = [];
 (function createFog(){
-  const beltCount = 12;
-  const beltGeo = new THREE.PlaneGeometry(12.0, 7.0);
-  for (let i=0;i<beltCount;i++){
-    const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.40;
+  const puffCount = 56;
+  const puffGeo = new THREE.PlaneGeometry(6.2, 6.2);
 
-    const m = new THREE.Mesh(beltGeo, mat);
-    m.userData = { ang:(i/beltCount)*Math.PI*2, radius:7.2, yBase:1.6, spin:(Math.random()*2-1)*0.08, seed:Math.random()*1000 };
-    fogGroup.add(m);
-    fogBelt.push(m);
-  }
-
-  const puffCount = 44;
-  const puffGeo = new THREE.PlaneGeometry(4.6, 4.6);
   for (let i=0;i<puffCount;i++){
     const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.22 + Math.random()*0.30;
+    mat.uniforms.uOpacity.value = 0.28 + Math.random()*0.42;
+
     const m = new THREE.Mesh(puffGeo, mat);
     m.userData = {
       ang: Math.random()*Math.PI*2,
-      radius: 3.0 + Math.random()*13.0,
-      yBase: -1.3 + Math.random()*8.4,
-      speed: 0.05 + Math.random()*0.14,
-      bobAmp: 0.22 + Math.random()*0.70,
+      radius: 3.8 + Math.random()*10.5,
+      yBase: -0.8 + Math.random()*8.2,
+      speed: 0.05 + Math.random()*0.12,
+      bobAmp: 0.22 + Math.random()*0.65,
       spin: (Math.random()*2-1)*0.22,
-      drift: 0.25 + Math.random()*0.90,
-      scaleBase: 0.85 + Math.random()*2.2,
+      drift: 0.35 + Math.random()*0.95,
+      scaleBase: 0.85 + Math.random()*2.3,
       seed: Math.random()*1000
     };
     m.scale.setScalar(m.userData.scaleBase);
@@ -280,9 +336,9 @@ function createVolumeUI(){
     position:"fixed", left:"18px", bottom:"18px", zIndex:"25",
     pointerEvents:"auto", display:"flex", gap:"10px", alignItems:"center",
     padding:"10px 12px", borderRadius:"999px",
-    background:"rgba(8,10,12,0.55)", border:"1px solid rgba(232,238,242,0.14)",
-    backdropFilter:"blur(10px)",
-    color:"rgba(232,238,242,0.88)",
+    background:"rgba(145,198,255,0.10)", border:"1px solid rgba(232,238,242,0.16)",
+    backdropFilter:"blur(12px)",
+    color:"rgba(232,238,242,0.92)",
     fontFamily:"ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial",
     fontSize:"12px", letterSpacing:"0.12em", textTransform:"uppercase", userSelect:"none"
   });
@@ -291,7 +347,7 @@ function createVolumeUI(){
   const slider = document.createElement("input");
   slider.type="range"; slider.min="0"; slider.max="100";
   slider.value=String(Math.round(audioState.baseVolume*100));
-  Object.assign(slider.style,{ width:"140px", accentColor:"#E8EEF2", cursor:"pointer" });
+  Object.assign(slider.style,{ width:"140px", accentColor:"#FCBA47", cursor:"pointer" });
   const pct = document.createElement("div"); pct.textContent=`${slider.value}%`; pct.style.opacity="0.78";
 
   slider.addEventListener("input", () => {
@@ -323,6 +379,7 @@ async function ensureAudio(){
     src.buffer = buffer;
     src.loop = true;
 
+    // muffling filter
     const filter = ctx.createBiquadFilter();
     filter.type = "lowpass";
     filter.frequency.value = 18000;
@@ -350,14 +407,14 @@ function applyAudioTargets(){
   const now = audioState.ctx.currentTime;
   const muffled = audioState.isMuffled;
 
-  const targetFreq = muffled ? 700 : 18000;
+  const targetFreq = muffled ? 720 : 18000;
   const targetGain = audioState.baseVolume * (muffled ? 0.55 : 1.0);
 
   audioState.filter.frequency.cancelScheduledValues(now);
   audioState.gain.gain.cancelScheduledValues(now);
 
   audioState.filter.frequency.setTargetAtTime(targetFreq, now, 0.08);
-  audioState.gain.gain.setTargetAtTime(targetGain, now, 0.10);
+  audioState.gain.gain.setTargetAtTime(targetGain, now, 0.12);
 }
 function setMuffle(m){ audioState.isMuffled = m; applyAudioTargets(); }
 
@@ -366,18 +423,25 @@ window.addEventListener("pointerdown", gestureKick, { once:true });
 window.addEventListener("wheel", gestureKick, { once:true, passive:true });
 window.addEventListener("keydown", gestureKick, { once:true });
 
-// Tile textures
+// Tile textures (softer + palette)
 function makeCoverTexture(){
   const w=1024, h=640;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const ctx=c.getContext("2d");
-  ctx.fillStyle="#070A0C"; ctx.fillRect(0,0,w,h);
 
-  ctx.globalAlpha=0.08;
+  const g = ctx.createLinearGradient(0,0,w,h);
+  g.addColorStop(0, "#91C6FF");
+  g.addColorStop(0.45, "#6786A7");
+  g.addColorStop(1, "#464C52");
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,w,h);
+
+  // soft film grain lines
+  ctx.globalAlpha=0.12;
   ctx.strokeStyle="#E8EEF2";
   ctx.lineWidth=2;
-  for (let i=0;i<30;i++){
-    const y=(i/30)*h;
+  for(let i=0;i<26;i++){
+    const y=(i/26)*h;
     ctx.beginPath();
     ctx.moveTo(0, y + (Math.random()*10-5));
     ctx.lineTo(w, y + (Math.random()*10-5));
@@ -385,10 +449,14 @@ function makeCoverTexture(){
   }
   ctx.globalAlpha=1;
 
-  ctx.strokeStyle="rgba(232,238,242,0.90)";
-  ctx.lineWidth=14; ctx.strokeRect(26,26,w-52,h-52);
+  // warm edge accent
+  ctx.strokeStyle="rgba(252,186,71,0.65)";
+  ctx.lineWidth=12;
+  ctx.strokeRect(30,30,w-60,h-60);
+
   ctx.strokeStyle="rgba(232,238,242,0.18)";
-  ctx.lineWidth=6; ctx.strokeRect(54,54,w-108,h-108);
+  ctx.lineWidth=6;
+  ctx.strokeRect(56,56,w-112,h-112);
 
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -396,19 +464,30 @@ function makeCoverTexture(){
   return tex;
 }
 
+// Title texture (2D, but NOT billboarded)
 function makeTitleTexture(text){
   const w=1024, h=256;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const ctx=c.getContext("2d");
   ctx.clearRect(0,0,w,h);
 
-  ctx.font="800 88px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  ctx.font="800 86px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   ctx.textAlign="left";
   ctx.textBaseline="middle";
-  ctx.fillStyle="rgba(0,0,0,0.55)";
-  ctx.fillText(text.toUpperCase(), 95, h/2+6);
-  ctx.fillStyle="rgba(232,238,242,0.95)";
-  ctx.fillText(text.toUpperCase(), 92, h/2+3);
+
+  // shadow
+  ctx.fillStyle="rgba(0,0,0,0.35)";
+  ctx.fillText(text.toUpperCase(), 98, h/2+8);
+
+  // main
+  ctx.fillStyle="rgba(232,238,242,0.96)";
+  ctx.fillText(text.toUpperCase(), 94, h/2+4);
+
+  // small warm accent underline
+  ctx.globalAlpha=0.85;
+  ctx.fillStyle="rgba(252,186,71,0.75)";
+  ctx.fillRect(94, h/2+58, Math.min(620, ctx.measureText(text.toUpperCase()).width), 6);
+  ctx.globalAlpha=1;
 
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -419,6 +498,8 @@ function makeTitleTexture(text){
 // Tiles
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
+tileGroup.rotation.x = THREE.MathUtils.degToRad(-T.spiralTiltDeg);
+
 const clickableMeshes = [];
 const tileItems = [];
 
@@ -448,7 +529,7 @@ const tileItems = [];
           vec3 p = position;
           float x = p.x;
           p.z -= (x*x) * uCurve;
-          p.y += sin((uv.x * 3.14159) + uWobble) * 0.012;
+          p.y += sin((uv.x * 3.14159) + uWobble) * 0.010;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }
       `,
@@ -468,9 +549,11 @@ const tileItems = [];
 
     const titleTex = makeTitleTexture(ch.label);
     const title = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.35, 0.55),
+      new THREE.PlaneGeometry(2.55, 0.60),
       new THREE.MeshBasicMaterial({ map:titleTex, transparent:true, depthWrite:false, opacity:0.0, side:THREE.DoubleSide })
     );
+
+    // Offset left + slightly in front (and not billboarded)
     title.position.set(T.titleOffset.x, T.titleOffset.y, T.titleOffset.z);
 
     const g = new THREE.Group();
@@ -488,7 +571,7 @@ const gltfLoader = new GLTFLoader(manager);
 function addFallbackModel(){
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
-    new THREE.MeshStandardMaterial({ color:0xa8b3bd, roughness:0.85, metalness:0.05 })
+    new THREE.MeshStandardMaterial({ color:PAL.text.getHex(), roughness:0.88, metalness:0.02 })
   );
   body.position.y = -0.45;
   center.add(body);
@@ -519,7 +602,7 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// Panel logic
+// Panel logic (muffle on open)
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -656,6 +739,7 @@ window.addEventListener("resize", ()=>{
 });
 
 const vToCam = new THREE.Vector3();
+const dirTmp = new THREE.Vector3();
 
 requestAnimationFrame(tick);
 function tick(){
@@ -683,37 +767,37 @@ function tick(){
   camera.position.set(Math.cos(azimuth)*T.camRadius, camY, Math.sin(azimuth)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
-  bg.rotation.y = azimuth*0.12 + 0.35;
-  bg.rotation.x = Math.sin(azimuth*0.09)*0.024;
+  bg.rotation.y = azimuth*0.10 + 0.35;
+  bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
 
-  // fog motion
-  fogGroup.rotation.y += dt*0.035;
-  fogGroup.position.x = Math.sin(time*0.10)*0.55;
-  fogGroup.position.z = Math.cos(time*0.12)*0.55;
+  // Fog motion (swirly + wander around center)
+  fogGroup.rotation.y += dt*0.050;
+  fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
+  fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
 
-  for(const m of fogBelt){
-    const d=m.userData;
-    d.ang += dt*0.08;
-    m.position.set(Math.cos(d.ang)*d.radius, d.yBase + Math.sin(time*0.25 + d.seed)*0.28, Math.sin(d.ang)*d.radius);
-    m.rotation.z += dt*d.spin;
-    m.lookAt(camera.position);
-  }
   for(const m of fogPuffs){
     const d=m.userData;
     d.ang += dt*d.speed;
+
     const driftX = Math.sin(time*0.22 + d.seed)*d.drift;
     const driftZ = Math.cos(time*0.20 + d.seed)*d.drift;
-    const breath = Math.sin(time*0.16 + d.seed)*0.85;
-    const y = d.yBase + Math.sin(time*0.7 + d.seed)*d.bobAmp;
+    const breath = Math.sin(time*0.15 + d.seed)*0.90;
+    const y = d.yBase + Math.sin(time*0.70 + d.seed)*d.bobAmp;
 
-    m.position.set(Math.cos(d.ang)*(d.radius + breath) + driftX, y, Math.sin(d.ang)*(d.radius + breath) + driftZ);
+    m.position.set(
+      Math.cos(d.ang)*(d.radius + breath) + driftX,
+      y,
+      Math.sin(d.ang)*(d.radius + breath) + driftZ
+    );
+
     m.rotation.z += dt*d.spin;
-    m.scale.setScalar(d.scaleBase*(0.92 + 0.16*Math.sin(time*0.35 + d.seed)));
+    m.scale.setScalar(d.scaleBase*(0.92 + 0.18*Math.sin(time*0.35 + d.seed)));
     m.lookAt(camera.position);
   }
 
-  // tiles corkscrew
+  // Tiles corkscrew (far apart)
   const centerIdx = progressToIndex(timeline.value);
+
   for(const item of tileItems){
     const { group, cover, title, index } = item;
     const rel = index - centerIdx;
@@ -736,10 +820,11 @@ function tick(){
     cover.material.uniforms.uOpacity.value = clamp01(vis);
     cover.material.uniforms.uWobble.value = time*1.1 + timeline.velocity*30.0;
 
+    // Title fades when not facing camera (but title is NOT billboarded)
     vToCam.copy(camera.position).sub(group.position).normalize();
-    const dir = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang));
-    const facing = clamp01(dir.dot(vToCam));
-    title.material.opacity = clamp01(smoothstep(0.10, 0.55, facing) * vis);
+    dirTmp.set(Math.cos(ang), 0, Math.sin(ang)); // spiral direction
+    const facing = clamp01(dirTmp.dot(vToCam));
+    title.material.opacity = clamp01(smoothstep(0.12, 0.56, facing) * vis);
   }
 
   renderer.render(scene, camera);
