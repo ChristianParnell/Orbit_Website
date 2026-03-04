@@ -62,14 +62,14 @@ const CHAPTERS = [
 
 // Tuning
 const T = {
-  // ✅ MUCH slower wheel orbit (scroll more)
-  scrollSensitivity: 0.000010,  // slower than before
+  // ✅ MUCH slower orbit (user must scroll more)
+  scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
-  maxVel: 0.0042,               // prevents “flying past” folders
+  maxVel: 0.0030,
 
-  // smooth slowdown (no snapping)
+  // ✅ quick smooth slow-down (no snapping)
   dampingActive: 9.0,
-  dampingIdle: 30.0,            // slows quickly when user stops
+  dampingIdle: 34.0,
   idleDelayMs: 120,
   stopEps: 0.00002,
 
@@ -97,12 +97,12 @@ const T = {
   tileH: 2.45,
   tileCurve: 0.080,
 
-  // title offset (2D)
+  // title offset (2D plane, not billboard)
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // ✅ “corkscrew downward” tilt amount
+  // ✅ spring thread angle (this is the “ramp” tilt)
   helixTiltDeg: 40,
-  helixTiltNearDeg: 26, // relax slightly near camera (never straight)
+  helixTiltNearDeg: 26, // relax a bit near camera (never straight)
 };
 
 // Loading manager
@@ -143,7 +143,7 @@ const rim = new THREE.DirectionalLight(PAL.sky.getHex(), 0.55);
 rim.position.set(-6.0, 2.6, -3.8);
 scene.add(rim);
 
-// Center model group
+// Center group (model)
 const center = new THREE.Group();
 scene.add(center);
 
@@ -205,7 +205,7 @@ new THREE.TextureLoader(manager).load(
   () => {}
 );
 
-// Fog fallback texture
+// Fog fallback texture (always visible)
 function makeFogTextureFallback(){
   const w=512, h=512;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -253,6 +253,7 @@ new THREE.TextureLoader(manager).load(
   () => console.warn("Fog texture missing/failed, using fallback fog texture.")
 );
 
+// Fog group
 const fogGroup = new THREE.Group();
 scene.add(fogGroup);
 
@@ -593,7 +594,7 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// Panel logic
+// Panel logic (muffle audio while open)
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -649,7 +650,7 @@ canvas.addEventListener("click", async (e) => {
   openPanel(ch).catch(()=>{});
 });
 
-// Chapter dots
+// Chapters dots (UI only)
 let activeChapterId = null;
 function buildChapterUI(){
   chaptersEl.innerHTML="";
@@ -677,7 +678,7 @@ function setActiveDot(id){
 }
 buildChapterUI();
 
-// Timeline: position + velocity (no snap)
+// Timeline: position + velocity (no snapping / no auto-nearest movement)
 const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
@@ -729,6 +730,7 @@ function progressToIndex(v){
   return t*(CHAPTERS.length-1);
 }
 
+// Resize
 window.addEventListener("resize", ()=>{
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -736,14 +738,13 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
 });
 
-// temp vectors/mats
+// Temps (no allocations inside the loop)
 const vToCam = new THREE.Vector3();
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
 const up = new THREE.Vector3(0,1,0);
-const helixDir = new THREE.Vector3();
-const inPlane = new THREE.Vector3();
 
+const normal = new THREE.Vector3();
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
@@ -754,13 +755,16 @@ function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
+  // Smooth decel (no snapping)
   const idleMs = performance.now() - timeline.lastInteractT;
   const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
 
   timeline.vel *= Math.exp(-damping * dt);
   if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
+
   timeline.value = clamp01(timeline.value + timeline.vel);
 
+  // Camera orbit
   const azimuth = (timeline.value*T.orbitTurns)*Math.PI*2 + 1.06;
   const camY = T.camYBase + Math.sin(timeline.value*Math.PI*2)*T.camYAmplitude;
 
@@ -770,6 +774,7 @@ function tick(){
   bg.rotation.y = azimuth*0.10 + 0.35;
   bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
 
+  // UI highlight only (does not affect motion)
   const near = nearestChapter(timeline.value);
   if (activeChapterId !== near.id){
     activeChapterId = near.id;
@@ -779,7 +784,7 @@ function tick(){
     hintEl.textContent = `${near.label} • Click tile to open`;
   }
 
-  // fog motion
+  // Fog motion
   fogGroup.rotation.y += dt*0.050;
   fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
   fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
@@ -804,7 +809,7 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // tiles: corkscrew + forced DOWNWARD screw orientation
+  // Tiles (spring/screw-thread orientation)
   const centerIdx = progressToIndex(timeline.value);
 
   for(const item of tileItems){
@@ -817,10 +822,9 @@ function tick(){
     const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.frontPush;
     const r = T.spiralRadius + Math.abs(rel)*T.radiusGrow + frontBoost;
 
-    const px = Math.cos(ang)*r;
-    const pz = Math.sin(ang)*r;
-    group.position.set(px, yPos, pz);
+    group.position.set(Math.cos(ang)*r, yPos, Math.sin(ang)*r);
 
+    // visibility
     const dAbs = Math.abs(rel);
     const vis = 1.0 - smoothstep(
       T.visibleRange - T.fadeSoftness,
@@ -831,15 +835,16 @@ function tick(){
     cover.material.uniforms.uOpacity.value = clamp01(vis);
     cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
 
+    // vectors
     vToCam.copy(camera.position).sub(group.position).normalize();
 
-    // outward (folder faces away from model)
+    // radial outward (from model)
     radial.set(Math.cos(ang), 0, Math.sin(ang)).normalize();
 
-    // orbit direction
+    // tangent (direction of travel around the orbit)
     tangent.set(-Math.sin(ang), 0, Math.cos(ang)).normalize();
 
-    // near-camera factor (to relax tilt slightly)
+    // near-camera relax
     const facing = clamp01(radial.dot(vToCam));
     const dist = camera.position.distanceTo(group.position);
     const distN = clamp01(1 - (dist - 10) / 14);
@@ -849,30 +854,26 @@ function tick(){
     const nearTilt = THREE.MathUtils.degToRad(T.helixTiltNearDeg);
     const tilt = THREE.MathUtils.lerp(baseTilt, nearTilt, soften);
 
-    // ✅ “corkscrew downward”: helix direction is tangent + DOWN component.
-    // (this is what adds the true X-tilt around the spiral)
-    helixDir.copy(tangent).multiplyScalar(Math.cos(tilt));
-    helixDir.addScaledVector(up, -Math.sin(tilt)); // DOWN
-    helixDir.normalize();
+    // ✅ THIS is the spring/thread look:
+    // Tilt the folder's PLANE NORMAL around the tangent so the folder becomes the screw-thread surface.
+    normal.copy(radial).applyAxisAngle(tangent, tilt);
 
-    // project helixDir into the folder plane (plane normal = radial)
-    inPlane.copy(helixDir).addScaledVector(radial, -helixDir.dot(radial));
-    if (inPlane.lengthSq() < 1e-6) inPlane.copy(tangent);
-    inPlane.normalize();
+    // Force downward corkscrew (never flips upward)
+    if (normal.y > 0) normal.copy(radial).applyAxisAngle(tangent, -tilt);
 
-    // ✅ Force “downward” orientation (prevents accidental flip that looks like it’s going up)
-    if (inPlane.y > 0) inPlane.multiplyScalar(-1);
-
-    // build orthonormal basis: Z=radial normal, Y=down-helix in-plane, X=right
-    zAxis.copy(radial);
-    yAxis.copy(inPlane);
-    xAxis.crossVectors(yAxis, zAxis).normalize();
+    // Build orientation basis:
+    // X = tangent (flow direction)
+    // Z = tilted normal (thread surface normal)
+    // Y = completes right-handed frame
+    xAxis.copy(tangent).normalize();
+    zAxis.copy(normal).normalize();
     yAxis.crossVectors(zAxis, xAxis).normalize();
+    xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
     group.quaternion.setFromRotationMatrix(basis);
 
-    // title fade
+    // Title fade (2D plane, not billboarded)
     title.material.opacity = clamp01(smoothstep(0.12, 0.56, facing) * vis);
   }
 
