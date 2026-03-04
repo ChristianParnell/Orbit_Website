@@ -1,13 +1,9 @@
-﻿// ✅ This version fixes: "Failed to resolve module specifier 'three'"
-// by importing Three.js directly from a CDN URL.
+﻿import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-
-console.log("✅ main.js loaded");
+console.log("✅ main.js loaded", location.href);
 
 const ASSETS = {
-  // Put your real files here later
   modelMeOnHill: "./assets/models/me_on_hill.glb",
   backgroundSphereTex: "./assets/backgrounds/sky_sphere.jpg"
 };
@@ -27,13 +23,14 @@ const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
 // Renderer / Scene / Camera
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x070A0C, 6, 22);
+scene.fog = new THREE.Fog(0x070A0C, 7, 22);
+scene.background = new THREE.Color(0x070A0C);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
 camera.position.set(0, 1.55, 5.8);
@@ -41,7 +38,7 @@ camera.position.set(0, 1.55, 5.8);
 const clock = new THREE.Clock();
 
 // Lights
-scene.add(new THREE.HemisphereLight(0x9fd3ff, 0x0b0f12, 0.9));
+scene.add(new THREE.HemisphereLight(0x9fd3ff, 0x0b0f12, 0.95));
 
 const key = new THREE.DirectionalLight(0xffffff, 1.1);
 key.position.set(3.5, 4.5, 2.5);
@@ -51,7 +48,7 @@ const rim = new THREE.DirectionalLight(0xb7c6ff, 0.55);
 rim.position.set(-5, 2, -3);
 scene.add(rim);
 
-// Center group (your model)
+// Center group
 const center = new THREE.Group();
 scene.add(center);
 
@@ -69,32 +66,71 @@ scene.add(center);
   center.add(ground);
 }
 
-// Background sphere placeholder (IMPORTANT: disable fog on background)
+// Always-visible procedural “sky” texture (so you SEE something even if jpg missing)
+function makeSkyTexture(){
+  const w = 1024, h = 512;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "#061018");
+  g.addColorStop(0.55, "#05080C");
+  g.addColorStop(1, "#040507");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // stars
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  for (let i=0;i<900;i++){
+    const x = Math.random()*w;
+    const y = Math.random()*h;
+    const r = Math.random()*1.2;
+    ctx.globalAlpha = 0.25 + Math.random()*0.65;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// Background sphere (fog disabled so it doesn’t vanish)
 let backgroundSphere = null;
 {
   const geo = new THREE.SphereGeometry(60, 48, 48);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x050708, side: THREE.BackSide });
-  mat.fog = false; // ✅ fixes background being fogged out
+  const mat = new THREE.MeshBasicMaterial({
+    map: makeSkyTexture(),
+    color: 0xffffff,
+    side: THREE.BackSide
+  });
+  mat.fog = false;
+
   backgroundSphere = new THREE.Mesh(geo, mat);
   backgroundSphere.rotation.y = 0.35;
   scene.add(backgroundSphere);
 
+  // Try load your real jpg on top of the placeholder
   const texLoader = new THREE.TextureLoader();
   texLoader.load(
     ASSETS.backgroundSphereTex,
     (tex) => {
       console.log("✅ Background texture loaded:", ASSETS.backgroundSphereTex);
       tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       backgroundSphere.material.map = tex;
-      backgroundSphere.material.color.set(0xffffff);
       backgroundSphere.material.needsUpdate = true;
     },
     undefined,
-    (err) => console.warn("❌ Background texture failed to load:", ASSETS.backgroundSphereTex, err)
+    (err) => console.warn("❌ Background jpg not found (placeholder used):", ASSETS.backgroundSphereTex, err)
   );
 }
 
-// Load GLB model (fallback if missing)
+// Load GLB model
 const gltfLoader = new GLTFLoader();
 loadCenterModel();
 
@@ -113,10 +149,10 @@ function loadCenterModel(){
         }
       });
 
-      // Normalize-ish: center + scale
       const box = new THREE.Box3().setFromObject(model);
       const size = new THREE.Vector3();
       box.getSize(size);
+
       const maxAxis = Math.max(size.x, size.y, size.z);
       const scale = 2.2 / Math.max(0.0001, maxAxis);
       model.scale.setScalar(scale);
@@ -130,7 +166,7 @@ function loadCenterModel(){
     },
     undefined,
     (e) => {
-      console.warn("❌ Model failed to load (using fallback):", ASSETS.modelMeOnHill, e);
+      console.warn("❌ Model not found (fallback used):", ASSETS.modelMeOnHill, e);
 
       // fallback “person”
       const body = new THREE.Mesh(
@@ -150,7 +186,7 @@ function loadCenterModel(){
   );
 }
 
-// Folder ring (curved planes)
+// Folder ring
 const folderGroup = new THREE.Group();
 scene.add(folderGroup);
 
@@ -262,7 +298,7 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.closePath();
 }
 
-// Scroll-driven orbit
+// Orbit controls via scroll + drag
 let targetProgress = 0;
 let progress = 0;
 let targetAzimuth = 0;
@@ -276,7 +312,6 @@ let scrollVelocity = 0;
 const ORBIT_TURNS = 1.55;
 const ORBIT_RADIUS = 5.8;
 
-// Drag orbit
 let isDragging = false;
 let dragStartX = 0;
 let dragStartAz = 0;
@@ -300,7 +335,7 @@ canvas.addEventListener("pointerup", (e) => {
   try { canvas.releasePointerCapture(e.pointerId); } catch {}
 });
 
-// Click picking
+// Clicking folders
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
@@ -321,9 +356,7 @@ canvas.addEventListener("click", (e) => {
 
 // Panel open/close
 panelClose.addEventListener("click", closePanel);
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closePanel();
-});
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
 window.addEventListener("hashchange", () => {
   const id = (location.hash || "").replace("#", "");
@@ -345,9 +378,7 @@ async function openPanel(folder){
   panel.classList.add("is-open");
   panel.setAttribute("aria-hidden", "false");
 
-  if (location.hash !== `#${folder.id}`) {
-    history.replaceState(null, "", `#${folder.id}`);
-  }
+  if (location.hash !== `#${folder.id}`) history.replaceState(null, "", `#${folder.id}`);
 
   try{
     const res = await fetch(folder.page, { cache: "no-store" });
@@ -379,7 +410,6 @@ window.addEventListener("resize", () => {
 // Animate
 requestAnimationFrame(tick);
 function tick(){
-  const dt = clock.getDelta();
   const t = clock.getElapsedTime();
 
   const maxScroll = Math.max(1, document.body.scrollHeight - window.innerHeight);
@@ -390,7 +420,6 @@ function tick(){
   lastScrollY = sy;
 
   progress = THREE.MathUtils.lerp(progress, targetProgress, 0.08);
-
   targetAzimuth = progress * ORBIT_TURNS * Math.PI * 2.0 + dragOffset;
 
   const pitchStart = THREE.MathUtils.degToRad(66);
@@ -421,9 +450,7 @@ function tick(){
     const diff = smallestAngleDiff(camAngle, folderAngle);
 
     const visibility = 1.0 - smoothstep(0.55, 1.15, diff);
-    const opacity = THREE.MathUtils.clamp(visibility, 0, 1);
-
-    mesh.material.uniforms.uOpacity.value = opacity;
+    mesh.material.uniforms.uOpacity.value = THREE.MathUtils.clamp(visibility, 0, 1);
     mesh.material.uniforms.uWobble.value = t * 2.0 + scrollVelocity * 6.0;
     mesh.position.y = 0.15 + Math.sin(t * 1.2 + folderAngle) * 0.03;
   }
@@ -438,12 +465,10 @@ function smoothstep(edge0, edge1, x){
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
 }
-
 function wrapAngle(a){
   const twoPi = Math.PI * 2;
   return ((a % twoPi) + twoPi) % twoPi;
 }
-
 function smallestAngleDiff(a, b){
   const twoPi = Math.PI * 2;
   let d = Math.abs(a - b) % twoPi;
