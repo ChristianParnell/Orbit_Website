@@ -4,27 +4,36 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Orbit Portfolio</title>
-
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- Avoid favicon.ico 404 on GitHub Pages -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
 </head>
 
 <body>
   <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
 
-  <!-- This makes the page scrollable (scroll drives orbit) -->
-  <div id="scrollArea" aria-hidden="true"></div>
+  <!-- Greta-style loader -->
+  <div id="loader" class="loader" aria-live="polite">
+    <div class="loader__card">
+      <div class="loader__title">Loading orbit…</div>
+      <div class="loader__bar"><div id="loaderFill" class="loader__fill"></div></div>
+      <div id="loaderPct" class="loader__pct">0%</div>
+      <div class="loader__note">Scroll or drag once loaded</div>
+    </div>
+  </div>
 
   <!-- HUD -->
   <div id="hud">
     <div class="brand">
       <div class="brand__name">YOUR NAME</div>
-      <div class="brand__tag">Scroll to orbit • Drag to rotate • Click folders</div>
+      <div class="brand__tag">Scroll / drag to orbit • Click folders • Press ESC to close</div>
     </div>
 
-    <div class="hint">Scroll to rotate • Drag to orbit • Click folders to open</div>
+    <div class="bottomRow">
+      <div class="hint" id="hint">Scroll to explore • Drag to rotate</div>
+
+      <!-- Chapter markers -->
+      <div class="chapters" id="chapters" aria-label="Chapters"></div>
+    </div>
   </div>
 
   <!-- Panel -->
@@ -36,7 +45,6 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
-  <!-- IMPORTANT: ES module -->
   <script type="module" src="./main.js"></script>
 </body>
 </html>
