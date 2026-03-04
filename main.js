@@ -33,7 +33,6 @@ if (!chaptersEl) hardFail("HUD #chapters not found.");
 console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
 hintEl.textContent = "Scene starting…";
 
-// Palette
 const PAL = {
   sky:   new THREE.Color("#91C6FF"),
   sand:  new THREE.Color("#BD9C64"),
@@ -44,7 +43,6 @@ const PAL = {
   text:  new THREE.Color("#E8EEF2"),
 };
 
-// Assets (MATCH THESE FILES)
 const ASSETS = {
   model: u("assets/models/me_on_hill.glb"),
   sky:   u("assets/backgrounds/sky_sphere.jpg"),
@@ -52,7 +50,6 @@ const ASSETS = {
   audio: u("assets/audio/ambient.mp3"),
 };
 
-// Chapters
 const CHAPTERS = [
   { id: "about",        label: "About",        progress: 0.10, page: u("pages/about.html") },
   { id: "gallery",      label: "Gallery",      progress: 0.35, page: u("pages/gallery.html") },
@@ -60,16 +57,15 @@ const CHAPTERS = [
   { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
 ];
 
-// Tuning
 const T = {
-  // ✅ MUCH slower wheel orbit
-  scrollSensitivity: 0.00005,
-  dragSensitivity: 0.012,
-  maxVel: 0.012,
+  // ✅ MUCH slower wheel orbit (user must scroll more)
+  scrollSensitivity: 0.000018,  // was faster; smaller = slower
+  dragSensitivity: 0.010,
+  maxVel: 0.0065,               // caps “fly past” speed
 
-  // ✅ smooth + quick slow-down (no snapping)
+  // smooth slowdown (no snapping)
   dampingActive: 9.0,
-  dampingIdle: 26.0,
+  dampingIdle: 28.0,            // slows quickly after stopping
   idleDelayMs: 120,
   stopEps: 0.00002,
 
@@ -81,7 +77,7 @@ const T = {
   camYAmplitude: 1.20,
   lookY: 1.25,
 
-  // Corkscrew path (close to model)
+  // spiral path (close to model)
   spiralRadius: 12.8,
   spiralYStep: 4.9,
   spiralYOffset: 5.5,
@@ -92,20 +88,19 @@ const T = {
   visibleRange: 1.75,
   fadeSoftness: 1.15,
 
-  // Big folders
+  // big folders
   tileW: 4.05,
   tileH: 2.45,
   tileCurve: 0.080,
 
-  // Title offset (2D plane)
+  // title offset (2D)
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // ✅ Corkscrew “on its side” bank
-  folderBankDeg: 40,
-  folderBankNearDeg: 24,   // straightens slightly near camera, never fully
+  // ✅ corkscrew tilt (true helix tilt)
+  helixTiltDeg: 40,        // “on its side” feel along spiral
+  helixTiltNearDeg: 26,    // relax slightly near camera (never flat)
 };
 
-// Loading manager
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
@@ -117,7 +112,6 @@ manager.onLoad = () => {
   hintEl.textContent = "Scroll / drag • Click tiles • (audio starts on interaction)";
 };
 
-// Renderer / scene / camera
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -134,7 +128,6 @@ camera.position.set(0, 6.0, T.camRadius);
 
 const clock = new THREE.Clock();
 
-// Lights
 scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.05));
 const key = new THREE.DirectionalLight(0xffffff, 0.95);
 key.position.set(4.2, 5.8, 3.2);
@@ -143,7 +136,6 @@ const rim = new THREE.DirectionalLight(PAL.sky.getHex(), 0.55);
 rim.position.set(-6.0, 2.6, -3.8);
 scene.add(rim);
 
-// Center group (model)
 const center = new THREE.Group();
 scene.add(center);
 
@@ -205,7 +197,7 @@ new THREE.TextureLoader(manager).load(
   () => {}
 );
 
-// Fog fallback texture (always visible)
+// Fog texture fallback
 function makeFogTextureFallback(){
   const w=512, h=512;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -729,7 +721,6 @@ function progressToIndex(v){
   return t*(CHAPTERS.length-1);
 }
 
-// Resize
 window.addEventListener("resize", ()=>{
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -737,11 +728,14 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
 });
 
-// Reused temp vectors/mats
+// temps
 const vToCam = new THREE.Vector3();
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
 const up = new THREE.Vector3(0,1,0);
+const helixDir = new THREE.Vector3();
+const inPlane = new THREE.Vector3();
+
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
@@ -752,16 +746,13 @@ function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // Smooth deceleration without snapping
   const idleMs = performance.now() - timeline.lastInteractT;
   const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
 
   timeline.vel *= Math.exp(-damping * dt);
   if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
-
   timeline.value = clamp01(timeline.value + timeline.vel);
 
-  // Camera orbit
   const azimuth = (timeline.value*T.orbitTurns)*Math.PI*2 + 1.06;
   const camY = T.camYBase + Math.sin(timeline.value*Math.PI*2)*T.camYAmplitude;
 
@@ -771,7 +762,6 @@ function tick(){
   bg.rotation.y = azimuth*0.10 + 0.35;
   bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
 
-  // UI highlight only (no pull)
   const near = nearestChapter(timeline.value);
   if (activeChapterId !== near.id){
     activeChapterId = near.id;
@@ -781,7 +771,7 @@ function tick(){
     hintEl.textContent = `${near.label} • Click tile to open`;
   }
 
-  // Fog motion
+  // fog motion
   fogGroup.rotation.y += dt*0.050;
   fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
   fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
@@ -806,7 +796,7 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // Tiles corkscrew orbit + correct “on its side” bank
+  // tiles corkscrew + TRUE helix rotation (adds X tilt naturally)
   const centerIdx = progressToIndex(timeline.value);
 
   for(const item of tileItems){
@@ -833,39 +823,46 @@ function tick(){
     cover.material.uniforms.uOpacity.value = clamp01(vis);
     cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
 
-    // vectors for orientation
     vToCam.copy(camera.position).sub(group.position).normalize();
 
-    // radial outward from center (tile plane normal)
+    // outward from center (folder faces away from model)
     radial.set(Math.cos(ang), 0, Math.sin(ang)).normalize();
 
-    // tangent direction around the orbit
+    // flow direction around the orbit
     tangent.set(-Math.sin(ang), 0, Math.cos(ang)).normalize();
 
-    // “near camera” factor
-    const facing = clamp01(radial.dot(vToCam)); // 1 when tile is on camera-facing side
+    // near-camera factor
+    const facing = clamp01(radial.dot(vToCam));
     const dist = camera.position.distanceTo(group.position);
     const distN = clamp01(1 - (dist - 10) / 14);
-    const straighten = clamp01(smoothstep(0.35, 0.90, facing) * distN);
+    const soften = clamp01(smoothstep(0.35, 0.90, facing) * distN);
 
-    // bank angle: 40° normally, relax toward ~24° near camera (never fully)
-    const baseBank = THREE.MathUtils.degToRad(T.folderBankDeg);
-    const nearBank = THREE.MathUtils.degToRad(T.folderBankNearDeg);
-    const bank = THREE.MathUtils.lerp(baseBank, nearBank, straighten);
+    // helix tilt: 40° normally, relax a bit near camera
+    const baseTilt = THREE.MathUtils.degToRad(T.helixTiltDeg);
+    const nearTilt = THREE.MathUtils.degToRad(T.helixTiltNearDeg);
+    const tilt = THREE.MathUtils.lerp(baseTilt, nearTilt, soften);
 
-    // ✅ corkscrew flow: rotate “up axis” within the tile plane toward a slanted corkscrew direction
-    // This makes the tile sit “on its side” and flow along the orbit like a helix.
-    yAxis.copy(tangent).addScaledVector(up, -Math.tan(bank)).normalize(); // slants downward along travel
-    zAxis.copy(radial);                                                  // tile normal outward
-    xAxis.crossVectors(yAxis, zAxis).normalize();                        // right-handed basis
+    // ✅ build a HELIX direction (tangent + vertical component) at the chosen angle
+    // this is what gives the “on its side / corkscrew ramp” look
+    helixDir.copy(tangent).multiplyScalar(Math.cos(tilt));
+    helixDir.addScaledVector(up, -Math.sin(tilt));
+    helixDir.normalize();
 
-    // Orthonormal safety (tiny drift prevention)
+    // project helixDir into the folder plane (so it becomes the folder's "up edge" direction)
+    inPlane.copy(helixDir).addScaledVector(radial, -helixDir.dot(radial));
+    if (inPlane.lengthSq() < 1e-6) inPlane.copy(tangent);
+    inPlane.normalize();
+
+    // set basis: Z = outward normal, Y = helix flow in-plane, X = perpendicular
+    zAxis.copy(radial);
+    yAxis.copy(inPlane);
+    xAxis.crossVectors(yAxis, zAxis).normalize();
     yAxis.crossVectors(zAxis, xAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
     group.quaternion.setFromRotationMatrix(basis);
 
-    // Title fade (2D, not billboarded)
+    // title fade (2D plane, not billboarded)
     title.material.opacity = clamp01(smoothstep(0.12, 0.56, facing) * vis);
   }
 
