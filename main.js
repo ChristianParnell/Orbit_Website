@@ -33,7 +33,7 @@ if (!chaptersEl) hardFail("HUD #chapters not found.");
 console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
 hintEl.textContent = "Scene starting…";
 
-// Palette (from your Adobe colors)
+// Palette
 const PAL = {
   sky:   new THREE.Color("#91C6FF"),
   sand:  new THREE.Color("#BD9C64"),
@@ -60,12 +60,16 @@ const CHAPTERS = [
   { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
 ];
 
-// Tuning (BIG folders, closer to model, real corkscrew, 40° tilt that relaxes near camera)
+// Tuning
 const T = {
   scrollSensitivity: 0.00014,
   dragSensitivity: 0.014,
-  inertia: 0.92,
-  lerp: 0.040,
+
+  // ✅ smooth + quick slow-down (no snapping, no auto-latching)
+  dampingActive: 10.0,     // while user is actively inputting
+  dampingIdle: 20.0,       // shortly after input stops (slows fast but smooth)
+  idleDelayMs: 120,        // after this, switch to stronger damping
+  stopEps: 0.00002,        // when velocity gets tiny, hard stop
 
   modelTargetSize: 9.2,
 
@@ -75,7 +79,7 @@ const T = {
   camYAmplitude: 1.20,
   lookY: 1.25,
 
-  // Corkscrew path (CLOSER to model)
+  // Corkscrew path (closer to model)
   spiralRadius: 12.8,
   spiralYStep: 4.9,
   spiralYOffset: 5.5,
@@ -96,7 +100,7 @@ const T = {
 
   // Folder tilt behavior
   folderTiltDeg: 40,
-  folderNearTiltDeg: 22, // straighten a bit when near camera, but not fully
+  folderNearTiltDeg: 22,
 };
 
 // Loading manager
@@ -128,7 +132,7 @@ camera.position.set(0, 6.0, T.camRadius);
 
 const clock = new THREE.Clock();
 
-// Lights (soft)
+// Lights
 scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.05));
 const key = new THREE.DirectionalLight(0xffffff, 0.95);
 key.position.set(4.2, 5.8, 3.2);
@@ -141,7 +145,7 @@ scene.add(rim);
 const center = new THREE.Group();
 scene.add(center);
 
-// Background sphere (soft palette)
+// Background sphere
 function makeSkyTexture(){
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -187,7 +191,7 @@ bg.material.fog = false;
 bg.rotation.y = 0.35;
 scene.add(bg);
 
-// Optional real sky texture (if file exists)
+// Optional external sky texture
 new THREE.TextureLoader(manager).load(
   ASSETS.sky,
   (tex) => {
@@ -200,7 +204,7 @@ new THREE.TextureLoader(manager).load(
   () => {}
 );
 
-// Fog fallback texture (ALWAYS visible fog)
+// Fog fallback texture (always visible)
 function makeFogTextureFallback(){
   const w=512, h=512;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -248,7 +252,6 @@ new THREE.TextureLoader(manager).load(
   () => console.warn("Fog texture missing/failed, using fallback fog texture.")
 );
 
-// Fog group around center model
 const fogGroup = new THREE.Group();
 scene.add(fogGroup);
 
@@ -319,7 +322,7 @@ const fogPuffs = [];
   }
 })();
 
-// Audio (loop + volume + muffled on panel open)
+// Audio
 const audioState = {
   ctx:null, src:null, gain:null, filter:null,
   started:false,
@@ -419,7 +422,7 @@ window.addEventListener("pointerdown", gestureKick, { once:true });
 window.addEventListener("wheel", gestureKick, { once:true, passive:true });
 window.addEventListener("keydown", gestureKick, { once:true });
 
-// Tile textures (soft + palette)
+// Tile textures
 function makeCoverTexture(){
   const w=1024, h=640;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -458,7 +461,6 @@ function makeCoverTexture(){
   return tex;
 }
 
-// Title texture (2D canvas texture, NOT billboarded)
 function makeTitleTexture(text){
   const w=1024, h=256;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -542,7 +544,6 @@ const tileItems = [];
       new THREE.PlaneGeometry(3.35, 0.78),
       new THREE.MeshBasicMaterial({ map:titleTex, transparent:true, depthWrite:false, opacity:0.0, side:THREE.DoubleSide })
     );
-
     title.position.set(T.titleOffset.x, T.titleOffset.y, T.titleOffset.z);
 
     const g = new THREE.Group();
@@ -591,7 +592,7 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// Panel logic (muffle when open)
+// Panel logic
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -639,11 +640,16 @@ canvas.addEventListener("click", async (e) => {
   if (!hits.length) return;
 
   const ch = hits[0].object.userData.chapter;
-  timeline.target = ch.progress;
+
+  // ✅ no snapping system, but click should jump to that place cleanly
+  timeline.value = clamp01(ch.progress);
+  timeline.vel = 0;
+  timeline.lastInteractT = performance.now();
+
   openPanel(ch).catch(()=>{});
 });
 
-// Chapters dots
+// Chapter dots
 let activeChapterId = null;
 function buildChapterUI(){
   chaptersEl.innerHTML="";
@@ -653,7 +659,9 @@ function buildChapterUI(){
     dot.className="chapterDot";
     dot.title=ch.label;
     dot.addEventListener("click", ()=>{
-      timeline.target = ch.progress;
+      timeline.value = clamp01(ch.progress);
+      timeline.vel = 0;
+      timeline.lastInteractT = performance.now();
       openPanel(ch).catch(()=>{});
     });
     chaptersEl.appendChild(dot);
@@ -669,8 +677,8 @@ function setActiveDot(id){
 }
 buildChapterUI();
 
-// Timeline controls
-const timeline = { value:0.02, target:0.02, velocity:0, lastInteractT:performance.now() };
+// ✅ New timeline model: position + velocity (no target, no latching)
+const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
   let dy = e.deltaY;
@@ -682,7 +690,7 @@ function normalizeWheel(e){
 window.addEventListener("wheel", (e)=>{
   e.preventDefault();
   timeline.lastInteractT = performance.now();
-  timeline.velocity += normalizeWheel(e) * T.scrollSensitivity;
+  timeline.vel += normalizeWheel(e) * T.scrollSensitivity;
 },{ passive:false });
 
 let dragging=false, dragStartX=0, dragStartVel=0;
@@ -690,14 +698,14 @@ canvas.addEventListener("pointerdown",(e)=>{
   dragging=true;
   timeline.lastInteractT=performance.now();
   dragStartX=e.clientX;
-  dragStartVel=timeline.velocity;
+  dragStartVel=timeline.vel;
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove",(e)=>{
   if(!dragging) return;
   timeline.lastInteractT=performance.now();
   const dx=(e.clientX-dragStartX)/Math.max(1,window.innerWidth);
-  timeline.velocity = dragStartVel - dx * T.dragSensitivity;
+  timeline.vel = dragStartVel - dx * T.dragSensitivity;
 });
 canvas.addEventListener("pointerup",(e)=>{
   dragging=false;
@@ -735,21 +743,19 @@ function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  timeline.velocity *= Math.pow(T.inertia, dt*60);
-  timeline.target = clamp01(timeline.target + timeline.velocity);
-  timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, T.lerp);
-
+  // ✅ Smooth deceleration without snapping
   const idleMs = performance.now() - timeline.lastInteractT;
-  if(!dragging && idleMs>820){
-    const near = nearestChapter(timeline.value);
-    timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.010);
-    if(activeChapterId !== near.id){
-      activeChapterId = near.id;
-      setActiveDot(activeChapterId);
-      hintEl.textContent = `${near.label} • Click tile to open`;
-    }
-  }
+  const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
 
+  // exponential damping (smooth + predictable)
+  timeline.vel *= Math.exp(-damping * dt);
+
+  // stop cleanly when it gets tiny (prevents micro-drifting)
+  if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
+
+  timeline.value = clamp01(timeline.value + timeline.vel);
+
+  // camera orbit
   const azimuth = (timeline.value*T.orbitTurns)*Math.PI*2 + 1.06;
   const camY = T.camYBase + Math.sin(timeline.value*Math.PI*2)*T.camYAmplitude;
 
@@ -759,7 +765,17 @@ function tick(){
   bg.rotation.y = azimuth*0.10 + 0.35;
   bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
 
-  // Fog motion (swirly around center)
+  // ✅ Only update UI to the nearest chapter — do NOT pull the orbit toward it
+  const near = nearestChapter(timeline.value);
+  if (activeChapterId !== near.id){
+    activeChapterId = near.id;
+    setActiveDot(activeChapterId);
+  }
+  if (!panel?.classList.contains("is-open")){
+    hintEl.textContent = `${near.label} • Click tile to open`;
+  }
+
+  // fog motion
   fogGroup.rotation.y += dt*0.050;
   fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
   fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
@@ -784,7 +800,7 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // Tiles corkscrew orbit (closer + big + 40° tilt with slight straighten near camera)
+  // tiles corkscrew orbit
   const centerIdx = progressToIndex(timeline.value);
 
   for(const item of tileItems){
@@ -803,7 +819,6 @@ function tick(){
     group.lookAt(0, y, 0);
     group.rotateY(Math.PI);
 
-    // visibility
     const dAbs = Math.abs(rel);
     const vis = 1.0 - smoothstep(
       T.visibleRange - T.fadeSoftness,
@@ -812,31 +827,23 @@ function tick(){
     );
 
     cover.material.uniforms.uOpacity.value = clamp01(vis);
-    cover.material.uniforms.uWobble.value = time*1.1 + timeline.velocity*30.0;
+    cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*30.0;
 
-    // camera relation
     vToCam.copy(camera.position).sub(group.position).normalize();
-
-    // outward direction (used for “near camera” / facing)
     outwardDir.set(Math.cos(ang), 0, Math.sin(ang));
-    const facing = clamp01(outwardDir.dot(vToCam)); // 1 near/front side
+    const facing = clamp01(outwardDir.dot(vToCam));
 
-    // distance influence (helps the straighten feel)
     const dist = camera.position.distanceTo(group.position);
-    const distN = clamp01(1 - (dist - 10) / 14); // ~1 near, ~0 far
+    const distN = clamp01(1 - (dist - 10) / 14);
 
-    // straighten factor (never goes full)
     const straighten = clamp01(smoothstep(0.35, 0.90, facing) * distN);
 
-    // tilt: 40° normally, but relax to ~22° near camera (never fully flat)
     const baseTilt = THREE.MathUtils.degToRad(T.folderTiltDeg);
     const nearTilt = THREE.MathUtils.degToRad(T.folderNearTiltDeg);
     const tilt = THREE.MathUtils.lerp(baseTilt, nearTilt, straighten);
 
-    // Apply the “downward corkscrew tilt”
     group.rotateX(tilt);
 
-    // Title fade (2D, not billboarded, fades when not facing camera)
     title.material.opacity = clamp01(smoothstep(0.12, 0.56, facing) * vis);
   }
 
