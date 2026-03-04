@@ -3,7 +3,6 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-// Base URL for local repo paths (works on GitHub Pages project sites)
 const BASE_URL = new URL("./", import.meta.url);
 
 // DOM
@@ -13,6 +12,7 @@ const loaderFill = document.getElementById("loaderFill");
 const loaderPct = document.getElementById("loaderPct");
 const hintEl = document.getElementById("hint");
 const chaptersEl = document.getElementById("chapters");
+const hudEl = document.getElementById("hud");
 
 const panel = document.getElementById("panel");
 const panelTitle = document.getElementById("panelTitle");
@@ -23,18 +23,20 @@ function hardFail(msg, err) {
   console.error(msg, err || "");
   if (hintEl) hintEl.textContent = `❌ ${msg}`;
   const box = document.createElement("div");
-  box.style.position = "fixed";
-  box.style.left = "16px";
-  box.style.right = "16px";
-  box.style.bottom = "16px";
-  box.style.zIndex = "9999";
-  box.style.padding = "14px";
-  box.style.borderRadius = "16px";
-  box.style.background = "rgba(10,12,14,0.94)";
-  box.style.border = "1px solid rgba(232,238,242,0.18)";
-  box.style.color = "rgba(232,238,242,0.92)";
-  box.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-  box.style.lineHeight = "1.45";
+  Object.assign(box.style, {
+    position: "fixed",
+    left: "16px",
+    right: "16px",
+    bottom: "16px",
+    zIndex: "9999",
+    padding: "14px",
+    borderRadius: "16px",
+    background: "rgba(10,12,14,0.94)",
+    border: "1px solid rgba(232,238,242,0.18)",
+    color: "rgba(232,238,242,0.92)",
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+    lineHeight: "1.45",
+  });
   box.innerHTML = `
     <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">Orbit error 🧯</div>
     <div style="opacity:0.85;font-size:13px;">${msg}</div>
@@ -59,70 +61,73 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-// Assets
+// Assets (your filenames + paths)
 const ASSETS = {
-  modelMeOnHill: u("assets/models/me_on_hill.glb"),
-  backgroundSphereTex: u("assets/backgrounds/sky_sphere.jpg"),
-
-  // required for this build:
-  fogJpg: u("assets/textures/fog.jpg"),      // black background fog jpg
-  bgAudio: u("assets/audio/ambient.mp3"),    // loop music
+  model: u("assets/models/me_on_hill.glb"),
+  sky: u("assets/backgrounds/sky_sphere.jpg"),
+  fog: u("assets/textures/fog.jpg"),
+  audio: u("assets/audio/ambient.mp3"),
 };
 
-// Chapters (tiles)
+// Chapters / tiles
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: u("pages/about.html") },
-  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: u("pages/gallery.html") },
-  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: u("pages/achievements.html") },
-  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: u("pages/contact.html") },
+  { id: "about",        label: "About",        progress: 0.10, page: u("pages/about.html") },
+  { id: "gallery",      label: "Gallery",      progress: 0.35, page: u("pages/gallery.html") },
+  { id: "achievements", label: "Achievements", progress: 0.60, page: u("pages/achievements.html") },
+  { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
 ];
 
 // ============================================================
-// TUNING (model framed + tiles spaced + title is clean text)
+// TUNING (framed model + LOTS of padding + designy label offset)
 // ============================================================
 const TUNING = {
-  // Model slightly smaller, so it fits full height in-frame
-  modelTargetSize: 9.2,
+  // Model: slightly smaller so full body fits
+  modelTargetSize: 8.6,
 
-  // Slow scroll/orbit
-  scrollSensitivity: 0.00016,
-  dragSensitivity: 0.016,
+  // Orbit feel (slow)
+  scrollSensitivity: 0.00014,
+  dragSensitivity: 0.014,
   inertia: 0.92,
-  lerp: 0.040,
+  lerp: 0.038,
 
-  // Camera pulled back a bit to see whole model
-  camRadius: 8.1,
-  camYBase: 3.75,
-  camYPerStep: 0.40,
-  lookYBase: 1.05,
-  lookYPerStep: 0.20,
+  // Camera: pulled back for full model framing
+  camRadius: 10.4,
+  camYBase: 4.15,
+  camYPerStep: 0.36,
+  lookYBase: 1.10,
+  lookYPerStep: 0.18,
 
-  // Corkscrew tiles (MORE spread)
-  spiralRadius: 4.25,       // wider ring
-  spiralAngleStep: 0.58,    // still slow-ish rotation
-  spiralYStep: 1.45,        // more vertical spacing (less stacking)
-  spiralYOffset: 2.10,
-  radiusGrow: 0.18,         // slightly more spacing along spiral
+  // Corkscrew layout (tiles WAY more spread)
+  spiralRadius: 6.2,       // << big ring for padding around model
+  spiralYOffset: 2.60,
+  spiralYStep: 2.15,       // << strong vertical spacing (no stacking)
+  radiusGrow: 0.24,
 
-  // Keep “front pass” behaviour
-  frontFacingBlend: 0.82,
-  frontPush: 1.10,
+  // Separate speeds: keep scroll rotation slow but keep spacing generous
+  camAngleStep: 0.40,      // scroll rotation speed (slower)
+  tileAngleStep: 0.72,     // spacing between tiles around ring
+
+  // “Front pass” so tiles swing past camera side cleanly
+  frontFacingBlend: 0.78,
+  frontPush: 1.05,
 
   // Visibility
-  visibleRange: 3.2,
-  fadeSoftness: 0.95,
+  visibleRange: 3.4,
+  fadeSoftness: 1.05,
 
   // Tile look
-  tileSize: { w: 1.85, h: 1.16 },
-  tileCurve: 0.18,
+  tileSize: { w: 1.95, h: 1.22 },
+  tileCurve: 0.16,
 
-  // Title placement (now just text)
-  titleOffsetY: 1.12,       // higher so it doesn’t sit on the tile
-  titleScale: 1.0,
+  // Title (designy offset)
+  titleScale: 0.96,
+  titleOffset: { x: 0.92, y: 0.56, z: 0.26 }, // off to the side + slightly forward
 };
 // ============================================================
 
-// Build chapter UI dots
+// =======================
+// UI (chapter dots)
+// =======================
 let activeChapterId = null;
 
 function buildChapterUI() {
@@ -152,7 +157,9 @@ function setActiveDot(id) {
 
 buildChapterUI();
 
+// =======================
 // Loading manager
+// =======================
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
@@ -161,21 +168,23 @@ manager.onProgress = (_url, loaded, total) => {
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  if (hintEl) hintEl.textContent = "Scroll / drag • Click tiles • (sound starts on interaction)";
+  hintEl.textContent = "Scroll / drag • Click tiles • (sound starts on first interaction)";
 };
 
+// =======================
 // Three.js setup
+// =======================
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x070A0C, 10, 38);
+scene.fog = new THREE.Fog(0x070A0C, 12, 46);
 scene.background = new THREE.Color(0x070A0C);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 320);
-camera.position.set(0, 3.2, 8.0);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 420);
+camera.position.set(0, 3.6, 10.0);
 
 const clock = new THREE.Clock();
 
@@ -188,13 +197,15 @@ const rim = new THREE.DirectionalLight(0xb7c6ff, 0.55);
 rim.position.set(-5.4, 2.2, -3.2);
 scene.add(rim);
 
-// Center group
+// Center group (model)
 const center = new THREE.Group();
 scene.add(center);
 
-// ✅ Base circle removed (no ground mesh)
+// ✅ No base circle/ground mesh
 
-// Procedural sky fallback
+// =======================
+// Background sphere
+// =======================
 function makeSkyTexture() {
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -226,26 +237,23 @@ function makeSkyTexture() {
   return tex;
 }
 
-// Background sphere
 let backgroundSphere = null;
 {
-  const geo = new THREE.SphereGeometry(88, 48, 48);
+  const geo = new THREE.SphereGeometry(98, 48, 48);
   const mat = new THREE.MeshBasicMaterial({
     map: makeSkyTexture(),
     color: 0xffffff,
-    side: THREE.BackSide
+    side: THREE.BackSide,
   });
   mat.fog = false;
-
   backgroundSphere = new THREE.Mesh(geo, mat);
   backgroundSphere.rotation.y = 0.35;
   scene.add(backgroundSphere);
 }
 
-// Load background image (optional)
 const texLoader = new THREE.TextureLoader(manager);
 texLoader.load(
-  ASSETS.backgroundSphereTex,
+  ASSETS.sky,
   (tex) => {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -257,37 +265,33 @@ texLoader.load(
 );
 
 // =======================
-// Fog (JPG black -> transparent)
+// Fog (JPG black -> transparent) + drifting motion
 // =======================
 const fogGroup = new THREE.Group();
 scene.add(fogGroup);
 
 const fogTex = new THREE.TextureLoader(manager).load(
-  ASSETS.fogJpg,
+  ASSETS.fog,
   (t) => {
     t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.minFilter = THREE.LinearFilter;
     t.magFilter = THREE.LinearFilter;
   },
   undefined,
-  () => {
-    console.warn("Fog texture failed to load:", ASSETS.fogJpg);
-  }
+  () => console.warn("Fog texture failed to load:", ASSETS.fog)
 );
 
-// Shader: key out black using luminance
 function makeFogMaterial() {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     depthTest: true,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending, // softer “mist” feel
     uniforms: {
       uMap: { value: fogTex },
-      uOpacity: { value: 0.22 },
-      uBlackCut: { value: 0.10 },
-      uSoft: { value: 0.30 },
+      uOpacity: { value: 0.18 },
+      uBlackCut: { value: 0.10 }, // increase if black shows
+      uSoft: { value: 0.34 },
       uTint: { value: new THREE.Color(0xe8eef2) }
     },
     vertexShader: `
@@ -316,45 +320,49 @@ function makeFogMaterial() {
 
         if(a < 0.01) discard;
 
-        vec3 col = mix(vec3(0.0), uTint, 0.96);
-        gl_FragColor = vec4(col, a * uOpacity);
+        gl_FragColor = vec4(uTint, a * uOpacity);
       }
     `
   });
 }
 
 const fogPuffs = [];
-(function createFogPuffs(){
-  const puffCount = 22;
-  const geo = new THREE.PlaneGeometry(2.2, 2.2, 1, 1);
+(function createFog(){
+  const count = 30;
+  const geo = new THREE.PlaneGeometry(2.7, 2.7, 1, 1);
 
-  for (let i = 0; i < puffCount; i++) {
+  for (let i = 0; i < count; i++) {
     const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.14 + Math.random() * 0.20;
+    mat.uniforms.uOpacity.value = 0.10 + Math.random() * 0.16;
 
     const m = new THREE.Mesh(geo, mat);
 
-    const radius = 2.2 + Math.random() * 3.5;
+    const radius = 2.4 + Math.random() * 5.4;
     const ang = Math.random() * Math.PI * 2;
-    const y = -0.6 + Math.random() * 3.8;
-    const speed = 0.09 + Math.random() * 0.16;
-    const bobAmp = 0.10 + Math.random() * 0.28;
-    const spin = (Math.random() * 2 - 1) * 0.32;
+    const yBase = -0.9 + Math.random() * 5.2;
 
-    m.userData = { radius, ang, y, speed, bobAmp, spin, seed: Math.random() * 1000 };
-    m.position.set(Math.cos(ang) * radius, y, Math.sin(ang) * radius);
-    m.rotation.z = Math.random() * Math.PI * 2;
-    m.scale.setScalar(0.7 + Math.random() * 1.3);
+    m.userData = {
+      radius,
+      ang,
+      yBase,
+      speed: 0.06 + Math.random() * 0.14,
+      bobAmp: 0.18 + Math.random() * 0.40,
+      spin: (Math.random() * 2 - 1) * 0.26,
+      drift: 0.18 + Math.random() * 0.45,
+      seed: Math.random() * 1000,
+      scaleBase: 0.7 + Math.random() * 1.5
+    };
 
+    m.scale.setScalar(m.userData.scaleBase);
     fogGroup.add(m);
     fogPuffs.push(m);
   }
 
-  fogGroup.rotation.y = 0.2;
+  fogGroup.rotation.y = 0.15;
 })();
 
 // =======================
-// Audio (loop + muffle when panel opens)
+// Audio (loop + volume slider + muffle on panel)
 // =======================
 const audioState = {
   ctx: null,
@@ -362,8 +370,73 @@ const audioState = {
   gain: null,
   filter: null,
   started: false,
-  targetMuffled: false,
+  baseVolume: clamp01(parseFloat(localStorage.getItem("orbit_volume") ?? "0.52")),
+  isMuffled: false,
 };
+
+function createVolumeUI() {
+  if (!hudEl) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "audioCtl";
+  wrap.setAttribute("aria-label", "Audio volume");
+  Object.assign(wrap.style, {
+    position: "fixed",
+    left: "18px",
+    bottom: "18px",
+    zIndex: "25",
+    pointerEvents: "auto",
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    padding: "10px 12px",
+    borderRadius: "999px",
+    background: "rgba(8,10,12,0.55)",
+    border: "1px solid rgba(232,238,242,0.14)",
+    backdropFilter: "blur(10px)",
+    color: "rgba(232,238,242,0.88)",
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+    fontSize: "12px",
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    userSelect: "none",
+  });
+
+  const label = document.createElement("div");
+  label.textContent = "VOL";
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "0";
+  slider.max = "100";
+  slider.value = String(Math.round(audioState.baseVolume * 100));
+  slider.setAttribute("aria-label", "Volume");
+  Object.assign(slider.style, {
+    width: "140px",
+    accentColor: "#E8EEF2",
+    cursor: "pointer",
+  });
+
+  const pct = document.createElement("div");
+  pct.textContent = `${slider.value}%`;
+  Object.assign(pct.style, { opacity: "0.78", letterSpacing: "0.06em" });
+
+  slider.addEventListener("input", () => {
+    const v = clamp01(parseInt(slider.value, 10) / 100);
+    audioState.baseVolume = v;
+    localStorage.setItem("orbit_volume", String(v));
+    pct.textContent = `${slider.value}%`;
+    applyAudioTargets(); // live update
+  });
+
+  wrap.appendChild(label);
+  wrap.appendChild(slider);
+  wrap.appendChild(pct);
+
+  document.body.appendChild(wrap);
+}
+
+createVolumeUI();
 
 async function ensureAudio() {
   if (audioState.started) return;
@@ -373,14 +446,14 @@ async function ensureAudio() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const ctx = new AudioCtx();
 
-    const res = await fetch(ASSETS.bgAudio, { cache: "no-store" });
+    const res = await fetch(ASSETS.audio, { cache: "no-store" });
     if (!res.ok) throw new Error(`Audio HTTP ${res.status}`);
     const arr = await res.arrayBuffer();
     const buffer = await ctx.decodeAudioData(arr);
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.loop = true;
+    src.loop = true; // ✅ loops
 
     const filter = ctx.createBiquadFilter();
     filter.type = "lowpass";
@@ -388,7 +461,7 @@ async function ensureAudio() {
     filter.Q.value = 0.7;
 
     const gain = ctx.createGain();
-    gain.gain.value = 0.52;
+    gain.gain.value = audioState.baseVolume;
 
     src.connect(filter);
     filter.connect(gain);
@@ -408,13 +481,14 @@ async function ensureAudio() {
   }
 }
 
-function setMuffle(isMuffled) {
-  audioState.targetMuffled = isMuffled;
+function applyAudioTargets() {
   if (!audioState.ctx || !audioState.filter || !audioState.gain) return;
 
   const now = audioState.ctx.currentTime;
-  const targetFreq = isMuffled ? 700 : 18000;
-  const targetGain = isMuffled ? 0.28 : 0.52;
+  const muffled = audioState.isMuffled;
+
+  const targetFreq = muffled ? 700 : 18000;
+  const targetGain = audioState.baseVolume * (muffled ? 0.55 : 1.0);
 
   audioState.filter.frequency.cancelScheduledValues(now);
   audioState.gain.gain.cancelScheduledValues(now);
@@ -423,14 +497,19 @@ function setMuffle(isMuffled) {
   audioState.gain.gain.setTargetAtTime(targetGain, now, 0.10);
 }
 
-// Start audio on first user gesture
-function gestureKick() { ensureAudio().catch(()=>{}); }
+function setMuffle(isMuffled) {
+  audioState.isMuffled = isMuffled;
+  applyAudioTargets();
+}
+
+// Start audio on first user gesture (autoplay rules)
+function gestureKick() { ensureAudio().catch(() => {}); }
 window.addEventListener("pointerdown", gestureKick, { once: true });
 window.addEventListener("wheel", gestureKick, { once: true, passive: true });
 window.addEventListener("keydown", gestureKick, { once: true });
 
 // =======================
-// Tiles: black/white cover + external clean text label
+// Tiles (black/white cover + designy text offset)
 // =======================
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
@@ -447,7 +526,7 @@ function makeCoverTexture() {
   ctx.fillStyle = "#070A0C";
   ctx.fillRect(0, 0, w, h);
 
-  ctx.globalAlpha = 0.10;
+  ctx.globalAlpha = 0.09;
   ctx.strokeStyle = "#E8EEF2";
   ctx.lineWidth = 2;
   for (let i = 0; i < 30; i++) {
@@ -473,25 +552,23 @@ function makeCoverTexture() {
   return tex;
 }
 
-// ✅ Clean text only (no borders, no pill)
 function makeTitleTexture(text) {
   const w = 1024, h = 256;
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   const ctx = c.getContext("2d");
-
   ctx.clearRect(0, 0, w, h);
 
-  // subtle shadow for readability
   ctx.font = "800 88px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
 
+  // Slight shadow for readability, still clean
   ctx.fillStyle = "rgba(0,0,0,0.55)";
-  ctx.fillText(text.toUpperCase(), w / 2 + 3, h / 2 + 6);
+  ctx.fillText(text.toUpperCase(), 92 + 3, h / 2 + 6);
 
   ctx.fillStyle = "rgba(232,238,242,0.95)";
-  ctx.fillText(text.toUpperCase(), w / 2, h / 2 + 3);
+  ctx.fillText(text.toUpperCase(), 92, h / 2 + 3);
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -499,7 +576,7 @@ function makeTitleTexture(text) {
   return tex;
 }
 
-(function createTiles(){
+(function createTiles() {
   const coverTex = makeCoverTexture();
 
   for (let i = 0; i < CHAPTERS.length; i++) {
@@ -544,6 +621,7 @@ function makeTitleTexture(text) {
     const cover = new THREE.Mesh(geo, mat);
     cover.userData.chapter = ch;
 
+    // Title sprite (clean text)
     const titleTex = makeTitleTexture(ch.label);
     const titleMat = new THREE.SpriteMaterial({
       map: titleTex,
@@ -552,14 +630,15 @@ function makeTitleTexture(text) {
       opacity: 0.0
     });
     const title = new THREE.Sprite(titleMat);
-    title.scale.set(1.95 * TUNING.titleScale, 0.40 * TUNING.titleScale, 1);
+    title.scale.set(2.05 * TUNING.titleScale, 0.40 * TUNING.titleScale, 1);
 
+    // Group
     const g = new THREE.Group();
     g.add(cover);
     g.add(title);
 
-    // Title sits higher (not on top of the tile)
-    title.position.set(0, TUNING.titleOffsetY, 0);
+    // Designy placement: off to side + slightly in front
+    title.position.set(TUNING.titleOffset.x, TUNING.titleOffset.y, TUNING.titleOffset.z);
 
     tileGroup.add(g);
     clickableMeshes.push(cover);
@@ -568,7 +647,7 @@ function makeTitleTexture(text) {
 })();
 
 // =======================
-// Model
+// Model loading
 // =======================
 const gltfLoader = new GLTFLoader(manager);
 
@@ -589,7 +668,7 @@ function addFallbackModel() {
 }
 
 gltfLoader.load(
-  ASSETS.modelMeOnHill,
+  ASSETS.model,
   (gltf) => {
     const model = gltf.scene;
 
@@ -606,7 +685,7 @@ gltfLoader.load(
     box2.getCenter(centerPoint);
     model.position.sub(centerPoint);
 
-    model.position.y += -1.28;
+    model.position.y += -1.32;
 
     center.add(model);
   },
@@ -615,7 +694,7 @@ gltfLoader.load(
 );
 
 // =======================
-// Panel (muffle audio)
+// Panel (muffle audio while open)
 // =======================
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
@@ -658,7 +737,7 @@ const pointerNdc = new THREE.Vector2();
 canvas.addEventListener("click", async (e) => {
   if (panel?.classList.contains("is-open")) return;
 
-  await ensureAudio().catch(()=>{});
+  await ensureAudio().catch(() => {});
 
   const rect = canvas.getBoundingClientRect();
   pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -727,7 +806,6 @@ function nearestChapter(v) {
   return best;
 }
 
-// Normalize across chapter progress range
 const PROGRESS_MIN = Math.min(...CHAPTERS.map(c => c.progress));
 const PROGRESS_MAX = Math.max(...CHAPTERS.map(c => c.progress));
 function chapterT(p) {
@@ -747,6 +825,7 @@ const vCamDir = new THREE.Vector3();
 const vDir = new THREE.Vector3();
 const vBlend = new THREE.Vector3();
 const vToCam = new THREE.Vector3();
+const vTmp = new THREE.Vector3();
 
 // =======================
 // Render loop
@@ -761,7 +840,7 @@ function tick() {
   timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, TUNING.lerp);
 
   const idleMs = performance.now() - timeline.lastInteractT;
-  if (!dragging && idleMs > 720) {
+  if (!dragging && idleMs > 760) {
     const near = nearestChapter(timeline.value);
     timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.010);
     if (activeChapterId !== near.id) {
@@ -771,14 +850,14 @@ function tick() {
     }
   }
 
-  // Corkscrew driver
+  // Scroll driver
   const t = chapterT(timeline.value);
   const steps = (CHAPTERS.length - 1);
   const centerIdx = t * steps;
 
-  // Camera
-  const baseAngle = 1.08;
-  const camAngle = baseAngle + centerIdx * TUNING.spiralAngleStep;
+  // Camera corkscrew (slow)
+  const baseAngle = 1.06;
+  const camAngle = baseAngle + centerIdx * TUNING.camAngleStep;
 
   const camY = TUNING.camYBase - centerIdx * TUNING.camYPerStep;
   const camX = Math.cos(camAngle) * TUNING.camRadius;
@@ -791,32 +870,56 @@ function tick() {
   vCamDir.set(Math.cos(camAngle), 0, Math.sin(camAngle));
 
   // Background drift
-  backgroundSphere.rotation.y = camAngle * 0.15 + 0.35;
-  backgroundSphere.rotation.x = Math.sin(camAngle * 0.11) * 0.028;
+  backgroundSphere.rotation.y = camAngle * 0.14 + 0.35;
+  backgroundSphere.rotation.x = Math.sin(camAngle * 0.10) * 0.026;
 
-  // Fog motion
-  fogGroup.rotation.y += dt * 0.06;
+  // Fog: swirling + drifting like real mist
+  fogGroup.rotation.y += dt * 0.045;
+  fogGroup.position.x = Math.sin(time * 0.10) * 0.35;
+  fogGroup.position.z = Math.cos(time * 0.12) * 0.35;
+
   for (const puff of fogPuffs) {
     const d = puff.userData;
+
     d.ang += dt * d.speed;
-    const y = d.y + Math.sin(time * 0.7 + d.seed) * d.bobAmp;
-    puff.position.set(Math.cos(d.ang) * d.radius, y, Math.sin(d.ang) * d.radius);
+
+    // “wind” drift: slowly changes radius + sideways slide
+    const driftX = Math.sin(time * 0.25 + d.seed) * d.drift;
+    const driftZ = Math.cos(time * 0.22 + d.seed) * d.drift;
+    const radiusBreath = d.radius + Math.sin(time * 0.18 + d.seed) * 0.55;
+
+    const y = d.yBase + Math.sin(time * 0.7 + d.seed) * d.bobAmp;
+
+    puff.position.set(
+      Math.cos(d.ang) * radiusBreath + driftX,
+      y,
+      Math.sin(d.ang) * radiusBreath + driftZ
+    );
+
     puff.rotation.z += dt * d.spin;
+
+    // slow “breathing” scale
+    const s = d.scaleBase * (0.92 + 0.12 * Math.sin(time * 0.35 + d.seed));
+    puff.scale.setScalar(s);
+
+    // billboard to camera for fog softness
     puff.lookAt(camera.position);
   }
 
-  // Tiles orbit (face outward, not camera)
+  // Tiles orbit (farther out, more padding)
   for (const item of tileItems) {
     const { group, cover, title, index } = item;
     const rel = index - centerIdx;
 
-    const front = clamp01(1.0 - Math.abs(rel) / 1.15);
+    const front = clamp01(1.0 - Math.abs(rel) / 1.25);
 
-    const ang = camAngle + rel * TUNING.spiralAngleStep;
-    const y = TUNING.spiralYOffset - rel * TUNING.spiralYStep + Math.sin(time * 1.05 + index * 0.7) * 0.03;
+    const ang = camAngle + rel * TUNING.tileAngleStep;
+
+    const y = TUNING.spiralYOffset - rel * TUNING.spiralYStep
+      + Math.sin(time * 0.95 + index * 0.7) * 0.03;
 
     let r = TUNING.spiralRadius + front * TUNING.frontPush + Math.abs(rel) * TUNING.radiusGrow;
-    r = Math.min(r, TUNING.camRadius - 1.0);
+    r = Math.min(r, TUNING.camRadius - 1.5);
 
     vDir.set(Math.cos(ang), 0, Math.sin(ang));
     const blend = clamp01(front * TUNING.frontFacingBlend);
@@ -824,7 +927,7 @@ function tick() {
 
     group.position.set(vBlend.x * r, y, vBlend.z * r);
 
-    // outward facing
+    // outward facing (not always looking at camera)
     group.lookAt(0, y, 0);
     group.rotateY(Math.PI);
 
@@ -834,23 +937,24 @@ function tick() {
     const vis = 1.0 - smoothstep(fadeStart, fadeEnd, dAbs);
 
     cover.material.uniforms.uOpacity.value = clamp01(vis);
-    cover.material.uniforms.uWobble.value = time * 1.4 + timeline.velocity * 38.0;
+    cover.material.uniforms.uWobble.value = time * 1.2 + timeline.velocity * 34.0;
 
+    // slightly emphasize front
     const s = 0.92 + front * 0.18;
     group.scale.setScalar(s);
 
-    // Title: billboard to camera, fade when not on front side
+    // Title: sits forward/side, billboards to camera, fades when not on front side
     title.lookAt(camera.position);
 
     vToCam.copy(camera.position).sub(group.position).normalize();
     const facing = clamp01(vBlend.dot(vToCam));
-    const titleVis = clamp01(smoothstep(0.18, 0.58, facing) * vis);
+    const titleVis = clamp01(smoothstep(0.18, 0.60, facing) * vis);
 
     title.material.opacity = titleVis;
   }
 
-  // keep hero stable
-  center.rotation.y = Math.sin(time * 0.10) * 0.010;
+  // Keep hero stable
+  center.rotation.y = Math.sin(time * 0.09) * 0.010;
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
