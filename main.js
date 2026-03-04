@@ -1,8 +1,14 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-/** Repo base path for GitHub Pages project sites */
-const BASE = "/Orbit_Website";
+/**
+ * IMPORTANT:
+ * We compute a base URL from the file location, so this works on:
+ * - GitHub Pages project sites: https://username.github.io/Orbit_Website/
+ * - Local dev servers: http://localhost:xxxx/Orbit_Website/
+ * - Any renamed repo (no hard-coded "/Orbit_Website")
+ */
+const BASE_URL = new URL("./", import.meta.url);
 
 // DOM
 const canvas = document.getElementById("webgl");
@@ -17,27 +23,27 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-// Immediate proof JS is running:
+// quick proof JS is running
 hintEl.textContent = "JS running ✅ Scroll / drag to orbit";
 
-// Assets (absolute, GitHub Pages safe)
+// Assets
 const ASSETS = {
-  modelMeOnHill: `${BASE}/assets/models/me_on_hill.glb`,
-  backgroundSphereTex: `${BASE}/assets/backgrounds/sky_sphere.jpg`
+  modelMeOnHill: new URL("assets/models/me_on_hill.glb", BASE_URL).href,
+  backgroundSphereTex: new URL("assets/backgrounds/sky_sphere.jpg", BASE_URL).href
 };
 
-// Greta-style chapters (timeline stops)
+// Timeline “chapters”
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: `${BASE}/pages/about.html` },
-  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: `${BASE}/pages/gallery.html` },
-  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: `${BASE}/pages/achievements.html` },
-  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: `${BASE}/pages/contact.html` }
+  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: new URL("pages/about.html", BASE_URL).href },
+  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: new URL("pages/gallery.html", BASE_URL).href },
+  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: new URL("pages/achievements.html", BASE_URL).href },
+  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: new URL("pages/contact.html", BASE_URL).href }
 ];
 
 // Chapter UI
 let activeChapterId = null;
 
-function buildChapterUI(){
+function buildChapterUI() {
   chaptersEl.innerHTML = "";
 
   CHAPTERS.forEach((ch) => {
@@ -47,7 +53,7 @@ function buildChapterUI(){
     dot.title = ch.label;
     dot.addEventListener("click", () => {
       timeline.target = ch.progress;
-      openPanel(ch).catch(()=>{});
+      openPanel(ch).catch(() => {});
     });
     chaptersEl.appendChild(dot);
   });
@@ -58,7 +64,7 @@ function buildChapterUI(){
   chaptersEl.appendChild(label);
 }
 
-function setActiveDot(id){
+function setActiveDot(id) {
   const dots = Array.from(chaptersEl.querySelectorAll(".chapterDot"));
   dots.forEach((d, i) => d.classList.toggle("is-active", CHAPTERS[i]?.id === id));
 }
@@ -105,8 +111,8 @@ scene.add(center);
   center.add(ground);
 }
 
-// Procedural sky (always visible)
-function makeSkyTexture(){
+// Procedural sky texture
+function makeSkyTexture() {
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -120,13 +126,13 @@ function makeSkyTexture(){
   ctx.fillRect(0, 0, w, h);
 
   ctx.fillStyle = "rgba(255,255,255,0.9)";
-  for (let i=0;i<1000;i++){
-    const x = Math.random()*w;
-    const y = Math.random()*h;
-    const r = Math.random()*1.3;
-    ctx.globalAlpha = 0.18 + Math.random()*0.65;
+  for (let i = 0; i < 1000; i++) {
+    const x = Math.random() * w;
+    const y = Math.random() * h;
+    const r = Math.random() * 1.3;
+    ctx.globalAlpha = 0.18 + Math.random() * 0.65;
     ctx.beginPath();
-    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -160,7 +166,7 @@ scene.add(folderGroup);
 const folderMeshes = [];
 createFolderRing();
 
-function createFolderRing(){
+function createFolderRing() {
   const radius = 3.25;
   const y = 0.18;
 
@@ -217,19 +223,19 @@ function createFolderRing(){
   }
 }
 
-function makeFolderTexture(label){
+function makeFolderTexture(label) {
   const w = 768, h = 512;
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   const ctx = c.getContext("2d");
 
-  ctx.clearRect(0,0,w,h);
+  ctx.clearRect(0, 0, w, h);
 
   const pad = 52;
-  const x = pad, y = 120, fw = w - pad*2, fh = h - 170;
+  const x = pad, y = 120, fw = w - pad * 2, fh = h - 170;
 
   ctx.fillStyle = "rgba(232,238,242,0.94)";
-  roundRect(ctx, x, y-56, fw*0.46, 78, 28);
+  roundRect(ctx, x, y - 56, fw * 0.46, 78, 28);
   ctx.fill();
 
   ctx.fillStyle = "rgba(232,238,242,0.90)";
@@ -238,28 +244,28 @@ function makeFolderTexture(label){
 
   ctx.strokeStyle = "rgba(7,10,12,0.22)";
   ctx.lineWidth = 10;
-  roundRect(ctx, x+18, y+18, fw-36, fh-36, 28);
+  roundRect(ctx, x + 18, y + 18, fw - 36, fh - 36, 28);
   ctx.stroke();
 
   ctx.fillStyle = "rgba(7,10,12,0.82)";
   ctx.font = "800 64px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label.toUpperCase(), w/2, y + fh/2 + 10);
+  ctx.fillText(label.toUpperCase(), w / 2, y + fh / 2 + 10);
 
   const tex = new THREE.CanvasTexture(c);
   tex.anisotropy = 8;
   return tex;
 }
 
-function roundRect(ctx, x, y, w, h, r){
-  const rr = Math.min(r, w/2, h/2);
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
-  ctx.moveTo(x+rr, y);
-  ctx.arcTo(x+w, y, x+w, y+h, rr);
-  ctx.arcTo(x+w, y+h, x, y+h, rr);
-  ctx.arcTo(x, y+h, x, y, rr);
-  ctx.arcTo(x, y, x+w, y, rr);
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
 
@@ -282,36 +288,38 @@ canvas.addEventListener("click", (e) => {
   if (!ch) return;
 
   timeline.target = ch.progress;
-  openPanel(ch).catch(()=>{});
+  openPanel(ch).catch(() => {});
 });
 
 // Panel
 panelClose.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
-async function openPanel(ch){
+async function openPanel(ch) {
   panelTitle.textContent = ch.label;
   panel.classList.add("is-open");
   panel.setAttribute("aria-hidden", "false");
 
-  try{
-    const res = await fetch(ch.page);
+  try {
+    const res = await fetch(ch.page, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     panelBody.innerHTML = await res.text();
-  }catch{
+  } catch {
     panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
   }
 }
-function closePanel(){
+
+function closePanel() {
   panel.classList.remove("is-open");
   panel.setAttribute("aria-hidden", "true");
   panelTitle.textContent = "";
   panelBody.innerHTML = "";
 }
 
-// Greta-style timeline controls
-const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: 0 };
+// Timeline controls
+const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: performance.now() };
 
-function normalizeWheel(e){
+function normalizeWheel(e) {
   let dy = e.deltaY;
   if (e.deltaMode === 1) dy *= 16;
   else if (e.deltaMode === 2) dy *= window.innerHeight;
@@ -348,10 +356,10 @@ canvas.addEventListener("pointerup", (e) => {
   try { canvas.releasePointerCapture(e.pointerId); } catch {}
 });
 
-function nearestChapter(v){
+function nearestChapter(v) {
   let best = CHAPTERS[0];
   let bestD = Infinity;
-  for (const ch of CHAPTERS){
+  for (const ch of CHAPTERS) {
     const d = Math.abs(ch.progress - v);
     if (d < bestD) { bestD = d; best = ch; }
   }
@@ -366,7 +374,7 @@ manager.onProgress = (_url, loaded, total) => {
   loaderPct.textContent = `${pct}%`;
 };
 manager.onLoad = () => {
-  setTimeout(() => loaderEl.classList.add("is-hidden"), 250);
+  loaderEl.classList.add("is-hidden");
   hintEl.textContent = "Scroll / drag to orbit • Click folders";
 };
 
@@ -438,16 +446,14 @@ const ORBIT_TURNS = 1.55;
 const ORBIT_RADIUS = 6.0;
 
 requestAnimationFrame(tick);
-function tick(){
+function tick() {
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // inertia + smoothing
   timeline.velocity *= Math.pow(0.86, dt * 60);
   timeline.target = THREE.MathUtils.clamp(timeline.target + timeline.velocity, 0, 1);
   timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, 0.09);
 
-  // snapping
   const idleMs = performance.now() - timeline.lastInteractT;
   if (!dragging && idleMs > 550) {
     const near = nearestChapter(timeline.value);
@@ -462,7 +468,7 @@ function tick(){
   const azimuth = timeline.value * ORBIT_TURNS * Math.PI * 2.0;
 
   const pitchStart = THREE.MathUtils.degToRad(64);
-  const pitchEnd   = THREE.MathUtils.degToRad(80);
+  const pitchEnd = THREE.MathUtils.degToRad(80);
   const pitch = THREE.MathUtils.lerp(pitchStart, pitchEnd, smoothstep(0.06, 0.94, timeline.value));
 
   const y = Math.cos(pitch) * ORBIT_RADIUS;
@@ -494,15 +500,15 @@ function tick(){
   requestAnimationFrame(tick);
 }
 
-function smoothstep(edge0, edge1, x){
+function smoothstep(edge0, edge1, x) {
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
 }
-function wrapAngle(a){
+function wrapAngle(a) {
   const twoPi = Math.PI * 2;
   return ((a % twoPi) + twoPi) % twoPi;
 }
-function smallestAngleDiff(a, b){
+function smallestAngleDiff(a, b) {
   const twoPi = Math.PI * 2;
   let d = Math.abs(a - b) % twoPi;
   if (d > Math.PI) d = twoPi - d;
