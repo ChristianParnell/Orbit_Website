@@ -1,4 +1,4 @@
-﻿:root{
+:root{
   --bg: #070A0C;
   --text: #E8EEF2;
   --muted: rgba(232,238,242,0.7);
@@ -16,7 +16,7 @@ body{
   background: var(--bg);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-  overflow:hidden; /* Greta-style: no page scroll */
+  overflow:hidden; /* Greta-like: no page scroll */
 }
 
 #webgl{
@@ -131,7 +131,7 @@ body{
   max-width: 60vw;
 }
 
-/* Chapter markers */
+/* Chapters */
 .chapters{
   pointer-events:auto;
   display:flex;
