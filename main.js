@@ -1,16 +1,20 @@
 ﻿import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
+/* If you see this text change on the site, main.js is definitely running */
+const hintEl = document.getElementById("hint");
+hintEl.textContent = "JS loaded ✅ Scroll / drag to orbit";
+
 const ASSETS = {
-  modelMeOnHill: "./assets/models/me_on_hill.glb",
-  backgroundSphereTex: "./assets/backgrounds/sky_sphere.jpg"
+  modelMeOnHill: "/Orbit_Website/assets/models/me_on_hill.glb",
+  backgroundSphereTex: "/Orbit_Website/assets/backgrounds/sky_sphere.jpg"
 };
 
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: "./pages/about.html" },
-  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: "./pages/gallery.html" },
-  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: "./pages/achievements.html" },
-  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: "./pages/contact.html" }
+  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: "/Orbit_Website/pages/about.html" },
+  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: "/Orbit_Website/pages/gallery.html" },
+  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: "/Orbit_Website/pages/achievements.html" },
+  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: "/Orbit_Website/pages/contact.html" }
 ];
 
 // DOM
@@ -20,7 +24,6 @@ const loaderEl = document.getElementById("loader");
 const loaderFill = document.getElementById("loaderFill");
 const loaderPct = document.getElementById("loaderPct");
 
-const hintEl = document.getElementById("hint");
 const chaptersEl = document.getElementById("chapters");
 
 const panel = document.getElementById("panel");
@@ -28,15 +31,11 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-// Visible proof JS is running (even if console is hidden)
-hintEl.textContent = "JS loaded ✅ Scroll / drag to orbit";
-
-// ------- Chapters UI -------
+// Chapters UI
 let activeChapterId = null;
 
 function buildChapterUI(){
   chaptersEl.innerHTML = "";
-
   CHAPTERS.forEach((ch) => {
     const dot = document.createElement("button");
     dot.type = "button";
@@ -62,7 +61,7 @@ function setActiveDot(id){
 
 buildChapterUI();
 
-// ------- Three.js setup -------
+// Three.js setup
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -102,7 +101,7 @@ scene.add(center);
   center.add(ground);
 }
 
-// Procedural sky
+// Procedural sky (always shows even if jpg missing)
 function makeSkyTexture(){
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -144,13 +143,12 @@ let backgroundSphere = null;
     side: THREE.BackSide
   });
   mat.fog = false;
-
   backgroundSphere = new THREE.Mesh(geo, mat);
   backgroundSphere.rotation.y = 0.35;
   scene.add(backgroundSphere);
 }
 
-// ------- Folder ring -------
+// Folder ring
 const folderGroup = new THREE.Group();
 scene.add(folderGroup);
 
@@ -180,15 +178,12 @@ function createFolderRing(){
         varying vec2 vUv;
         uniform float uCurve;
         uniform float uWobble;
-
         void main(){
           vUv = uv;
           vec3 p = position;
           float x = p.x;
-
           p.z -= (x*x) * uCurve;
           p.y += sin((uv.x * 3.14159) + uWobble) * 0.01;
-
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }
       `,
@@ -196,7 +191,6 @@ function createFolderRing(){
         varying vec2 vUv;
         uniform sampler2D uMap;
         uniform float uOpacity;
-
         void main(){
           vec4 tex = texture2D(uMap, vUv);
           if(tex.a < 0.02) discard;
@@ -264,7 +258,7 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.closePath();
 }
 
-// ------- Picking -------
+// Picking
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
@@ -286,28 +280,21 @@ canvas.addEventListener("click", (e) => {
   openPanel(ch).catch(()=>{});
 });
 
-// ------- Panel -------
+// Panel
 panelClose.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
-
-window.addEventListener("hashchange", () => {
-  const id = (location.hash || "").replace("#", "");
-  const ch = CHAPTERS.find(c => c.id === id);
-  if (ch) {
-    timeline.target = ch.progress;
-    openPanel(ch).catch(()=>{});
-  }
-});
 
 async function openPanel(ch){
   panelTitle.textContent = ch.label;
   panel.classList.add("is-open");
   panel.setAttribute("aria-hidden", "false");
 
-  if (location.hash !== `#${ch.id}`) history.replaceState(null, "", `#${ch.id}`);
-
-  const res = await fetch(ch.page);
-  panelBody.innerHTML = await res.text();
+  try{
+    const res = await fetch(ch.page);
+    panelBody.innerHTML = await res.text();
+  }catch{
+    panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
+  }
 }
 
 function closePanel(){
@@ -315,10 +302,9 @@ function closePanel(){
   panel.setAttribute("aria-hidden", "true");
   panelTitle.textContent = "";
   panelBody.innerHTML = "";
-  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
 }
 
-// ------- Greta-style timeline input -------
+// Timeline input
 const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: 0 };
 
 function normalizeWheel(e){
@@ -368,7 +354,7 @@ function nearestChapter(v){
   return best;
 }
 
-// ------- Loader + asset loading -------
+// Loader + loading manager
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
@@ -401,10 +387,6 @@ gltfLoader.load(
   ASSETS.modelMeOnHill,
   (gltf) => {
     const model = gltf.scene;
-
-    model.traverse((o) => {
-      if (o.isMesh && o.material?.map) o.material.map.colorSpace = THREE.SRGBColorSpace;
-    });
 
     const box = new THREE.Box3().setFromObject(model);
     const size = new THREE.Vector3();
@@ -439,13 +421,6 @@ gltfLoader.load(
   }
 );
 
-// Hash open on load
-{
-  const id = (location.hash || "").replace("#", "");
-  const ch = CHAPTERS.find(c => c.id === id);
-  if (ch) { timeline.value = ch.progress; timeline.target = ch.progress; openPanel(ch).catch(()=>{}); }
-}
-
 // Resize
 window.addEventListener("resize", () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -463,16 +438,19 @@ function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // inertia
   timeline.velocity *= Math.pow(0.86, dt * 60);
   timeline.target = THREE.MathUtils.clamp(timeline.target + timeline.velocity, 0, 1);
   timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, 0.09);
 
-  // snapping after idle
   const idleMs = performance.now() - timeline.lastInteractT;
   if (!dragging && idleMs > 550) {
     const near = nearestChapter(timeline.value);
     timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.018);
+    if (activeChapterId !== near.id) {
+      activeChapterId = near.id;
+      setActiveDot(activeChapterId);
+      hintEl.textContent = `${near.label} • Click folder to open`;
+    }
   }
 
   const azimuth = timeline.value * ORBIT_TURNS * Math.PI * 2.0;
@@ -493,29 +471,15 @@ function tick(){
   backgroundSphere.rotation.x = Math.sin(azimuth * 0.15) * 0.03;
 
   const camAngle = wrapAngle(azimuth);
-  let nearest = null;
-  let nearestDiff = Infinity;
-
   for (const mesh of folderMeshes) {
     const ch = mesh.userData.chapter;
     const folderAngle = wrapAngle(THREE.MathUtils.degToRad(ch.angleDeg));
     const diff = smallestAngleDiff(camAngle, folderAngle);
 
-    if (diff < nearestDiff) { nearestDiff = diff; nearest = ch; }
-
     const visibility = 1.0 - smoothstep(0.58, 1.15, diff);
     mesh.material.uniforms.uOpacity.value = THREE.MathUtils.clamp(visibility, 0, 1);
     mesh.material.uniforms.uWobble.value = time * 2.0 + timeline.velocity * 80.0;
-
     mesh.position.y = 0.18 + Math.sin(time * 1.2 + folderAngle) * 0.03;
-  }
-
-  if (nearest && nearestDiff < 0.95) {
-    if (activeChapterId !== nearest.id) {
-      activeChapterId = nearest.id;
-      setActiveDot(activeChapterId);
-      hintEl.textContent = `${nearest.label} • Click folder to open`;
-    }
   }
 
   center.rotation.y = Math.sin(time * 0.25) * 0.05;
