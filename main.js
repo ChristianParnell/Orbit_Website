@@ -23,7 +23,6 @@ const panelClose = document.getElementById("panelClose");
 function hardFail(msg, err) {
   console.error(msg, err || "");
   if (hintEl) hintEl.textContent = `❌ ${msg}`;
-
   const box = document.createElement("div");
   box.style.position = "fixed";
   box.style.left = "16px";
@@ -45,12 +44,12 @@ function hardFail(msg, err) {
   document.body.appendChild(box);
 }
 
-if (!canvas) hardFail("Canvas #webgl not found. Check your index.html has <canvas id='webgl'>.");
-if (!hintEl) hardFail("HUD #hint not found. Check your index.html has <div id='hint'>.");
-if (!chaptersEl) hardFail("HUD #chapters not found. Check your index.html has <div id='chapters'>.");
+if (!canvas) hardFail("Canvas #webgl not found. Check index.html has <canvas id='webgl'>.");
+if (!hintEl) hardFail("HUD #hint not found. Check index.html has <div id='hint'>.");
+if (!chaptersEl) hardFail("HUD #chapters not found. Check index.html has <div id='chapters'>.");
 
 console.log("✅ Orbit main.js running:", import.meta.url);
-hintEl.textContent = "main.js loaded ✅ building spiral…";
+hintEl.textContent = "main.js loaded ✅ building corkscrew…";
 
 // Helpers
 const u = (p) => new URL(p, BASE_URL).href;
@@ -75,33 +74,40 @@ const CHAPTERS = [
   { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: u("pages/contact.html") },
 ];
 
-// ===== Spiral / Camera tuning (THIS is the fun part 😈) =====
+// ============================================================
+// 🔥 Corkscrew tuning knobs (these are your “make it feel right” controls)
+// ============================================================
 const TUNING = {
-  // Bigger hero model
-  modelTargetSize: 4.6,     // was ~2.2 — bump this for BIGGER model presence
+  // BIGGER model presence
+  modelTargetSize: 9.0,   // << make this 10–12 if you want it even more massive
 
-  // Spiral geometry (folders)
-  spiralRadius: 3.35,
-  spiralAngleStep: 1.05,    // radians per “chapter step” around the model (lower = slower rotation)
-  spiralYStep: 0.62,        // vertical drop per chapter step (higher = steeper downward spiral)
-  spiralYOffset: 0.55,      // overall height of the spiral ring
+  // Slow scroll/orbit
+  scrollSensitivity: 0.00022, // lower = slower scroll response
+  dragSensitivity: 0.024,     // lower = slower drag orbit
+  inertia: 0.91,              // higher = more floaty glide
+  lerp: 0.045,                // lower = slower easing / “heavier” movement
 
-  // Camera synced to spiral
-  camRadius: 7.4,
-  camYBase: 2.35,
-  camYPerStep: 0.22,        // camera gently moves down as you scroll forward
-  lookYBase: 0.40,
-  lookYPerStep: 0.12,
+  // Camera orbit (slower + closer so model looks bigger)
+  camRadius: 6.2,         // smaller = closer = bigger model on screen
+  camYBase: 3.15,
+  camYPerStep: 0.42,      // camera drifts downward while scrolling (stronger corkscrew feel)
+  lookYBase: 0.95,
+  lookYPerStep: 0.22,
 
-  // Motion feel
-  scrollSensitivity: 0.00065, // wheel → momentum (lower = slower)
-  dragSensitivity: 0.055,     // drag → momentum (lower = slower)
-  inertia: 0.86,              // higher = more glide
-  lerp: 0.075,                // lower = heavier camera easing
+  // Spiral (folders corkscrew downward around model)
+  spiralRadius: 3.0,
+  spiralAngleStep: 0.70,  // lower = slower rotation around model
+  spiralYStep: 0.92,      // higher = more “downward corkscrew”
+  spiralYOffset: 1.55,
+
+  // Keep folders panning IN FRONT of model (camera-facing bias)
+  frontFacingBlend: 0.85, // 0..1, higher = more folders pulled to camera-facing side
+  frontPush: 1.15,        // how much the “front” folder is pushed outward (towards camera)
+  radiusGrow: 0.12,       // growth as items move away in the spiral
 
   // Visibility shaping
-  visibleRange: 2.2,          // how many “steps” away folders stay visible
-  fadeSoftness: 0.55,         // fade curve softness
+  visibleRange: 2.9,
+  fadeSoftness: 0.75,
 };
 // ============================================================
 
@@ -110,7 +116,6 @@ let activeChapterId = null;
 
 function buildChapterUI() {
   chaptersEl.innerHTML = "";
-
   CHAPTERS.forEach((ch) => {
     const dot = document.createElement("button");
     dot.type = "button";
@@ -145,7 +150,7 @@ manager.onProgress = (_url, loaded, total) => {
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  if (hintEl) hintEl.textContent = "Scroll / drag to spiral • Click folders";
+  if (hintEl) hintEl.textContent = "Scroll / drag to corkscrew • Click folders";
 };
 
 // Three.js setup
@@ -155,21 +160,19 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x070A0C, 8, 26);
+scene.fog = new THREE.Fog(0x070A0C, 9, 30);
 scene.background = new THREE.Color(0x070A0C);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 240);
-camera.position.set(0, 2.0, 7.0);
+camera.position.set(0, 2.5, 6.5);
 
 const clock = new THREE.Clock();
 
 // Lights
 scene.add(new THREE.HemisphereLight(0x9fd3ff, 0x0b0f12, 0.95));
-
 const key = new THREE.DirectionalLight(0xffffff, 1.1);
 key.position.set(3.6, 4.6, 2.6);
 scene.add(key);
-
 const rim = new THREE.DirectionalLight(0xb7c6ff, 0.55);
 rim.position.set(-5.4, 2.2, -3.2);
 scene.add(rim);
@@ -180,11 +183,11 @@ scene.add(center);
 
 // Ground placeholder
 {
-  const groundGeo = new THREE.CircleGeometry(2.6, 72);
+  const groundGeo = new THREE.CircleGeometry(2.8, 72);
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2a22, roughness: 1, metalness: 0 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1.05;
+  ground.position.y = -1.18;
   center.add(ground);
 }
 
@@ -223,7 +226,7 @@ function makeSkyTexture() {
 // Background sphere (fog disabled)
 let backgroundSphere = null;
 {
-  const geo = new THREE.SphereGeometry(72, 48, 48);
+  const geo = new THREE.SphereGeometry(76, 48, 48);
   const mat = new THREE.MeshBasicMaterial({
     map: makeSkyTexture(),
     color: 0xffffff,
@@ -247,7 +250,7 @@ texLoader.load(
     backgroundSphere.material.needsUpdate = true;
   },
   undefined,
-  () => { /* keep procedural sky */ }
+  () => {}
 );
 
 // Folder spiral group
@@ -262,7 +265,7 @@ function createFolderSpiral() {
     const texture = makeFolderTexture(ch.label);
     texture.colorSpace = THREE.SRGBColorSpace;
 
-    const geo = new THREE.PlaneGeometry(1.55, 0.96, 30, 1);
+    const geo = new THREE.PlaneGeometry(1.65, 1.02, 30, 1);
 
     const mat = new THREE.ShaderMaterial({
       transparent: true,
@@ -282,7 +285,7 @@ function createFolderSpiral() {
           vec3 p = position;
           float x = p.x;
           p.z -= (x*x) * uCurve;
-          p.y += sin((uv.x * 3.14159) + uWobble) * 0.01;
+          p.y += sin((uv.x * 3.14159) + uWobble) * 0.012;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }
       `,
@@ -300,7 +303,6 @@ function createFolderSpiral() {
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.userData.chapter = ch;
-
     folderGroup.add(mesh);
     folderMeshes.push(mesh);
   }
@@ -357,17 +359,17 @@ const gltfLoader = new GLTFLoader(manager);
 
 function addFallbackModel() {
   const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.55, 1.05, 10, 18),
+    new THREE.CapsuleGeometry(0.7, 1.4, 10, 18),
     new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
   );
-  body.position.y = -0.35;
+  body.position.y = -0.45;
   center.add(body);
 
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.40, 20, 20),
+    new THREE.SphereGeometry(0.5, 20, 20),
     new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.9 })
   );
-  head.position.y = 0.85;
+  head.position.y = 1.1;
   center.add(head);
 }
 
@@ -376,31 +378,28 @@ gltfLoader.load(
   (gltf) => {
     const model = gltf.scene;
 
-    // Measure model bounds
     const box = new THREE.Box3().setFromObject(model);
     const size = new THREE.Vector3();
     box.getSize(size);
 
-    // Scale up (bigger presence)
+    // WAY bigger scale target
     const maxAxis = Math.max(size.x, size.y, size.z);
     const scale = TUNING.modelTargetSize / Math.max(0.0001, maxAxis);
     model.scale.setScalar(scale);
 
-    // Recenter after scale
+    // Recenter
     const box2 = new THREE.Box3().setFromObject(model);
     const centerPoint = new THREE.Vector3();
     box2.getCenter(centerPoint);
     model.position.sub(centerPoint);
 
-    // Place nicely on “ground”
-    model.position.y += -1.05;
+    // Sit on ground
+    model.position.y += -1.22;
 
     center.add(model);
   },
   undefined,
-  () => {
-    addFallbackModel();
-  }
+  () => addFallbackModel()
 );
 
 // Picking (click folders)
@@ -503,7 +502,7 @@ function nearestChapter(v) {
   return best;
 }
 
-// Progress normalization across your chosen chapter range (so your 0.06..0.84 values work perfectly)
+// Normalize across chapter progress range
 const PROGRESS_MIN = Math.min(...CHAPTERS.map(c => c.progress));
 const PROGRESS_MAX = Math.max(...CHAPTERS.map(c => c.progress));
 function chapterT(p) {
@@ -518,22 +517,27 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
 });
 
+// Temp vectors (avoid GC)
+const vCamDir = new THREE.Vector3();
+const vDir = new THREE.Vector3();
+const vBlend = new THREE.Vector3();
+
 // Render loop
 requestAnimationFrame(tick);
 function tick() {
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // Inertia + clamp
+  // Heavy + slow motion
   timeline.velocity *= Math.pow(TUNING.inertia, dt * 60);
   timeline.target = clamp01(timeline.target + timeline.velocity);
   timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, TUNING.lerp);
 
-  // Gentle snap when idle (keeps it feeling “designed”)
+  // Gentle snap when idle
   const idleMs = performance.now() - timeline.lastInteractT;
-  if (!dragging && idleMs > 520) {
+  if (!dragging && idleMs > 620) {
     const near = nearestChapter(timeline.value);
-    timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.018);
+    timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.012);
     if (activeChapterId !== near.id) {
       activeChapterId = near.id;
       setActiveDot(activeChapterId);
@@ -541,69 +545,75 @@ function tick() {
     }
   }
 
-  // --- Spiral math (inspired by “Year of Greta” approach: progress drives rotation + vertical offset) ---
-  const t = chapterT(timeline.value);                 // 0..1 across your chapter range
+  // Corkscrew driver
+  const t = chapterT(timeline.value);     // 0..1
   const steps = (CHAPTERS.length - 1);
-  const centerIdx = t * steps;                        // continuous chapter index (0..steps)
+  const centerIdx = t * steps;
 
-  // Camera angle is synced to spiral (slow + smooth)
-  const baseAngle = 0.95;                             // starting orientation
+  // Camera angle synced to helix (slow)
+  const baseAngle = 1.05;
   const camAngle = baseAngle + centerIdx * TUNING.spiralAngleStep;
 
+  // Camera position (closer = model bigger)
   const camY = TUNING.camYBase - centerIdx * TUNING.camYPerStep;
   const camX = Math.cos(camAngle) * TUNING.camRadius;
   const camZ = Math.sin(camAngle) * TUNING.camRadius;
-
   camera.position.set(camX, camY, camZ);
 
+  // Look target (drifts down with scroll)
   const lookY = TUNING.lookYBase - centerIdx * TUNING.lookYPerStep;
   camera.lookAt(0, lookY, 0);
 
-  // Background drift (slower, calmer)
-  backgroundSphere.rotation.y = camAngle * 0.18 + 0.35;
-  backgroundSphere.rotation.x = Math.sin(camAngle * 0.12) * 0.03;
+  // Camera direction on ground plane (origin -> camera)
+  vCamDir.set(Math.cos(camAngle), 0, Math.sin(camAngle));
 
-  // Folder helix: position each chapter along a spiral around the model.
+  // Background drift
+  backgroundSphere.rotation.y = camAngle * 0.16 + 0.35;
+  backgroundSphere.rotation.x = Math.sin(camAngle * 0.11) * 0.028;
+
+  // Folders: corkscrew down, and bias toward camera-facing side so they PAN IN FRONT of the model
   for (let i = 0; i < folderMeshes.length; i++) {
     const mesh = folderMeshes[i];
-    const ch = mesh.userData.chapter;
+    const rel = i - centerIdx;
 
-    const rel = i - centerIdx; // negative = “past”, positive = “future”
+    // how “front” this tile is (1 at center, 0 far away)
+    const front = clamp01(1.0 - Math.abs(rel) / 1.15);
 
-    // Spiral angle + height
+    // helix angle + vertical position
     const ang = camAngle + rel * TUNING.spiralAngleStep;
-    const y = TUNING.spiralYOffset - rel * TUNING.spiralYStep + Math.sin(time * 1.15 + i) * 0.03;
+    const y = TUNING.spiralYOffset - rel * TUNING.spiralYStep + Math.sin(time * 1.1 + i * 0.7) * 0.03;
 
-    // Slight radius swell for depth, keeps it feeling 3D
-    const r = TUNING.spiralRadius + Math.abs(rel) * 0.16;
+    // radius: center items pushed outward (toward camera) so they pass in front more clearly
+    let r = TUNING.spiralRadius + front * TUNING.frontPush + Math.abs(rel) * TUNING.radiusGrow;
+    r = Math.min(r, TUNING.camRadius - 0.75);
 
-    mesh.position.set(Math.cos(ang) * r, y, Math.sin(ang) * r);
+    // direction around model, blended toward camera-facing direction for “in front” pan
+    vDir.set(Math.cos(ang), 0, Math.sin(ang));
+    const blend = clamp01(front * TUNING.frontFacingBlend);
+    vBlend.copy(vDir).lerp(vCamDir, blend).normalize();
 
-    // Face the camera (feels “UI-like” and readable as it spirals)
+    mesh.position.set(vBlend.x * r, y, vBlend.z * r);
+
+    // face camera (readable, UI-like)
     mesh.lookAt(camera.position.x, y, camera.position.z);
 
-    // Opacity based on how far from the “center” item it is
+    // opacity window
     const d = Math.abs(rel);
     const fadeStart = TUNING.visibleRange - TUNING.fadeSoftness;
     const fadeEnd = TUNING.visibleRange + TUNING.fadeSoftness;
     const vis = 1.0 - smoothstep(fadeStart, fadeEnd, d);
-
     mesh.material.uniforms.uOpacity.value = clamp01(vis);
 
-    // Wobble shader feel
-    mesh.material.uniforms.uWobble.value = time * 2.0 + timeline.velocity * 70.0;
+    // wobble feel
+    mesh.material.uniforms.uWobble.value = time * 1.7 + timeline.velocity * 55.0;
 
-    // Subtle scale emphasis on the “front” folder
-    const s = 1.0 - clamp(d, 0, 3) * 0.09;
+    // scale emphasis on front folder
+    const s = 0.92 + front * 0.18;
     mesh.scale.setScalar(s);
-
-    // Keep chapter label snapping still accurate
-    // (clicks are raycasted vs actual mesh positions)
-    mesh.userData.chapter = ch;
   }
 
-  // Keep the hero mostly stable (so camera/folders feel “in sync”)
-  center.rotation.y = Math.sin(time * 0.12) * 0.015;
+  // Keep the hero stable (so corkscrew reads clean)
+  center.rotation.y = Math.sin(time * 0.10) * 0.012;
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
