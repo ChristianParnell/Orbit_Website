@@ -6,26 +6,40 @@
   <meta name="theme-color" content="#070A0C" />
   <title>Orbit Portfolio</title>
 
-  <link rel="stylesheet" href="./styles.css?v=9" />
+  <!-- Cache busting: bump v= when you update styles -->
+  <link rel="stylesheet" href="./styles.css?v=10" />
+
+  <!-- Avoid favicon.ico 404 on GitHub Pages -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
+
+  <style>
+    /* Minimal safety fallback if styles.css fails to load */
+    html,body{height:100%;margin:0;background:#070A0C;color:#E8EEF2;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
+    #webgl{position:fixed;inset:0;width:100%;height:100%;display:block;}
+  </style>
 </head>
 
 <body>
-  <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
+  <!-- WebGL canvas -->
+  <canvas id="webgl" aria-label="3D portfolio spiral scene"></canvas>
 
+  <!-- Loader overlay -->
   <div id="loader" class="loader" aria-live="polite">
     <div class="loader__card">
-      <div class="loader__title">Loading orbit…</div>
-      <div class="loader__bar"><div id="loaderFill" class="loader__fill"></div></div>
+      <div class="loader__title">Loading spiral…</div>
+      <div class="loader__bar">
+        <div id="loaderFill" class="loader__fill"></div>
+      </div>
       <div id="loaderPct" class="loader__pct">0%</div>
       <div class="loader__note">Scroll or drag once loaded</div>
     </div>
   </div>
 
+  <!-- HUD overlay -->
   <div id="hud">
     <div class="brand">
       <div class="brand__name">YOUR NAME</div>
-      <div class="brand__tag">Scroll / drag to orbit • Click folders • ESC closes</div>
+      <div class="brand__tag">Scroll / drag to spiral • Click folders • ESC closes</div>
     </div>
 
     <div class="bottomRow">
@@ -34,6 +48,7 @@
     </div>
   </div>
 
+  <!-- Content panel -->
   <div id="panel" class="panel" aria-hidden="true">
     <div class="panel__topbar">
       <div id="panelTitle" class="panel__title">Title</div>
@@ -45,17 +60,22 @@
   <!-- BOOTLOADER: guarantees we try to load main.js and shows an on-screen error if it fails -->
   <script type="module">
     const hint = document.getElementById("hint");
-    const BUILD = "9"; // bump this any time you want to force-refresh caching
+
+    // Bump this any time you want to force-refresh caching on GitHub Pages
+    const BUILD = "10";
 
     hint.textContent = "Loading main.js…";
 
     try {
+      // Import the module with cache-busting
       await import(`./main.js?v=${encodeURIComponent(BUILD)}`);
+
       // main.js will update the hint when it runs ✅
     } catch (err) {
       console.error("main.js failed:", err);
       hint.textContent = "main.js failed ❌ (open DevTools Console)";
 
+      // On-screen, non-silent failure box
       const box = document.createElement("div");
       box.style.position = "fixed";
       box.style.left = "16px";
@@ -72,12 +92,29 @@
       box.innerHTML = `
         <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">JavaScript didn’t start 🧯</div>
         <div style="opacity:0.85;font-size:13px;">
-          Open DevTools → Console and copy the first red error.
-          (This box only appears if main.js truly fails to import.)
+          Open DevTools → Console and copy the first red error line.
+          <div style="margin-top:8px;opacity:0.8;">Common causes:</div>
+          <ul style="margin:6px 0 0 18px;opacity:0.8;font-size:13px;line-height:1.4;">
+            <li>main.js not in the same folder as index.html</li>
+            <li>case mismatch: Main.js vs main.js</li>
+            <li>GitHub Pages serving from a subfolder you didn’t expect</li>
+            <li>blocked module import due to mixed content or CSP</li>
+          </ul>
         </div>
       `;
       document.body.appendChild(box);
     }
   </script>
+
+  <noscript>
+    <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:#070A0C;color:#E8EEF2;">
+      <div style="max-width:520px;border:1px solid rgba(232,238,242,0.18);border-radius:16px;padding:16px;background:rgba(8,10,12,0.8);">
+        <div style="font-weight:800;margin-bottom:6px;">JavaScript is required</div>
+        <div style="opacity:0.85;font-size:13px;line-height:1.45;">
+          This site uses WebGL + modules to render the 3D spiral. Please enable JavaScript.
+        </div>
+      </div>
+    </div>
+  </noscript>
 </body>
 </html>
