@@ -1,48 +1,292 @@
-// =======================
-// Fog (JPG black -> transparent) — STRONG + always visible
-// =======================
-const fogGroup = new THREE.Group();
-scene.add(fogGroup);
+import * as THREE from "https://esm.sh/three@0.160.0";
+import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-// tiny helper: show missing fog as on-screen hint
-function fogWarn(msg) {
-  console.warn(msg);
-  if (hintEl) hintEl.textContent = `Fog: ${msg}`;
+const BASE_URL = new URL("./", import.meta.url);
+const u = (p) => new URL(p, BASE_URL).href;
+
+const canvas = document.getElementById("webgl");
+const loaderEl = document.getElementById("loader");
+const loaderFill = document.getElementById("loaderFill");
+const loaderPct = document.getElementById("loaderPct");
+const hintEl = document.getElementById("hint");
+const chaptersEl = document.getElementById("chapters");
+
+const panel = document.getElementById("panel");
+const panelTitle = document.getElementById("panelTitle");
+const panelBody = document.getElementById("panelBody");
+const panelClose = document.getElementById("panelClose");
+
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function smoothstep(e0, e1, x){
+  const t = clamp01((x - e0) / (e1 - e0));
+  return t * t * (3 - 2 * t);
+}
+function hardFail(msg, err){
+  console.error(msg, err || "");
+  if (hintEl) hintEl.textContent = `❌ ${msg}`;
 }
 
-const fogTex = new THREE.TextureLoader(manager).load(
+if (!canvas) hardFail("Canvas #webgl not found.");
+if (!hintEl) hardFail("HUD #hint not found.");
+if (!chaptersEl) hardFail("HUD #chapters not found.");
+
+console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
+hintEl.textContent = "Scene starting…";
+
+// Palette
+const PAL = {
+  sky:   new THREE.Color("#91C6FF"),
+  sand:  new THREE.Color("#BD9C64"),
+  sun:   new THREE.Color("#FCBA47"),
+  slate: new THREE.Color("#6786A7"),
+  moss:  new THREE.Color("#7D7361"),
+  deep:  new THREE.Color("#464C52"),
+  text:  new THREE.Color("#E8EEF2"),
+};
+
+// Assets (MATCH THESE FILES)
+const ASSETS = {
+  model: u("assets/models/me_on_hill.glb"),
+  sky:   u("assets/backgrounds/sky_sphere.jpg"),
+  fog:   u("assets/textures/fog.jpg"),
+  audio: u("assets/audio/ambient.mp3"),
+};
+
+// Chapters
+const CHAPTERS = [
+  { id: "about",        label: "About",        progress: 0.10, page: u("pages/about.html") },
+  { id: "gallery",      label: "Gallery",      progress: 0.35, page: u("pages/gallery.html") },
+  { id: "achievements", label: "Achievements", progress: 0.60, page: u("pages/achievements.html") },
+  { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
+];
+
+// Tuning
+const T = {
+  // ✅ MUCH slower scroll orbit (you must scroll more)
+  scrollSensitivity: 0.000006,
+  dragSensitivity: 0.010,
+  maxVel: 0.0030,
+
+  dampingActive: 9.0,
+  dampingIdle: 34.0,
+  idleDelayMs: 120,
+  stopEps: 0.00002,
+
+  // ✅ Model placement (match the reference vibe)
+  modelTargetSize: 10.2,
+  modelYOffset: -0.70,     // move model up/down
+  modelYawDeg: 10,         // rotate model a touch
+  modelExtraLift: 0.0,     // if your rock base is clipping, raise this
+
+  // ✅ Camera (more “stable” like the screenshot)
+  camRadius: 23.0,
+  camAzBase: 1.05,
+  camFollow: 0.18,         // 0 = camera stays fixed, 1 = camera fully follows orbit
+  camYBase: 5.6,
+  camYAmplitude: 0.35,
+  lookY: 2.85,
+
+  // ✅ Tiles orbit around the model (ring / cylinder feel)
+  orbitTurns: 1.0,         // 1 full revolution over timeline 0..1
+  ringRadius: 18.0,
+  ringRadiusWobble: 0.55,  // small organic variation
+  ringYBase: 6.0,
+  ringYWaveAmp: 1.9,
+  ringYProgressAmp: 2.2,   // tiles get unique heights based on their progress
+  ringBobAmp: 0.08,
+
+  // Default “stuck on a ring” tilt/lean (NOT straight-on)
+  ringTiltDeg: 18,         // pitch tilt
+  ringRollDeg: 10,         // per-tile roll randomness
+
+  // ✅ Straighten when close to camera
+  straightenNear: 10.5,    // starts really straightening here (closer)
+  straightenFar: 19.0,     // stops straightening here (farther)
+  straightenPush: 1.35,    // pulls tile slightly toward camera as it straightens
+  straightenScale: 0.14,   // grows slightly when straightened
+  straightenFrontMin: 0.20,
+  straightenFrontMax: 0.86,
+
+  // Tile size/curve
+  tileW: 4.05,
+  tileH: 2.45,
+  tileCurve: 0.080,
+
+  // title offset (local space on card)
+  titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
+
+  // Visibility / fade (front tiles strongest like the reference)
+  fadeSoftness: 0.22,
+  minOpacity: 0.14,
+};
+
+// Loading manager
+const manager = new THREE.LoadingManager();
+manager.onProgress = (_url, loaded, total) => {
+  const pct = total ? Math.round((loaded / total) * 100) : 0;
+  if (loaderFill) loaderFill.style.width = `${pct}%`;
+  if (loaderPct) loaderPct.textContent = `${pct}%`;
+};
+manager.onLoad = () => {
+  setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
+  hintEl.textContent = "Scroll / drag • Click tiles • (audio starts on interaction)";
+};
+
+// Renderer / scene / camera
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.07;
+
+const scene = new THREE.Scene();
+scene.background = PAL.deep.clone();
+scene.fog = new THREE.Fog(PAL.deep.getHex(), 18, 110);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 900);
+camera.position.set(0, 6.0, T.camRadius);
+
+const clock = new THREE.Clock();
+
+// Lights
+scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.05));
+const key = new THREE.DirectionalLight(0xffffff, 0.95);
+key.position.set(4.2, 5.8, 3.2);
+scene.add(key);
+const rim = new THREE.DirectionalLight(PAL.sky.getHex(), 0.55);
+rim.position.set(-6.0, 2.6, -3.8);
+scene.add(rim);
+
+// Center group (model)
+const center = new THREE.Group();
+scene.add(center);
+
+// Background sphere
+function makeSkyTexture(){
+  const w = 1024, h = 512;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0, "#91C6FF");
+  g.addColorStop(0.38, "#6786A7");
+  g.addColorStop(1, "#464C52");
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,w,h);
+
+  const sun = ctx.createRadialGradient(w*0.72, h*0.30, 10, w*0.72, h*0.30, 260);
+  sun.addColorStop(0, "rgba(252,186,71,0.26)");
+  sun.addColorStop(1, "rgba(252,186,71,0.0)");
+  ctx.fillStyle = sun;
+  ctx.fillRect(0,0,w,h);
+
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  for (let i=0;i<650;i++){
+    const x = Math.random()*w;
+    const y = Math.random()*h;
+    const r = Math.random()*1.2;
+    ctx.globalAlpha = 0.08 + Math.random()*0.30;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+const bg = new THREE.Mesh(
+  new THREE.SphereGeometry(160, 48, 48),
+  new THREE.MeshBasicMaterial({ map: makeSkyTexture(), side: THREE.BackSide })
+);
+bg.material.fog = false;
+bg.rotation.y = 0.35;
+scene.add(bg);
+
+new THREE.TextureLoader(manager).load(
+  ASSETS.sky,
+  (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    bg.material.map = tex;
+    bg.material.needsUpdate = true;
+  },
+  undefined,
+  () => {}
+);
+
+// Fog fallback texture
+function makeFogTextureFallback(){
+  const w=512, h=512;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d");
+
+  ctx.fillStyle="black";
+  ctx.fillRect(0,0,w,h);
+
+  for(let i=0;i<95;i++){
+    const x=Math.random()*w, y=Math.random()*h;
+    const r=50+Math.random()*150;
+    const grd=ctx.createRadialGradient(x,y,0,x,y,r);
+    grd.addColorStop(0, "rgba(255,255,255,0.95)");
+    grd.addColorStop(1, "rgba(0,0,0,0.0)");
+    ctx.globalAlpha = 0.17 + Math.random()*0.25;
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
+let fogTex = makeFogTextureFallback();
+const fogMats = [];
+
+new THREE.TextureLoader(manager).load(
   ASSETS.fog,
   (t) => {
     t.colorSpace = THREE.SRGBColorSpace;
     t.minFilter = THREE.LinearFilter;
     t.magFilter = THREE.LinearFilter;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(1.0, 1.0);
+    fogTex = t;
+    for (const m of fogMats) m.uniforms.uMap.value = fogTex;
   },
   undefined,
-  () => fogWarn(`failed to load ${ASSETS.fog} (check path + filename case)`)
+  () => console.warn("Fog texture missing/failed, using fallback fog texture.")
 );
 
-// shader: key black out using luminance, but with SUPER forgiving thresholds
-function makeFogMaterial() {
-  return new THREE.ShaderMaterial({
+const fogGroup = new THREE.Group();
+scene.add(fogGroup);
+
+function makeFogMaterial(){
+  const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    depthTest: false,                 // ✅ IMPORTANT: fog always renders
-    blending: THREE.NormalBlending,   // more visible than additive
+    depthTest: false,
+    blending: THREE.NormalBlending,
     uniforms: {
-      uMap: { value: fogTex },
-      uOpacity: { value: 0.55 },      // ✅ stronger
-      uBlackCut: { value: 0.02 },     // ✅ lower cutoff so dark fog survives
-      uSoft: { value: 0.70 },         // ✅ smoother fade
-      uTint: { value: new THREE.Color(0xe8eef2) }
+      uMap:      { value: fogTex },
+      uOpacity:  { value: 0.72 },
+      uBlackCut: { value: 0.02 },
+      uSoft:     { value: 0.86 },
+      uTint:     { value: PAL.sky.clone().lerp(PAL.text, 0.55) }
     },
     vertexShader: `
       varying vec2 vUv;
-      void main(){
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
     `,
     fragmentShader: `
       varying vec2 vUv;
@@ -51,89 +295,639 @@ function makeFogMaterial() {
       uniform float uBlackCut;
       uniform float uSoft;
       uniform vec3 uTint;
-
       void main(){
         vec3 c = texture2D(uMap, vUv).rgb;
-        float luma = dot(c, vec3(0.299, 0.587, 0.114));
-
-        // black -> transparent (forgiving)
+        float luma = dot(c, vec3(0.299,0.587,0.114));
         float a = smoothstep(uBlackCut, uBlackCut + uSoft, luma);
-
-        // softer edges so it feels like fog
-        float edge = smoothstep(0.02, 0.25, vUv.x) * smoothstep(0.02, 0.25, vUv.y) *
-                     smoothstep(0.02, 0.25, 1.0 - vUv.x) * smoothstep(0.02, 0.25, 1.0 - vUv.y);
+        float edge = smoothstep(0.02,0.22,vUv.x)*smoothstep(0.02,0.22,vUv.y)*
+                     smoothstep(0.02,0.22,1.0-vUv.x)*smoothstep(0.02,0.22,1.0-vUv.y);
         a *= edge;
-
         if(a < 0.01) discard;
         gl_FragColor = vec4(uTint, a * uOpacity);
       }
     `
   });
+  fogMats.push(mat);
+  return mat;
 }
 
 const fogPuffs = [];
-const fogBelt = [];
+(function createFog(){
+  const puffCount = 58;
+  const puffGeo = new THREE.PlaneGeometry(6.6, 6.6);
 
-(function createFog() {
-  // 1) “belt” around the center so you ALWAYS see fog
-  const beltCount = 10;
-  const beltGeo = new THREE.PlaneGeometry(7.5, 4.6, 1, 1);
-  for (let i = 0; i < beltCount; i++) {
+  for (let i=0;i<puffCount;i++){
     const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.42; // belt is subtle but present
-
-    const m = new THREE.Mesh(beltGeo, mat);
-
-    const ang = (i / beltCount) * Math.PI * 2;
-    const radius = 4.2;
-    const yBase = 1.2;
-
-    m.userData = {
-      kind: "belt",
-      ang,
-      radius,
-      yBase,
-      spin: (Math.random() * 2 - 1) * 0.08,
-      seed: Math.random() * 1000,
-    };
-
-    m.position.set(Math.cos(ang) * radius, yBase, Math.sin(ang) * radius);
-    m.rotation.z = Math.random() * Math.PI * 2;
-    fogGroup.add(m);
-    fogBelt.push(m);
-  }
-
-  // 2) drifting puffs (the “alive” fog)
-  const puffCount = 34;
-  const puffGeo = new THREE.PlaneGeometry(3.4, 3.4, 1, 1);
-
-  for (let i = 0; i < puffCount; i++) {
-    const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.28 + Math.random() * 0.28; // ✅ stronger
+    mat.uniforms.uOpacity.value = 0.28 + Math.random()*0.46;
 
     const m = new THREE.Mesh(puffGeo, mat);
-
-    const radius = 2.2 + Math.random() * 7.0;
-    const ang = Math.random() * Math.PI * 2;
-    const yBase = -0.8 + Math.random() * 6.0;
-
     m.userData = {
-      kind: "puff",
-      radius,
-      ang,
-      yBase,
-      speed: 0.05 + Math.random() * 0.14,
-      bobAmp: 0.20 + Math.random() * 0.55,
-      spin: (Math.random() * 2 - 1) * 0.22,
-      drift: 0.25 + Math.random() * 0.70,
-      scaleBase: 0.85 + Math.random() * 1.8,
-      seed: Math.random() * 1000
+      ang: Math.random()*Math.PI*2,
+      radius: 3.2 + Math.random()*9.8,
+      yBase: -0.8 + Math.random()*8.0,
+      speed: 0.05 + Math.random()*0.12,
+      bobAmp: 0.22 + Math.random()*0.65,
+      spin: (Math.random()*2-1)*0.22,
+      drift: 0.35 + Math.random()*0.95,
+      scaleBase: 0.90 + Math.random()*2.4,
+      seed: Math.random()*1000
     };
-
     m.scale.setScalar(m.userData.scaleBase);
     fogGroup.add(m);
     fogPuffs.push(m);
   }
-
-  fogGroup.position.y = 0.0;
 })();
+
+// Audio (loop + muffle)
+const audioState = {
+  ctx:null, src:null, gain:null, filter:null,
+  started:false,
+  baseVolume: clamp01(parseFloat(localStorage.getItem("orbit_volume") ?? "0.52")),
+  isMuffled:false
+};
+
+function createVolumeUI(){
+  const wrap = document.createElement("div");
+  Object.assign(wrap.style, {
+    position:"fixed", left:"18px", bottom:"18px", zIndex:"25",
+    pointerEvents:"auto", display:"flex", gap:"10px", alignItems:"center",
+    padding:"10px 12px", borderRadius:"999px",
+    background:"rgba(145,198,255,0.10)", border:"1px solid rgba(232,238,242,0.16)",
+    backdropFilter:"blur(12px)",
+    color:"rgba(232,238,242,0.92)",
+    fontFamily:"ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial",
+    fontSize:"12px", letterSpacing:"0.12em", textTransform:"uppercase", userSelect:"none"
+  });
+
+  const label = document.createElement("div"); label.textContent="VOL";
+  const slider = document.createElement("input");
+  slider.type="range"; slider.min="0"; slider.max="100";
+  slider.value=String(Math.round(audioState.baseVolume*100));
+  Object.assign(slider.style,{ width:"140px", accentColor:"#FCBA47", cursor:"pointer" });
+  const pct = document.createElement("div"); pct.textContent=`${slider.value}%`; pct.style.opacity="0.78";
+
+  slider.addEventListener("input", () => {
+    audioState.baseVolume = clamp01(parseInt(slider.value,10)/100);
+    localStorage.setItem("orbit_volume", String(audioState.baseVolume));
+    pct.textContent = `${slider.value}%`;
+    applyAudioTargets();
+  });
+
+  wrap.appendChild(label); wrap.appendChild(slider); wrap.appendChild(pct);
+  document.body.appendChild(wrap);
+}
+createVolumeUI();
+
+async function ensureAudio(){
+  if (audioState.started) return;
+  audioState.started = true;
+
+  try{
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+
+    const res = await fetch(ASSETS.audio, { cache:"no-store" });
+    if (!res.ok) throw new Error(`Audio fetch failed: ${res.status}`);
+    const arr = await res.arrayBuffer();
+    const buffer = await ctx.decodeAudioData(arr);
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 18000;
+    filter.Q.value = 0.7;
+
+    const gain = ctx.createGain();
+    gain.gain.value = audioState.baseVolume;
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(0);
+
+    audioState.ctx = ctx;
+    audioState.src = src;
+    audioState.filter = filter;
+    audioState.gain = gain;
+  }catch(e){
+    console.warn("Audio failed:", e);
+  }
+}
+
+function applyAudioTargets(){
+  if (!audioState.ctx || !audioState.filter || !audioState.gain) return;
+  const now = audioState.ctx.currentTime;
+  const muffled = audioState.isMuffled;
+
+  const targetFreq = muffled ? 720 : 18000;
+  const targetGain = audioState.baseVolume * (muffled ? 0.55 : 1.0);
+
+  audioState.filter.frequency.cancelScheduledValues(now);
+  audioState.gain.gain.cancelScheduledValues(now);
+
+  audioState.filter.frequency.setTargetAtTime(targetFreq, now, 0.08);
+  audioState.gain.gain.setTargetAtTime(targetGain, now, 0.12);
+}
+function setMuffle(m){ audioState.isMuffled = m; applyAudioTargets(); }
+
+function gestureKick(){ ensureAudio().then(applyAudioTargets).catch(()=>{}); }
+window.addEventListener("pointerdown", gestureKick, { once:true });
+window.addEventListener("wheel", gestureKick, { once:true, passive:true });
+window.addEventListener("keydown", gestureKick, { once:true });
+
+// Tile textures
+function makeCoverTexture(){
+  const w=1024, h=640;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d");
+
+  const g = ctx.createLinearGradient(0,0,w,h);
+  g.addColorStop(0, "#91C6FF");
+  g.addColorStop(0.45, "#6786A7");
+  g.addColorStop(1, "#464C52");
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,w,h);
+
+  ctx.globalAlpha=0.12;
+  ctx.strokeStyle="#E8EEF2";
+  ctx.lineWidth=2;
+  for(let i=0;i<26;i++){
+    const y=(i/26)*h;
+    ctx.beginPath();
+    ctx.moveTo(0, y + (Math.random()*10-5));
+    ctx.lineTo(w, y + (Math.random()*10-5));
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  ctx.strokeStyle="rgba(252,186,71,0.65)";
+  ctx.lineWidth=12;
+  ctx.strokeRect(30,30,w-60,h-60);
+
+  ctx.strokeStyle="rgba(232,238,242,0.18)";
+  ctx.lineWidth=6;
+  ctx.strokeRect(56,56,w-112,h-112);
+
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy=8;
+  return tex;
+}
+
+function makeTitleTexture(text){
+  const w=1024, h=256;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d");
+  ctx.clearRect(0,0,w,h);
+
+  ctx.font="850 92px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  ctx.textAlign="left";
+  ctx.textBaseline="middle";
+
+  ctx.fillStyle="rgba(0,0,0,0.35)";
+  ctx.fillText(text.toUpperCase(), 98, h/2+8);
+
+  ctx.fillStyle="rgba(232,238,242,0.96)";
+  ctx.fillText(text.toUpperCase(), 94, h/2+4);
+
+  ctx.globalAlpha=0.85;
+  ctx.fillStyle="rgba(252,186,71,0.75)";
+  ctx.fillRect(94, h/2+62, Math.min(700, ctx.measureText(text.toUpperCase()).width), 6);
+  ctx.globalAlpha=1;
+
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy=8;
+  return tex;
+}
+
+// Tiles
+const tileGroup = new THREE.Group();
+scene.add(tileGroup);
+
+const clickableMeshes = [];
+const tileItems = [];
+
+(function createTiles(){
+  const coverTex = makeCoverTexture();
+
+  for (let i=0;i<CHAPTERS.length;i++){
+    const ch = CHAPTERS[i];
+
+    const coverGeo = new THREE.PlaneGeometry(T.tileW, T.tileH, 30, 1);
+    const coverMat = new THREE.ShaderMaterial({
+      transparent:true,
+      depthWrite:false,
+      side:THREE.DoubleSide,
+      uniforms:{
+        uMap:{ value: coverTex },
+        uOpacity:{ value: 0.0 },
+        uCurve:{ value: T.tileCurve },
+        uWobble:{ value: 0.0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        uniform float uCurve;
+        uniform float uWobble;
+        void main(){
+          vUv = uv;
+          vec3 p = position;
+          float x = p.x;
+          p.z -= (x*x) * uCurve;
+          p.y += sin((uv.x * 3.14159) + uWobble) * 0.010;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform sampler2D uMap;
+        uniform float uOpacity;
+        void main(){
+          vec4 tex = texture2D(uMap, vUv);
+          gl_FragColor = vec4(tex.rgb, uOpacity);
+        }
+      `
+    });
+
+    const cover = new THREE.Mesh(coverGeo, coverMat);
+    cover.userData.chapter = ch;
+
+    const titleTex = makeTitleTexture(ch.label);
+    const title = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.35, 0.78),
+      new THREE.MeshBasicMaterial({ map:titleTex, transparent:true, depthWrite:false, opacity:0.0, side:THREE.DoubleSide })
+    );
+    title.position.set(T.titleOffset.x, T.titleOffset.y, T.titleOffset.z);
+
+    const g = new THREE.Group();
+    g.add(cover);
+    g.add(title);
+
+    // per-tile stable randomness (so it feels like the screenshot)
+    const roll = (Math.random()*2 - 1) * THREE.MathUtils.degToRad(T.ringRollDeg);
+    const seed = Math.random() * 1000;
+
+    tileGroup.add(g);
+    clickableMeshes.push(cover);
+    tileItems.push({ group:g, cover, title, chapter:ch, index:i, roll, seed });
+  }
+})();
+
+// Model load
+const gltfLoader = new GLTFLoader(manager);
+function addFallbackModel(){
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
+    new THREE.MeshStandardMaterial({ color:PAL.text.getHex(), roughness:0.88, metalness:0.02 })
+  );
+  body.position.y = 1.0;
+  center.add(body);
+}
+
+gltfLoader.load(
+  ASSETS.model,
+  (gltf) => {
+    const model = gltf.scene;
+
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    const maxAxis = Math.max(size.x, size.y, size.z);
+    const scale = T.modelTargetSize / Math.max(0.0001, maxAxis);
+    model.scale.setScalar(scale);
+
+    const box2 = new THREE.Box3().setFromObject(model);
+    const centerPoint = new THREE.Vector3();
+    box2.getCenter(centerPoint);
+
+    model.position.sub(centerPoint);
+
+    // ✅ position like the reference
+    model.position.y += T.modelYOffset + T.modelExtraLift;
+    model.rotation.y = THREE.MathUtils.degToRad(T.modelYawDeg);
+
+    center.add(model);
+  },
+  undefined,
+  () => addFallbackModel()
+);
+
+// Panel logic (muffle audio while open)
+panelClose?.addEventListener("click", closePanel);
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
+
+async function openPanel(ch){
+  if (!panel || !panelTitle || !panelBody) return;
+  setMuffle(true);
+  panelTitle.textContent = ch.label;
+  panel.classList.add("is-open");
+  panel.setAttribute("aria-hidden","false");
+
+  try{
+    const res = await fetch(ch.page, { cache:"no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    panelBody.innerHTML = await res.text();
+  }catch{
+    panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
+  }
+}
+
+function closePanel(){
+  if (!panel || !panelTitle || !panelBody) return;
+  panel.classList.remove("is-open");
+  panel.setAttribute("aria-hidden","true");
+  panelTitle.textContent = "";
+  panelBody.innerHTML = "";
+  setMuffle(false);
+}
+
+// Picking
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+
+canvas.addEventListener("click", async (e) => {
+  if (panel?.classList.contains("is-open")) return;
+
+  await ensureAudio().catch(()=>{});
+  applyAudioTargets();
+
+  const rect = canvas.getBoundingClientRect();
+  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(clickableMeshes, false);
+  if (!hits.length) return;
+
+  const ch = hits[0].object.userData.chapter;
+
+  timeline.value = clamp01(ch.progress);
+  timeline.vel = 0;
+  timeline.lastInteractT = performance.now();
+
+  openPanel(ch).catch(()=>{});
+});
+
+// Chapters dots (UI only)
+let activeChapterId = null;
+function buildChapterUI(){
+  chaptersEl.innerHTML="";
+  CHAPTERS.forEach((ch)=>{
+    const dot=document.createElement("button");
+    dot.type="button";
+    dot.className="chapterDot";
+    dot.title=ch.label;
+    dot.addEventListener("click", ()=>{
+      timeline.value = clamp01(ch.progress);
+      timeline.vel = 0;
+      timeline.lastInteractT = performance.now();
+      openPanel(ch).catch(()=>{});
+    });
+    chaptersEl.appendChild(dot);
+  });
+  const label=document.createElement("div");
+  label.className="chapterLabel";
+  label.textContent="Chapters";
+  chaptersEl.appendChild(label);
+}
+function setActiveDot(id){
+  const dots = Array.from(chaptersEl.querySelectorAll(".chapterDot"));
+  dots.forEach((d,i)=> d.classList.toggle("is-active", CHAPTERS[i]?.id===id));
+}
+buildChapterUI();
+
+// Timeline: position + velocity (no snapping / no auto-nearest movement)
+const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
+
+function normalizeWheel(e){
+  let dy = e.deltaY;
+  if (e.deltaMode===1) dy*=16;
+  else if (e.deltaMode===2) dy*=window.innerHeight;
+  return dy;
+}
+
+window.addEventListener("wheel", (e)=>{
+  e.preventDefault();
+  timeline.lastInteractT = performance.now();
+  timeline.vel += normalizeWheel(e) * T.scrollSensitivity;
+  timeline.vel = THREE.MathUtils.clamp(timeline.vel, -T.maxVel, T.maxVel);
+},{ passive:false });
+
+let dragging=false, dragStartX=0, dragStartVel=0;
+canvas.addEventListener("pointerdown",(e)=>{
+  dragging=true;
+  timeline.lastInteractT=performance.now();
+  dragStartX=e.clientX;
+  dragStartVel=timeline.vel;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove",(e)=>{
+  if(!dragging) return;
+  timeline.lastInteractT=performance.now();
+  const dx=(e.clientX-dragStartX)/Math.max(1,window.innerWidth);
+  timeline.vel = dragStartVel - dx * T.dragSensitivity;
+  timeline.vel = THREE.MathUtils.clamp(timeline.vel, -T.maxVel, T.maxVel);
+});
+canvas.addEventListener("pointerup",(e)=>{
+  dragging=false;
+  try{ canvas.releasePointerCapture(e.pointerId); }catch{}
+});
+
+function nearestChapter(v){
+  let best=CHAPTERS[0], bestD=Infinity;
+  for(const ch of CHAPTERS){
+    const d=Math.abs(ch.progress-v);
+    if(d<bestD){ bestD=d; best=ch; }
+  }
+  return best;
+}
+
+// Resize
+window.addEventListener("resize", ()=>{
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Temps
+const vToCam = new THREE.Vector3();
+const radial = new THREE.Vector3();
+const tangent = new THREE.Vector3();
+const up = new THREE.Vector3(0,1,0);
+
+const normal = new THREE.Vector3();
+const xAxis = new THREE.Vector3();
+const yAxis = new THREE.Vector3();
+const zAxis = new THREE.Vector3();
+const basis = new THREE.Matrix4();
+
+const camDir = new THREE.Vector3();
+const qBillboard = new THREE.Quaternion();
+const qBase = new THREE.Quaternion();
+
+requestAnimationFrame(tick);
+function tick(){
+  const dt = Math.min(0.033, clock.getDelta());
+  const time = clock.getElapsedTime();
+
+  // Smooth decel (no snapping)
+  const idleMs = performance.now() - timeline.lastInteractT;
+  const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
+
+  timeline.vel *= Math.exp(-damping * dt);
+  if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
+
+  timeline.value = clamp01(timeline.value + timeline.vel);
+
+  // ✅ Orbit phase (tiles orbit model)
+  const orbitPhase = timeline.value * (Math.PI * 2) * T.orbitTurns;
+
+  // ✅ Camera: mostly stable, only subtle follow (like the reference)
+  const camAz = T.camAzBase + orbitPhase * T.camFollow;
+  const camY = T.camYBase + Math.sin(orbitPhase) * T.camYAmplitude;
+  camera.position.set(Math.cos(camAz)*T.camRadius, camY, Math.sin(camAz)*T.camRadius);
+  camera.lookAt(0, T.lookY, 0);
+
+  // Background slight drift
+  bg.rotation.y = camAz*0.10 + 0.35;
+  bg.rotation.x = Math.sin(camAz*0.08)*0.020;
+
+  // UI highlight only
+  const near = nearestChapter(timeline.value);
+  if (activeChapterId !== near.id){
+    activeChapterId = near.id;
+    setActiveDot(activeChapterId);
+  }
+  if (!panel?.classList.contains("is-open")){
+    hintEl.textContent = `${near.label} • Click tile to open`;
+  }
+
+  // Fog motion
+  fogGroup.rotation.y += dt*0.050;
+  fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
+  fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
+
+  for(const m of fogPuffs){
+    const d=m.userData;
+    d.ang += dt*d.speed;
+
+    const driftX = Math.sin(time*0.22 + d.seed)*d.drift;
+    const driftZ = Math.cos(time*0.20 + d.seed)*d.drift;
+    const breath = Math.sin(time*0.15 + d.seed)*0.90;
+    const y = d.yBase + Math.sin(time*0.70 + d.seed)*d.bobAmp;
+
+    m.position.set(
+      Math.cos(d.ang)*(d.radius + breath) + driftX,
+      y,
+      Math.sin(d.ang)*(d.radius + breath) + driftZ
+    );
+
+    m.rotation.z += dt*d.spin;
+    m.scale.setScalar(d.scaleBase*(0.92 + 0.18*Math.sin(time*0.35 + d.seed)));
+    m.lookAt(camera.position);
+  }
+
+  // Precompute camera direction from center (for “frontness”)
+  camDir.copy(camera.position);
+  camDir.y = 0;
+  if (camDir.lengthSq() < 1e-6) camDir.set(0,0,1);
+  camDir.normalize();
+
+  // ✅ Tiles: orbit around model + straighten near camera
+  for(const item of tileItems){
+    const { group, cover, title, chapter, index, roll, seed } = item;
+
+    // angle where this chapter should live around the ring
+    // when timeline.value === chapter.progress => relAng = 0 => tile is FRONT
+    const relAng = (chapter.progress - timeline.value) * (Math.PI * 2) * T.orbitTurns;
+
+    // ring radius + tiny wobble to feel less perfect
+    const r = T.ringRadius + Math.sin(relAng*0.35 + seed) * T.ringRadiusWobble;
+
+    // position around ring (front = +Z side)
+    const px = Math.sin(relAng) * r;
+    const pz = Math.cos(relAng) * r;
+
+    // height variation (gives the “floating timeline photos” feel)
+    const yPos =
+      T.ringYBase
+      + Math.sin(relAng*0.9 + seed*0.5) * T.ringYWaveAmp
+      + (chapter.progress - 0.5) * T.ringYProgressAmp
+      + Math.sin(time*0.9 + index*0.6) * T.ringBobAmp;
+
+    group.position.set(px, yPos, pz);
+
+    // radial/tangent around ring
+    radial.set(px, 0, pz).normalize();                    // outward
+    tangent.set(Math.cos(relAng), 0, -Math.sin(relAng)).normalize(); // direction of travel
+
+    // how “front” the tile is (1 = front, -1 = back)
+    const front = radial.dot(camDir);
+
+    // fade cards a bit on the back side (like the reference)
+    const vis = clamp01(T.minOpacity + smoothstep(-0.10 - T.fadeSoftness, 0.38 + T.fadeSoftness, front));
+    cover.material.uniforms.uOpacity.value = vis;
+    cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
+
+    // -------- Base orientation: feels like cards orbiting a cylinder --------
+    // plane normal should face inward (toward the model)
+    normal.copy(radial).multiplyScalar(-1);
+
+    // tilt the card slightly (so it's not perfectly upright)
+    const tilt = THREE.MathUtils.degToRad(T.ringTiltDeg);
+    normal.applyAxisAngle(tangent, -tilt); // negative = leans downward a bit
+
+    // build basis so +Z is normal, +X is tangent
+    xAxis.copy(tangent).normalize();
+    zAxis.copy(normal).normalize();
+    yAxis.crossVectors(zAxis, xAxis).normalize();
+    xAxis.crossVectors(yAxis, zAxis).normalize();
+
+    basis.makeBasis(xAxis, yAxis, zAxis);
+    qBase.setFromRotationMatrix(basis);
+
+    // add a little per-tile roll (like the screenshot)
+    group.quaternion.copy(qBase);
+    group.rotateZ(roll);
+
+    // -------- Straighten near camera --------
+    vToCam.copy(camera.position).sub(group.position);
+    const dist = vToCam.length();
+    vToCam.normalize();
+
+    const distFac = clamp01((T.straightenFar - dist) / Math.max(0.0001, (T.straightenFar - T.straightenNear)));
+    const frontFac = smoothstep(T.straightenFrontMin, T.straightenFrontMax, front);
+    const straighten = clamp01(distFac * frontFac);
+
+    // Billboard quaternion (upright, clean, faces camera)
+    zAxis.copy(vToCam); // +Z looks toward camera
+    xAxis.crossVectors(up, zAxis);
+    if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
+    xAxis.normalize();
+    yAxis.crossVectors(zAxis, xAxis).normalize();
+    basis.makeBasis(xAxis, yAxis, zAxis);
+    qBillboard.setFromRotationMatrix(basis);
+
+    // slerp into “straight” when close
+    group.quaternion.slerp(qBillboard, straighten);
+
+    // slight push & scale when straightened (nice “focus” feel)
+    if (straighten > 0.0001){
+      group.position.addScaledVector(vToCam, straighten * T.straightenPush);
+      group.scale.setScalar(1.0 + straighten * T.straightenScale);
+    }else{
+      group.scale.setScalar(1.0);
+    }
+
+    // Title is strongest when it’s straightened and front-facing
+    title.material.opacity = clamp01(vis * (0.25 + 0.75*straighten));
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
