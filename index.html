@@ -65,7 +65,7 @@
     const BUILD = "15";
 
     hint.textContent = "Loading main.js…";
-
+    
     try {
       // Import the module with cache-busting
       await import(`./main.js?v=${encodeURIComponent(BUILD)}`);
