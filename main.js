@@ -1,14 +1,11 @@
 ﻿import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-console.log("✅ main.js loaded:", location.href);
-
 const ASSETS = {
   modelMeOnHill: "./assets/models/me_on_hill.glb",
   backgroundSphereTex: "./assets/backgrounds/sky_sphere.jpg"
 };
 
-// Greta-like chapters (also used for folder ring)
 const CHAPTERS = [
   { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: "./pages/about.html" },
   { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: "./pages/gallery.html" },
@@ -31,7 +28,10 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-// ----------------- Chapter UI -----------------
+// Visible proof JS is running (even if console is hidden)
+hintEl.textContent = "JS loaded ✅ Scroll / drag to orbit";
+
+// ------- Chapters UI -------
 let activeChapterId = null;
 
 function buildChapterUI(){
@@ -62,7 +62,7 @@ function setActiveDot(id){
 
 buildChapterUI();
 
-// ----------------- Three.js Setup -----------------
+// ------- Three.js setup -------
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -102,7 +102,7 @@ scene.add(center);
   center.add(ground);
 }
 
-// Procedural “always visible” sky texture
+// Procedural sky
 function makeSkyTexture(){
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -134,7 +134,7 @@ function makeSkyTexture(){
   return tex;
 }
 
-// Background sphere (fog disabled)
+// Background sphere
 let backgroundSphere = null;
 {
   const geo = new THREE.SphereGeometry(70, 48, 48);
@@ -150,7 +150,7 @@ let backgroundSphere = null;
   scene.add(backgroundSphere);
 }
 
-// ----------------- Folder Ring (bent planes) -----------------
+// ------- Folder ring -------
 const folderGroup = new THREE.Group();
 scene.add(folderGroup);
 
@@ -264,7 +264,7 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.closePath();
 }
 
-// ----------------- Picking (click folders) -----------------
+// ------- Picking -------
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
@@ -286,7 +286,7 @@ canvas.addEventListener("click", (e) => {
   openPanel(ch).catch(()=>{});
 });
 
-// ----------------- Panel -----------------
+// ------- Panel -------
 panelClose.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -306,14 +306,8 @@ async function openPanel(ch){
 
   if (location.hash !== `#${ch.id}`) history.replaceState(null, "", `#${ch.id}`);
 
-  try{
-    const res = await fetch(ch.page);
-    const html = await res.text();
-    panelBody.innerHTML = html;
-  }catch(err){
-    panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
-    console.warn("❌ Panel fetch failed:", ch.page, err);
-  }
+  const res = await fetch(ch.page);
+  panelBody.innerHTML = await res.text();
 }
 
 function closePanel(){
@@ -324,13 +318,8 @@ function closePanel(){
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
 }
 
-// ----------------- Greta-style timeline input (wheel + drag + inertia + snapping) -----------------
-const timeline = {
-  value: 0.02,
-  target: 0.02,
-  velocity: 0,
-  lastInteractT: 0
-};
+// ------- Greta-style timeline input -------
+const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: 0 };
 
 function normalizeWheel(e){
   let dy = e.deltaY;
@@ -342,10 +331,7 @@ function normalizeWheel(e){
 window.addEventListener("wheel", (e) => {
   e.preventDefault();
   timeline.lastInteractT = performance.now();
-
-  const dy = normalizeWheel(e);
-  const strength = 0.0009;
-  timeline.velocity += dy * strength;
+  timeline.velocity += normalizeWheel(e) * 0.0009;
 }, { passive: false });
 
 let dragging = false;
@@ -363,7 +349,6 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (!dragging) return;
   timeline.lastInteractT = performance.now();
-
   const dx = (e.clientX - dragStartX) / Math.max(1, window.innerWidth);
   timeline.velocity = dragStartVel - dx * 0.06;
 });
@@ -383,7 +368,7 @@ function nearestChapter(v){
   return best;
 }
 
-// ----------------- Asset Loading (loader progress) -----------------
+// ------- Loader + asset loading -------
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
@@ -392,12 +377,13 @@ manager.onProgress = (_url, loaded, total) => {
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl.classList.add("is-hidden"), 250);
+  hintEl.textContent = "Scroll / drag to orbit • Click folders";
 };
 
 const texLoader = new THREE.TextureLoader(manager);
 const gltfLoader = new GLTFLoader(manager);
 
-// background attempt (replaces procedural if found)
+// Background image (optional)
 texLoader.load(
   ASSETS.backgroundSphereTex,
   (tex) => {
@@ -407,74 +393,60 @@ texLoader.load(
     backgroundSphere.material.needsUpdate = true;
   },
   undefined,
+  () => {}
+);
+
+// Model (fallback if missing)
+gltfLoader.load(
+  ASSETS.modelMeOnHill,
+  (gltf) => {
+    const model = gltf.scene;
+
+    model.traverse((o) => {
+      if (o.isMesh && o.material?.map) o.material.map.colorSpace = THREE.SRGBColorSpace;
+    });
+
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    const maxAxis = Math.max(size.x, size.y, size.z);
+    const scale = 2.2 / Math.max(0.0001, maxAxis);
+    model.scale.setScalar(scale);
+
+    const centerPoint = new THREE.Vector3();
+    box.getCenter(centerPoint);
+    model.position.sub(centerPoint.multiplyScalar(scale));
+    model.position.y += -0.9;
+
+    center.add(model);
+  },
+  undefined,
   () => {
-    // keep procedural sky if missing
+    const body = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.35, 0.7, 10, 18),
+      new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
+    );
+    body.position.y = -0.25;
+    center.add(body);
+
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.26, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.9 })
+    );
+    head.position.y = 0.5;
+    center.add(head);
   }
 );
 
-// model attempt (fallback if missing)
-loadCenterModel();
-
-function loadCenterModel(){
-  gltfLoader.load(
-    ASSETS.modelMeOnHill,
-    (gltf) => {
-      const model = gltf.scene;
-
-      model.traverse((o) => {
-        if (o.isMesh) {
-          o.castShadow = false;
-          o.receiveShadow = false;
-          if (o.material?.map) o.material.map.colorSpace = THREE.SRGBColorSpace;
-        }
-      });
-
-      const box = new THREE.Box3().setFromObject(model);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-
-      const maxAxis = Math.max(size.x, size.y, size.z);
-      const scale = 2.2 / Math.max(0.0001, maxAxis);
-      model.scale.setScalar(scale);
-
-      const centerPoint = new THREE.Vector3();
-      box.getCenter(centerPoint);
-      model.position.sub(centerPoint.multiplyScalar(scale));
-      model.position.y += -0.9;
-
-      center.add(model);
-    },
-    undefined,
-    () => {
-      const body = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.35, 0.7, 10, 18),
-        new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
-      );
-      body.position.y = -0.25;
-      center.add(body);
-
-      const head = new THREE.Mesh(
-        new THREE.SphereGeometry(0.26, 20, 20),
-        new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.9 })
-      );
-      head.position.y = 0.5;
-      center.add(head);
-    }
-  );
-}
-
-// open hash on load
+// Hash open on load
 {
   const id = (location.hash || "").replace("#", "");
   const ch = CHAPTERS.find(c => c.id === id);
-  if (ch) {
-    timeline.value = ch.progress;
-    timeline.target = ch.progress;
-    openPanel(ch).catch(()=>{});
-  }
+  if (ch) { timeline.value = ch.progress; timeline.target = ch.progress; openPanel(ch).catch(()=>{}); }
 }
 
-// ----------------- Resize -----------------
+// Resize
 window.addEventListener("resize", () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -482,7 +454,7 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
 });
 
-// ----------------- Render loop -----------------
+// Render loop
 const ORBIT_TURNS = 1.55;
 const ORBIT_RADIUS = 6.0;
 
@@ -503,7 +475,6 @@ function tick(){
     timeline.target = THREE.MathUtils.lerp(timeline.target, near.progress, 0.018);
   }
 
-  // orbit mapping
   const azimuth = timeline.value * ORBIT_TURNS * Math.PI * 2.0;
 
   const pitchStart = THREE.MathUtils.degToRad(64);
@@ -518,13 +489,10 @@ function tick(){
   camera.position.set(x, y + 0.45, z);
   camera.lookAt(0, 0.25, 0);
 
-  // background parallax
   backgroundSphere.rotation.y = azimuth * 0.22 + 0.35;
   backgroundSphere.rotation.x = Math.sin(azimuth * 0.15) * 0.03;
 
-  // folder fade
   const camAngle = wrapAngle(azimuth);
-
   let nearest = null;
   let nearestDiff = Infinity;
 
@@ -542,7 +510,6 @@ function tick(){
     mesh.position.y = 0.18 + Math.sin(time * 1.2 + folderAngle) * 0.03;
   }
 
-  // update UI
   if (nearest && nearestDiff < 0.95) {
     if (activeChapterId !== nearest.id) {
       activeChapterId = nearest.id;
@@ -551,7 +518,6 @@ function tick(){
     }
   }
 
-  // subtle center sway
   center.rotation.y = Math.sin(time * 0.25) * 0.05;
 
   renderer.render(scene, camera);
