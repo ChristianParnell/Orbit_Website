@@ -6,40 +6,26 @@
   <meta name="theme-color" content="#070A0C" />
   <title>Orbit Portfolio</title>
 
-  <!-- Cache busting: bump v= when you update styles -->
-  <link rel="stylesheet" href="./styles.css?v=10" />
-
-  <!-- Avoid favicon.ico 404 on GitHub Pages -->
+  <link rel="stylesheet" href="./styles.css?v=2" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
-
-  <style>
-    /* Minimal safety fallback if styles.css fails to load */
-    html,body{height:100%;margin:0;background:#070A0C;color:#E8EEF2;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
-    #webgl{position:fixed;inset:0;width:100%;height:100%;display:block;}
-  </style>
 </head>
 
 <body>
-  <!-- WebGL canvas -->
-  <canvas id="webgl" aria-label="3D portfolio spiral scene"></canvas>
+  <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
 
-  <!-- Loader overlay -->
   <div id="loader" class="loader" aria-live="polite">
     <div class="loader__card">
-      <div class="loader__title">Loading spiral…</div>
-      <div class="loader__bar">
-        <div id="loaderFill" class="loader__fill"></div>
-      </div>
+      <div class="loader__title">Loading orbit…</div>
+      <div class="loader__bar"><div id="loaderFill" class="loader__fill"></div></div>
       <div id="loaderPct" class="loader__pct">0%</div>
       <div class="loader__note">Scroll or drag once loaded</div>
     </div>
   </div>
 
-  <!-- HUD overlay -->
   <div id="hud">
     <div class="brand">
       <div class="brand__name">YOUR NAME</div>
-      <div class="brand__tag">Scroll / drag to spiral • Click folders • ESC closes</div>
+      <div class="brand__tag">Scroll / drag to orbit • Click tiles • ESC closes</div>
     </div>
 
     <div class="bottomRow">
@@ -48,7 +34,6 @@
     </div>
   </div>
 
-  <!-- Content panel -->
   <div id="panel" class="panel" aria-hidden="true">
     <div class="panel__topbar">
       <div id="panelTitle" class="panel__title">Title</div>
@@ -57,64 +42,92 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
-  <!-- BOOTLOADER: guarantees we try to load main.js and shows an on-screen error if it fails -->
   <script type="module">
     const hint = document.getElementById("hint");
+    const BUILD = "2"; // bump on every deploy
+    const mainUrl = `./main.js?v=${encodeURIComponent(BUILD)}`;
 
-    // Bump this any time you want to force-refresh caching on GitHub Pages
-    const BUILD = "10";
+    function showBootError(message, err) {
+      console.error("BOOT FAILED:", message, err || "");
+      if (hint) hint.textContent = "Boot failed ❌ (Console)";
 
-    hint.textContent = "Loading main.js…";
-
-    try {
-      // Import the module with cache-busting
-      await import(`./main.js?v=${encodeURIComponent(BUILD)}`);
-
-      // main.js will update the hint when it runs ✅
-    } catch (err) {
-      console.error("main.js failed:", err);
-      hint.textContent = "main.js failed ❌ (open DevTools Console)";
-
-      // On-screen, non-silent failure box
       const box = document.createElement("div");
-      box.style.position = "fixed";
-      box.style.left = "16px";
-      box.style.right = "16px";
-      box.style.bottom = "16px";
-      box.style.zIndex = "9999";
-      box.style.padding = "14px";
-      box.style.borderRadius = "16px";
-      box.style.background = "rgba(10,12,14,0.94)";
-      box.style.border = "1px solid rgba(232,238,242,0.18)";
-      box.style.color = "rgba(232,238,242,0.92)";
-      box.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-      box.style.lineHeight = "1.45";
+      Object.assign(box.style, {
+        position: "fixed",
+        left: "16px",
+        right: "16px",
+        bottom: "16px",
+        zIndex: "9999",
+        padding: "14px",
+        borderRadius: "16px",
+        background: "rgba(10,12,14,0.94)",
+        border: "1px solid rgba(232,238,242,0.18)",
+        color: "rgba(232,238,242,0.92)",
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+        lineHeight: "1.45",
+      });
       box.innerHTML = `
         <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">JavaScript didn’t start 🧯</div>
-        <div style="opacity:0.85;font-size:13px;">
-          Open DevTools → Console and copy the first red error line.
-          <div style="margin-top:8px;opacity:0.8;">Common causes:</div>
-          <ul style="margin:6px 0 0 18px;opacity:0.8;font-size:13px;line-height:1.4;">
-            <li>main.js not in the same folder as index.html</li>
-            <li>case mismatch: Main.js vs main.js</li>
-            <li>GitHub Pages serving from a subfolder you didn’t expect</li>
-            <li>blocked module import due to mixed content or CSP</li>
-          </ul>
+        <div style="opacity:0.85;font-size:13px;">${message}</div>
+        <div style="opacity:0.7;font-size:12px;margin-top:8px;">
+          Check: correct folder published, correct filenames, and main.js is the updated file.
         </div>
       `;
       document.body.appendChild(box);
     }
-  </script>
 
-  <noscript>
-    <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:#070A0C;color:#E8EEF2;">
-      <div style="max-width:520px;border:1px solid rgba(232,238,242,0.18);border-radius:16px;padding:16px;background:rgba(8,10,12,0.8);">
-        <div style="font-weight:800;margin-bottom:6px;">JavaScript is required</div>
-        <div style="opacity:0.85;font-size:13px;line-height:1.45;">
-          This site uses WebGL + modules to render the 3D spiral. Please enable JavaScript.
-        </div>
-      </div>
-    </div>
-  </noscript>
+    async function nukeSWAndCaches() {
+      try {
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) await r.unregister();
+        }
+      } catch {}
+      try {
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+      } catch {}
+    }
+
+    function firstRealLine(text) {
+      const lines = text.split("\n");
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith("//")) continue;
+        if (line.startsWith("/*")) continue;
+        return line;
+      }
+      return "";
+    }
+
+    hint.textContent = `Checking ${mainUrl}…`;
+
+    try {
+      await nukeSWAndCaches();
+
+      const res = await fetch(mainUrl, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Fetch main.js failed: ${res.status} ${res.statusText}`);
+
+      const text = await res.text();
+      const firstLine = firstRealLine(text);
+      console.log("main.js FIRST REAL LINE:", firstLine);
+
+      if (!firstLine.startsWith("import")) {
+        throw new Error(
+          "main.js is not being served as the ES module version (no 'import' found at the top). " +
+          "Make sure the very first non-comment line in main.js is an import."
+        );
+      }
+
+      hint.textContent = "main.js verified ✅ loading…";
+      await import(mainUrl);
+
+    } catch (e) {
+      showBootError(e?.message || String(e), e);
+    }
+  </script>
 </body>
 </html>
