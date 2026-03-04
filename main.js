@@ -1,7 +1,10 @@
-import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// main.js (GitHub Pages safe, no importmap needed)
+// Uses esm.sh so GLTFLoader works in the browser without bundlers.
 
-/** Base URL from where this module lives (works on GitHub Pages project sites) */
+import * as THREE from "https://esm.sh/three@0.160.0";
+import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+
+// Base URL for local repo paths (works on GitHub Pages project sites)
 const BASE_URL = new URL("./", import.meta.url);
 
 // DOM
@@ -17,62 +20,71 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-// Hard proof it executed:
-window.__ORBIT_MAIN_LOADED__ = true;
-console.log("✅ main.js running:", import.meta.url);
-hintEl.textContent = "main.js loaded ✅ Building scene…";
-
-// If they double-click index.html (file://), assets/models fetch will often fail.
-if (location.protocol === "file:") {
-  hintEl.textContent = "Running from file:// ❌ Use Live Server / http.server for modules & models";
+function hardFail(msg, err) {
+  console.error(msg, err || "");
+  if (hintEl) hintEl.textContent = `❌ ${msg}`;
+  // show on-screen error so it can’t “silently fail”
+  const box = document.createElement("div");
+  box.style.position = "fixed";
+  box.style.left = "16px";
+  box.style.right = "16px";
+  box.style.bottom = "16px";
+  box.style.zIndex = "9999";
+  box.style.padding = "14px";
+  box.style.borderRadius = "16px";
+  box.style.background = "rgba(10,12,14,0.94)";
+  box.style.border = "1px solid rgba(232,238,242,0.18)";
+  box.style.color = "rgba(232,238,242,0.92)";
+  box.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  box.style.lineHeight = "1.45";
+  box.innerHTML = `
+    <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">Orbit error 🧯</div>
+    <div style="opacity:0.85;font-size:13px;">${msg}</div>
+    <div style="opacity:0.7;font-size:12px;margin-top:8px;">Open DevTools → Console for the first red error line.</div>
+  `;
+  document.body.appendChild(box);
 }
+
+if (!canvas) hardFail("Canvas #webgl not found. Check your index.html has <canvas id='webgl'>.");
+if (!hintEl) hardFail("HUD #hint not found. Check your index.html has <div id='hint'>.");
+if (!chaptersEl) hardFail("HUD #chapters not found. Check your index.html has <div id='chapters'>.");
+
+console.log("✅ Orbit main.js running:", import.meta.url);
+hintEl.textContent = "main.js loaded ✅ building scene…";
 
 // Helpers
 const u = (p) => new URL(p, BASE_URL).href;
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
-const smoothstep = (a, b, x) => {
-  const t = clamp01((x - a) / (b - a));
+function smoothstep(edge0, edge1, x) {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
-};
-const wrapAngle = (a) => {
+}
+function wrapAngle(a) {
   const twoPi = Math.PI * 2;
   return ((a % twoPi) + twoPi) % twoPi;
-};
-const smallestAngleDiff = (a, b) => {
+}
+function smallestAngleDiff(a, b) {
   const twoPi = Math.PI * 2;
   let d = Math.abs(a - b) % twoPi;
   if (d > Math.PI) d = twoPi - d;
   return d;
-};
+}
 
-// IMPORTANT: your repo currently has typos:
-// assets/modles/  (not models)  + pages/achivments.html
-// So we try both spellings so it works immediately.
-const PATHS = {
-  modelCandidates: [
-    u("assets/models/me_on_hill.glb"),
-    u("assets/modles/me_on_hill.glb")
-  ],
-  skyCandidates: [
-    u("assets/backgrounds/sky_sphere.jpg")
-  ],
-  pageCandidates: {
-    about: [u("pages/about.html")],
-    gallery: [u("pages/gallery.html")],
-    achievements: [u("pages/achievements.html"), u("pages/achivments.html")],
-    contact: [u("pages/contact.html")]
-  }
+// Assets (typos fixed version)
+const ASSETS = {
+  modelMeOnHill: u("assets/models/me_on_hill.glb"),
+  backgroundSphereTex: u("assets/backgrounds/sky_sphere.jpg"),
 };
 
 // Chapters
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  pages: PATHS.pageCandidates.about },
-  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  pages: PATHS.pageCandidates.gallery },
-  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, pages: PATHS.pageCandidates.achievements },
-  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, pages: PATHS.pageCandidates.contact }
+  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: u("pages/about.html") },
+  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: u("pages/gallery.html") },
+  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: u("pages/achievements.html") },
+  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: u("pages/contact.html") },
 ];
 
-// Chapter UI
+// Build chapter UI
 let activeChapterId = null;
 
 function buildChapterUI() {
@@ -103,22 +115,17 @@ function setActiveDot(id) {
 
 buildChapterUI();
 
-// Loader progress (2 tasks: sky + model)
-const progress = { total: 2, done: 0 };
-function setPct(p) {
-  const pct = Math.max(0, Math.min(100, Math.round(p)));
-  loaderFill.style.width = `${pct}%`;
-  loaderPct.textContent = `${pct}%`;
-}
-function markDone() {
-  progress.done++;
-  setPct((progress.done / progress.total) * 100);
-  if (progress.done >= progress.total) {
-    setTimeout(() => loaderEl.classList.add("is-hidden"), 250);
-    hintEl.textContent = "Scroll / drag to orbit • Click folders";
-  }
-}
-setPct(0);
+// Loading manager (shows progress for loaders that use it)
+const manager = new THREE.LoadingManager();
+manager.onProgress = (_url, loaded, total) => {
+  const pct = total ? Math.round((loaded / total) * 100) : 0;
+  if (loaderFill) loaderFill.style.width = `${pct}%`;
+  if (loaderPct) loaderPct.textContent = `${pct}%`;
+};
+manager.onLoad = () => {
+  setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
+  if (hintEl) hintEl.textContent = "Scroll / drag to orbit • Click folders";
+};
 
 // Three.js setup
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -192,7 +199,7 @@ function makeSkyTexture() {
   return tex;
 }
 
-// Background sphere
+// Background sphere (fog disabled)
 let backgroundSphere = null;
 {
   const geo = new THREE.SphereGeometry(70, 48, 48);
@@ -208,27 +215,21 @@ let backgroundSphere = null;
   scene.add(backgroundSphere);
 }
 
-// Load texture with fallback list
-const texLoader = new THREE.TextureLoader();
-function loadTextureWithFallback(urls, onDone) {
-  let i = 0;
-  const tryNext = () => {
-    if (i >= urls.length) return onDone(null);
-    const url = urls[i++];
-    texLoader.load(url, (tex) => onDone(tex), undefined, () => tryNext());
-  };
-  tryNext();
-}
-
-loadTextureWithFallback(PATHS.skyCandidates, (tex) => {
-  if (tex && tex.isTexture) {
+// Load background image (optional)
+const texLoader = new THREE.TextureLoader(manager);
+texLoader.load(
+  ASSETS.backgroundSphereTex,
+  (tex) => {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     backgroundSphere.material.map = tex;
     backgroundSphere.material.needsUpdate = true;
+  },
+  undefined,
+  () => {
+    // keep procedural sky if it fails
   }
-  markDone(); // sky done
-});
+);
 
 // Folder ring
 const folderGroup = new THREE.Group();
@@ -340,8 +341,8 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Load model with fallback list
-const gltfLoader = new GLTFLoader();
+// Model loading (with fallback)
+const gltfLoader = new GLTFLoader(manager);
 
 function addFallbackModel() {
   const body = new THREE.Mesh(
@@ -359,18 +360,9 @@ function addFallbackModel() {
   center.add(head);
 }
 
-function loadGltfWithFallback(urls, onDone) {
-  let i = 0;
-  const tryNext = () => {
-    if (i >= urls.length) return onDone(null);
-    const url = urls[i++];
-    gltfLoader.load(url, (gltf) => onDone(gltf), undefined, () => tryNext());
-  };
-  tryNext();
-}
-
-loadGltfWithFallback(PATHS.modelCandidates, (gltf) => {
-  if (gltf && gltf.scene) {
+gltfLoader.load(
+  ASSETS.modelMeOnHill,
+  (gltf) => {
     const model = gltf.scene;
 
     const box = new THREE.Box3().setFromObject(model);
@@ -387,19 +379,19 @@ loadGltfWithFallback(PATHS.modelCandidates, (gltf) => {
     model.position.y += -0.9;
 
     center.add(model);
-  } else {
+  },
+  undefined,
+  () => {
     addFallbackModel();
   }
+);
 
-  markDone(); // model done
-});
-
-// Picking folders
+// Picking (click folders)
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
 canvas.addEventListener("click", (e) => {
-  if (panel.classList.contains("is-open")) return;
+  if (panel?.classList.contains("is-open")) return;
 
   const rect = canvas.getBoundingClientRect();
   pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -417,32 +409,27 @@ canvas.addEventListener("click", (e) => {
 });
 
 // Panel
-panelClose.addEventListener("click", closePanel);
+panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
-async function fetchFirstOk(urls) {
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (res.ok) return await res.text();
-    } catch {}
-  }
-  throw new Error("All fetch attempts failed");
-}
-
 async function openPanel(ch) {
+  if (!panel || !panelTitle || !panelBody) return;
+
   panelTitle.textContent = ch.label;
   panel.classList.add("is-open");
   panel.setAttribute("aria-hidden", "false");
 
   try {
-    panelBody.innerHTML = await fetchFirstOk(ch.pages);
+    const res = await fetch(ch.page, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    panelBody.innerHTML = await res.text();
   } catch {
-    panelBody.innerHTML = `<p>Couldn’t load panel content.</p>`;
+    panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
   }
 }
 
 function closePanel() {
+  if (!panel || !panelTitle || !panelBody) return;
   panel.classList.remove("is-open");
   panel.setAttribute("aria-hidden", "true");
   panelTitle.textContent = "";
