@@ -62,62 +62,57 @@ const CHAPTERS = [
 
 // Tuning
 const T = {
-  // ✅ MUCH slower scroll orbit (you must scroll more)
+  // ✅ orbit must be slow (user scrolls more)
   scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
   maxVel: 0.0030,
 
+  // ✅ smooth slow-down (no snapping)
   dampingActive: 9.0,
   dampingIdle: 34.0,
   idleDelayMs: 120,
   stopEps: 0.00002,
 
-  // ✅ Model placement (match the reference vibe)
-  modelTargetSize: 10.2,
-  modelYOffset: -0.70,     // move model up/down
-  modelYawDeg: 10,         // rotate model a touch
-  modelExtraLift: 0.0,     // if your rock base is clipping, raise this
+  modelTargetSize: 9.2,
 
-  // ✅ Camera (more “stable” like the screenshot)
-  camRadius: 23.0,
-  camAzBase: 1.05,
-  camFollow: 0.18,         // 0 = camera stays fixed, 1 = camera fully follows orbit
-  camYBase: 5.6,
-  camYAmplitude: 0.35,
-  lookY: 2.85,
+  orbitTurns: 1.55,
+  camRadius: 20.5,
+  camYBase: 6.1,
+  camYAmplitude: 1.20,
+  lookY: 1.25,
 
-  // ✅ Tiles orbit around the model (ring / cylinder feel)
-  orbitTurns: 1.0,         // 1 full revolution over timeline 0..1
-  ringRadius: 18.0,
-  ringRadiusWobble: 0.55,  // small organic variation
-  ringYBase: 6.0,
-  ringYWaveAmp: 1.9,
-  ringYProgressAmp: 2.2,   // tiles get unique heights based on their progress
-  ringBobAmp: 0.08,
+  // ✅ HELIX PATH (corkscrew)
+  spiralRadius: 12.8,
+  spiralYOffset: 5.5,
 
-  // Default “stuck on a ring” tilt/lean (NOT straight-on)
-  ringTiltDeg: 18,         // pitch tilt
-  ringRollDeg: 10,         // per-tile roll randomness
+  // stronger corkscrew vertical rise
+  spiralYStep: 6.6,
 
-  // ✅ Straighten when close to camera
-  straightenNear: 10.5,    // starts really straightening here (closer)
-  straightenFar: 19.0,     // stops straightening here (farther)
-  straightenPush: 1.35,    // pulls tile slightly toward camera as it straightens
-  straightenScale: 0.14,   // grows slightly when straightened
-  straightenFrontMin: 0.20,
-  straightenFrontMax: 0.86,
+  // ✅ evenly distribute tiles around ring (fixes “wrong spacing”)
+  tileAngleStep: (Math.PI * 2) / CHAPTERS.length,
 
-  // Tile size/curve
+  // keeps front tile a bit closer
+  frontPush: 0.75,
+  radiusGrow: 0.65,
+
+  visibleRange: 1.75,
+  fadeSoftness: 1.15,
+
+  // big folders
   tileW: 4.05,
   tileH: 2.45,
   tileCurve: 0.080,
 
-  // title offset (local space on card)
+  // title offset (2D plane, not billboard)
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // Visibility / fade (front tiles strongest like the reference)
-  fadeSoftness: 0.22,
-  minOpacity: 0.14,
+  // ✅ straighten when close
+  straightenNear: 10.5,
+  straightenFar: 20.0,
+  straightenPush: 0.95,
+  straightenScale: 0.12,
+  straightenFaceMin: 0.20,
+  straightenFaceMax: 0.86,
 };
 
 // Loading manager
@@ -220,7 +215,7 @@ new THREE.TextureLoader(manager).load(
   () => {}
 );
 
-// Fog fallback texture
+// Fog fallback texture (always visible)
 function makeFogTextureFallback(){
   const w=512, h=512;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -268,6 +263,7 @@ new THREE.TextureLoader(manager).load(
   () => console.warn("Fog texture missing/failed, using fallback fog texture.")
 );
 
+// Fog group
 const fogGroup = new THREE.Group();
 scene.add(fogGroup);
 
@@ -566,13 +562,9 @@ const tileItems = [];
     g.add(cover);
     g.add(title);
 
-    // per-tile stable randomness (so it feels like the screenshot)
-    const roll = (Math.random()*2 - 1) * THREE.MathUtils.degToRad(T.ringRollDeg);
-    const seed = Math.random() * 1000;
-
     tileGroup.add(g);
     clickableMeshes.push(cover);
-    tileItems.push({ group:g, cover, title, chapter:ch, index:i, roll, seed });
+    tileItems.push({ group:g, cover, title, chapter:ch, index:i });
   }
 })();
 
@@ -583,7 +575,7 @@ function addFallbackModel(){
     new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
     new THREE.MeshStandardMaterial({ color:PAL.text.getHex(), roughness:0.88, metalness:0.02 })
   );
-  body.position.y = 1.0;
+  body.position.y = -0.45;
   center.add(body);
 }
 
@@ -603,12 +595,8 @@ gltfLoader.load(
     const box2 = new THREE.Box3().setFromObject(model);
     const centerPoint = new THREE.Vector3();
     box2.getCenter(centerPoint);
-
     model.position.sub(centerPoint);
-
-    // ✅ position like the reference
-    model.position.y += T.modelYOffset + T.modelExtraLift;
-    model.rotation.y = THREE.MathUtils.degToRad(T.modelYawDeg);
+    model.position.y += -1.35;
 
     center.add(model);
   },
@@ -745,6 +733,12 @@ function nearestChapter(v){
   }
   return best;
 }
+function progressToIndex(v){
+  const min=Math.min(...CHAPTERS.map(c=>c.progress));
+  const max=Math.max(...CHAPTERS.map(c=>c.progress));
+  const t=clamp01((v-min)/Math.max(1e-6,(max-min)));
+  return t*(CHAPTERS.length-1); // continuous
+}
 
 // Resize
 window.addEventListener("resize", ()=>{
@@ -754,21 +748,20 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
 });
 
-// Temps
+// Temps (no allocations inside the loop)
 const vToCam = new THREE.Vector3();
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
 const up = new THREE.Vector3(0,1,0);
 
-const normal = new THREE.Vector3();
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
 const basis = new THREE.Matrix4();
 
-const camDir = new THREE.Vector3();
-const qBillboard = new THREE.Quaternion();
 const qBase = new THREE.Quaternion();
+const qBillboard = new THREE.Quaternion();
+const toCam = new THREE.Vector3();
 
 requestAnimationFrame(tick);
 function tick(){
@@ -784,18 +777,15 @@ function tick(){
 
   timeline.value = clamp01(timeline.value + timeline.vel);
 
-  // ✅ Orbit phase (tiles orbit model)
-  const orbitPhase = timeline.value * (Math.PI * 2) * T.orbitTurns;
+  // Camera orbit
+  const azimuth = (timeline.value*T.orbitTurns)*Math.PI*2 + 1.06;
+  const camY = T.camYBase + Math.sin(timeline.value*Math.PI*2)*T.camYAmplitude;
 
-  // ✅ Camera: mostly stable, only subtle follow (like the reference)
-  const camAz = T.camAzBase + orbitPhase * T.camFollow;
-  const camY = T.camYBase + Math.sin(orbitPhase) * T.camYAmplitude;
-  camera.position.set(Math.cos(camAz)*T.camRadius, camY, Math.sin(camAz)*T.camRadius);
+  camera.position.set(Math.cos(azimuth)*T.camRadius, camY, Math.sin(azimuth)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
-  // Background slight drift
-  bg.rotation.y = camAz*0.10 + 0.35;
-  bg.rotation.x = Math.sin(camAz*0.08)*0.020;
+  bg.rotation.y = azimuth*0.10 + 0.35;
+  bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
 
   // UI highlight only
   const near = nearestChapter(timeline.value);
@@ -832,91 +822,75 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // Precompute camera direction from center (for “frontness”)
-  camDir.copy(camera.position);
-  camDir.y = 0;
-  if (camDir.lengthSq() < 1e-6) camDir.set(0,0,1);
-  camDir.normalize();
+  // ✅ Corkscrew driver (continuous)
+  const centerIdx = progressToIndex(timeline.value);
 
-  // ✅ Tiles: orbit around model + straighten near camera
+  // Tiles (upright + corkscrew upward + straighten near camera)
   for(const item of tileItems){
-    const { group, cover, title, chapter, index, roll, seed } = item;
+    const { group, cover, title, index } = item;
+    const rel = index - centerIdx; // continuous
 
-    // angle where this chapter should live around the ring
-    // when timeline.value === chapter.progress => relAng = 0 => tile is FRONT
-    const relAng = (chapter.progress - timeline.value) * (Math.PI * 2) * T.orbitTurns;
+    // ✅ corkscrew UP as you scroll
+    const yPos = T.spiralYOffset - rel*T.spiralYStep + Math.sin(time*0.9 + index*0.6)*0.06;
 
-    // ring radius + tiny wobble to feel less perfect
-    const r = T.ringRadius + Math.sin(relAng*0.35 + seed) * T.ringRadiusWobble;
+    // ✅ around the model in a clean helix
+    const ang = azimuth + rel*T.tileAngleStep;
 
-    // position around ring (front = +Z side)
-    const px = Math.sin(relAng) * r;
-    const pz = Math.cos(relAng) * r;
+    const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.frontPush;
+    const r = T.spiralRadius + Math.abs(rel)*T.radiusGrow + frontBoost;
 
-    // height variation (gives the “floating timeline photos” feel)
-    const yPos =
-      T.ringYBase
-      + Math.sin(relAng*0.9 + seed*0.5) * T.ringYWaveAmp
-      + (chapter.progress - 0.5) * T.ringYProgressAmp
-      + Math.sin(time*0.9 + index*0.6) * T.ringBobAmp;
+    group.position.set(Math.cos(ang)*r, yPos, Math.sin(ang)*r);
 
-    group.position.set(px, yPos, pz);
+    // visibility fade with distance from center tile
+    const dAbs = Math.abs(rel);
+    const vis = 1.0 - smoothstep(
+      T.visibleRange - T.fadeSoftness,
+      T.visibleRange + T.fadeSoftness,
+      dAbs
+    );
 
-    // radial/tangent around ring
-    radial.set(px, 0, pz).normalize();                    // outward
-    tangent.set(Math.cos(relAng), 0, -Math.sin(relAng)).normalize(); // direction of travel
-
-    // how “front” the tile is (1 = front, -1 = back)
-    const front = radial.dot(camDir);
-
-    // fade cards a bit on the back side (like the reference)
-    const vis = clamp01(T.minOpacity + smoothstep(-0.10 - T.fadeSoftness, 0.38 + T.fadeSoftness, front));
-    cover.material.uniforms.uOpacity.value = vis;
+    cover.material.uniforms.uOpacity.value = clamp01(vis);
     cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
 
-    // -------- Base orientation: feels like cards orbiting a cylinder --------
-    // plane normal should face inward (toward the model)
-    normal.copy(radial).multiplyScalar(-1);
+    // vectors
+    toCam.copy(camera.position).sub(group.position);
+    const dist = toCam.length();
+    vToCam.copy(toCam).normalize();
 
-    // tilt the card slightly (so it's not perfectly upright)
-    const tilt = THREE.MathUtils.degToRad(T.ringTiltDeg);
-    normal.applyAxisAngle(tangent, -tilt); // negative = leans downward a bit
+    radial.set(Math.cos(ang), 0, Math.sin(ang)).normalize();     // outward
+    tangent.set(-Math.sin(ang), 0, Math.cos(ang)).normalize();   // flow direction
 
-    // build basis so +Z is normal, +X is tangent
-    xAxis.copy(tangent).normalize();
-    zAxis.copy(normal).normalize();
-    yAxis.crossVectors(zAxis, xAxis).normalize();
-    xAxis.crossVectors(yAxis, zAxis).normalize();
+    // ✅ BASE ORIENTATION: UPRIGHT (NO DOWNWARD 40° TILT)
+    // We want tiles to face IN toward the model by default (like orbiting photo cards).
+    zAxis.copy(radial).multiplyScalar(-1).normalize(); // inward normal
+    xAxis.copy(up).cross(zAxis);
+    if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
+    xAxis.normalize();
+    yAxis.copy(zAxis).cross(xAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
     qBase.setFromRotationMatrix(basis);
-
-    // add a little per-tile roll (like the screenshot)
     group.quaternion.copy(qBase);
-    group.rotateZ(roll);
 
-    // -------- Straighten near camera --------
-    vToCam.copy(camera.position).sub(group.position);
-    const dist = vToCam.length();
-    vToCam.normalize();
-
+    // ✅ STRAIGHTEN WHEN CLOSE (smooth billboard blend)
+    const facing = clamp01(zAxis.dot(vToCam)); // 1 when camera is in front of the card
     const distFac = clamp01((T.straightenFar - dist) / Math.max(0.0001, (T.straightenFar - T.straightenNear)));
-    const frontFac = smoothstep(T.straightenFrontMin, T.straightenFrontMax, front);
-    const straighten = clamp01(distFac * frontFac);
+    const faceFac = smoothstep(T.straightenFaceMin, T.straightenFaceMax, facing);
+    const straighten = clamp01(distFac * faceFac * vis);
 
-    // Billboard quaternion (upright, clean, faces camera)
-    zAxis.copy(vToCam); // +Z looks toward camera
-    xAxis.crossVectors(up, zAxis);
+    // build billboard (upright)
+    zAxis.copy(vToCam); // face camera
+    xAxis.copy(up).cross(zAxis);
     if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
     xAxis.normalize();
-    yAxis.crossVectors(zAxis, xAxis).normalize();
+    yAxis.copy(zAxis).cross(xAxis).normalize();
+
     basis.makeBasis(xAxis, yAxis, zAxis);
     qBillboard.setFromRotationMatrix(basis);
 
-    // slerp into “straight” when close
     group.quaternion.slerp(qBillboard, straighten);
 
-    // slight push & scale when straightened (nice “focus” feel)
+    // optional focus push + scale
     if (straighten > 0.0001){
       group.position.addScaledVector(vToCam, straighten * T.straightenPush);
       group.scale.setScalar(1.0 + straighten * T.straightenScale);
@@ -924,8 +898,8 @@ function tick(){
       group.scale.setScalar(1.0);
     }
 
-    // Title is strongest when it’s straightened and front-facing
-    title.material.opacity = clamp01(vis * (0.25 + 0.75*straighten));
+    // Title fade (stronger when straightened)
+    title.material.opacity = clamp01((0.15 + 0.85*straighten) * vis);
   }
 
   renderer.render(scene, camera);
