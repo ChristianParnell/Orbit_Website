@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Orbit Portfolio</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
+  <div id="scrollArea" aria-hidden="true"></div>
+
+  <div id="hud">
+    <div class="brand">
+      <div class="brand__name">YOUR NAME</div>
+      <div class="brand__tag">Personal portfolio • Scroll to orbit • Click folders</div>
+    </div>
+    <div class="hint">Scroll to rotate • Drag to orbit • Click folders to open</div>
+  </div>
+
+  <div id="panel" class="panel" aria-hidden="true">
+    <div class="panel__topbar">
+      <div id="panelTitle" class="panel__title">Title</div>
+      <button id="panelClose" class="panel__close" aria-label="Close panel">✕</button>
+    </div>
+    <div id="panelBody" class="panel__body"></div>
+  </div>
+
+  <noscript>
+    <div class="nojs">This site needs JavaScript enabled.</div>
+  </noscript>
+
+  <!-- IMPORTANT: must be module -->
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
