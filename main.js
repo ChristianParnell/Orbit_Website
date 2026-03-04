@@ -2,11 +2,11 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
 /**
- * IMPORTANT:
- * We compute a base URL from the file location, so this works on:
- * - GitHub Pages project sites: https://username.github.io/Orbit_Website/
- * - Local dev servers: http://localhost:xxxx/Orbit_Website/
- * - Any renamed repo (no hard-coded "/Orbit_Website")
+ * Base URL computed from the script location.
+ * Works on:
+ * - https://christianparnell.github.io/Orbit_Website/
+ * - local servers
+ * - renamed repos
  */
 const BASE_URL = new URL("./", import.meta.url);
 
@@ -23,21 +23,72 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-// quick proof JS is running
+// Quick proof JS is running
 hintEl.textContent = "JS running ✅ Scroll / drag to orbit";
 
-// Assets
-const ASSETS = {
-  modelMeOnHill: new URL("assets/models/me_on_hill.glb", BASE_URL).href,
-  backgroundSphereTex: new URL("assets/backgrounds/sky_sphere.jpg", BASE_URL).href
+// Tiny loader helper (we only have 2 “real” asset tasks)
+const progress = { total: 2, done: 0 };
+function setPct(p) {
+  const pct = Math.max(0, Math.min(100, Math.round(p)));
+  loaderFill.style.width = `${pct}%`;
+  loaderPct.textContent = `${pct}%`;
+}
+function markDone() {
+  progress.done++;
+  setPct((progress.done / progress.total) * 100);
+  if (progress.done >= progress.total) {
+    setTimeout(() => loaderEl.classList.add("is-hidden"), 250);
+    hintEl.textContent = "Scroll / drag to orbit • Click folders";
+  }
+}
+setPct(0);
+
+// Helpers
+function u(path) {
+  return new URL(path, BASE_URL).href;
+}
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x));
+}
+function smoothstep(edge0, edge1, x) {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+function wrapAngle(a) {
+  const twoPi = Math.PI * 2;
+  return ((a % twoPi) + twoPi) % twoPi;
+}
+function smallestAngleDiff(a, b) {
+  const twoPi = Math.PI * 2;
+  let d = Math.abs(a - b) % twoPi;
+  if (d > Math.PI) d = twoPi - d;
+  return d;
+}
+
+// We try BOTH spellings so your site works even with current repo typos.
+// (You can later rename modles→models and achivments→achievements and it’ll still work.)
+const PATHS = {
+  modelCandidates: [
+    u("assets/models/me_on_hill.glb"),
+    u("assets/modles/me_on_hill.glb")
+  ],
+  skyCandidates: [
+    u("assets/backgrounds/sky_sphere.jpg")
+  ],
+  pageCandidates: {
+    about: [u("pages/about.html")],
+    gallery: [u("pages/gallery.html")],
+    achievements: [u("pages/achievements.html"), u("pages/achivments.html")],
+    contact: [u("pages/contact.html")]
+  }
 };
 
-// Timeline “chapters”
+// Chapters (timeline stops)
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  page: new URL("pages/about.html", BASE_URL).href },
-  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  page: new URL("pages/gallery.html", BASE_URL).href },
-  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, page: new URL("pages/achievements.html", BASE_URL).href },
-  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, page: new URL("pages/contact.html", BASE_URL).href }
+  { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  pages: PATHS.pageCandidates.about },
+  { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  pages: PATHS.pageCandidates.gallery },
+  { id: "achievements", label: "Achievements", progress: 0.58, angleDeg: 170, pages: PATHS.pageCandidates.achievements },
+  { id: "contact",      label: "Contact",      progress: 0.84, angleDeg: 245, pages: PATHS.pageCandidates.contact }
 ];
 
 // Chapter UI
@@ -111,7 +162,7 @@ scene.add(center);
   center.add(ground);
 }
 
-// Procedural sky texture
+// Procedural sky (fallback)
 function makeSkyTexture() {
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -158,6 +209,36 @@ let backgroundSphere = null;
   backgroundSphere.rotation.y = 0.35;
   scene.add(backgroundSphere);
 }
+
+// Load background image (optional)
+const texLoader = new THREE.TextureLoader();
+function loadTextureWithFallback(urls, onDone) {
+  let i = 0;
+  const tryNext = () => {
+    if (i >= urls.length) {
+      onDone(false);
+      return;
+    }
+    const url = urls[i++];
+    texLoader.load(
+      url,
+      (tex) => onDone(tex),
+      undefined,
+      () => tryNext()
+    );
+  };
+  tryNext();
+}
+
+loadTextureWithFallback(PATHS.skyCandidates, (tex) => {
+  if (tex && tex.isTexture) {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    backgroundSphere.material.map = tex;
+    backgroundSphere.material.needsUpdate = true;
+  }
+  markDone(); // bg task
+});
 
 // Folder ring
 const folderGroup = new THREE.Group();
@@ -269,6 +350,68 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Model load (fallback on failure)
+const gltfLoader = new GLTFLoader();
+
+function addFallbackModel() {
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.35, 0.7, 10, 18),
+    new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
+  );
+  body.position.y = -0.25;
+  center.add(body);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.9 })
+  );
+  head.position.y = 0.5;
+  center.add(head);
+}
+
+function loadGltfWithFallback(urls, onDone) {
+  let i = 0;
+  const tryNext = () => {
+    if (i >= urls.length) {
+      onDone(null);
+      return;
+    }
+    const url = urls[i++];
+    gltfLoader.load(
+      url,
+      (gltf) => onDone(gltf),
+      undefined,
+      () => tryNext()
+    );
+  };
+  tryNext();
+}
+
+loadGltfWithFallback(PATHS.modelCandidates, (gltf) => {
+  if (gltf && gltf.scene) {
+    const model = gltf.scene;
+
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    const maxAxis = Math.max(size.x, size.y, size.z);
+    const scale = 2.2 / Math.max(0.0001, maxAxis);
+    model.scale.setScalar(scale);
+
+    const centerPoint = new THREE.Vector3();
+    box.getCenter(centerPoint);
+    model.position.sub(centerPoint.multiplyScalar(scale));
+    model.position.y += -0.9;
+
+    center.add(model);
+  } else {
+    addFallbackModel();
+  }
+
+  markDone(); // model task
+});
+
 // Picking (click folders)
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
@@ -295,17 +438,26 @@ canvas.addEventListener("click", (e) => {
 panelClose.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
+async function fetchFirstOk(urls) {
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.ok) return await res.text();
+    } catch {}
+  }
+  throw new Error("All fetch attempts failed.");
+}
+
 async function openPanel(ch) {
   panelTitle.textContent = ch.label;
   panel.classList.add("is-open");
   panel.setAttribute("aria-hidden", "false");
 
   try {
-    const res = await fetch(ch.page, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    panelBody.innerHTML = await res.text();
+    const html = await fetchFirstOk(ch.pages);
+    panelBody.innerHTML = html;
   } catch {
-    panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
+    panelBody.innerHTML = `<p>Couldn’t load this panel content.</p>`;
   }
 }
 
@@ -316,7 +468,7 @@ function closePanel() {
   panelBody.innerHTML = "";
 }
 
-// Timeline controls
+// Greta-style timeline controls
 const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: performance.now() };
 
 function normalizeWheel(e) {
@@ -366,73 +518,6 @@ function nearestChapter(v) {
   return best;
 }
 
-// Loader + asset loading manager
-const manager = new THREE.LoadingManager();
-manager.onProgress = (_url, loaded, total) => {
-  const pct = total ? Math.round((loaded / total) * 100) : 0;
-  loaderFill.style.width = `${pct}%`;
-  loaderPct.textContent = `${pct}%`;
-};
-manager.onLoad = () => {
-  loaderEl.classList.add("is-hidden");
-  hintEl.textContent = "Scroll / drag to orbit • Click folders";
-};
-
-const texLoader = new THREE.TextureLoader(manager);
-const gltfLoader = new GLTFLoader(manager);
-
-// Background image (optional)
-texLoader.load(
-  ASSETS.backgroundSphereTex,
-  (tex) => {
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    backgroundSphere.material.map = tex;
-    backgroundSphere.material.needsUpdate = true;
-  },
-  undefined,
-  () => {}
-);
-
-// Model (fallback if missing)
-gltfLoader.load(
-  ASSETS.modelMeOnHill,
-  (gltf) => {
-    const model = gltf.scene;
-
-    const box = new THREE.Box3().setFromObject(model);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-
-    const maxAxis = Math.max(size.x, size.y, size.z);
-    const scale = 2.2 / Math.max(0.0001, maxAxis);
-    model.scale.setScalar(scale);
-
-    const centerPoint = new THREE.Vector3();
-    box.getCenter(centerPoint);
-    model.position.sub(centerPoint.multiplyScalar(scale));
-    model.position.y += -0.9;
-
-    center.add(model);
-  },
-  undefined,
-  () => {
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.35, 0.7, 10, 18),
-      new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
-    );
-    body.position.y = -0.25;
-    center.add(body);
-
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.26, 20, 20),
-      new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.9 })
-    );
-    head.position.y = 0.5;
-    center.add(head);
-  }
-);
-
 // Resize
 window.addEventListener("resize", () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -451,7 +536,7 @@ function tick() {
   const time = clock.getElapsedTime();
 
   timeline.velocity *= Math.pow(0.86, dt * 60);
-  timeline.target = THREE.MathUtils.clamp(timeline.target + timeline.velocity, 0, 1);
+  timeline.target = clamp01(timeline.target + timeline.velocity);
   timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, 0.09);
 
   const idleMs = performance.now() - timeline.lastInteractT;
@@ -489,7 +574,7 @@ function tick() {
     const diff = smallestAngleDiff(camAngle, folderAngle);
 
     const visibility = 1.0 - smoothstep(0.58, 1.15, diff);
-    mesh.material.uniforms.uOpacity.value = THREE.MathUtils.clamp(visibility, 0, 1);
+    mesh.material.uniforms.uOpacity.value = clamp01(visibility);
     mesh.material.uniforms.uWobble.value = time * 2.0 + timeline.velocity * 80.0;
     mesh.position.y = 0.18 + Math.sin(time * 1.2 + folderAngle) * 0.03;
   }
@@ -498,19 +583,4 @@ function tick() {
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
-}
-
-function smoothstep(edge0, edge1, x) {
-  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
-}
-function wrapAngle(a) {
-  const twoPi = Math.PI * 2;
-  return ((a % twoPi) + twoPi) % twoPi;
-}
-function smallestAngleDiff(a, b) {
-  const twoPi = Math.PI * 2;
-  let d = Math.abs(a - b) % twoPi;
-  if (d > Math.PI) d = twoPi - d;
-  return d;
 }

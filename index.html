@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#070A0C" />
   <title>Orbit Portfolio</title>
 
-  <!-- Use relative paths so GitHub Pages project sites work reliably -->
-  <link rel="stylesheet" href="./styles.css?v=5" />
+  <link rel="stylesheet" href="./styles.css?v=7" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
 </head>
 
@@ -42,7 +42,12 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
-  <!-- Module script (GitHub Pages friendly) -->
-  <script type="module" src="./main.js?v=5"></script>
+  <noscript>
+    <div style="position:fixed;inset:16px;z-index:50;background:#111;color:#fff;padding:12px;border-radius:12px;max-width:560px;">
+      This site needs JavaScript enabled (Three.js + modules).
+    </div>
+  </noscript>
+
+  <script type="module" src="./main.js?v=7"></script>
 </body>
 </html>
