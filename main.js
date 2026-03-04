@@ -1,9 +1,10 @@
 ﻿import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-console.log("✅ main.js loaded", location.href);
+console.log("✅ main.js loaded from:", location.href);
 
 const ASSETS = {
+  // These exact paths are GitHub Pages safe because they’re relative
   modelMeOnHill: "./assets/models/me_on_hill.glb",
   backgroundSphereTex: "./assets/backgrounds/sky_sphere.jpg"
 };
@@ -55,18 +56,14 @@ scene.add(center);
 // Ground placeholder
 {
   const groundGeo = new THREE.CircleGeometry(2.4, 64);
-  const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x1b2a22,
-    roughness: 1,
-    metalness: 0
-  });
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2a22, roughness: 1, metalness: 0 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.95;
   center.add(ground);
 }
 
-// Always-visible procedural “sky” texture (so you SEE something even if jpg missing)
+// Always-visible procedural sky (so you’ll see a background even if jpg missing)
 function makeSkyTexture(){
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -80,7 +77,6 @@ function makeSkyTexture(){
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
-  // stars
   ctx.fillStyle = "rgba(255,255,255,0.9)";
   for (let i=0;i<900;i++){
     const x = Math.random()*w;
@@ -114,23 +110,23 @@ let backgroundSphere = null;
   backgroundSphere.rotation.y = 0.35;
   scene.add(backgroundSphere);
 
-  // Try load your real jpg on top of the placeholder
+  // Try load your real background image over the placeholder
   const texLoader = new THREE.TextureLoader();
   texLoader.load(
     ASSETS.backgroundSphereTex,
     (tex) => {
-      console.log("✅ Background texture loaded:", ASSETS.backgroundSphereTex);
+      console.log("✅ Background loaded:", ASSETS.backgroundSphereTex);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       backgroundSphere.material.map = tex;
       backgroundSphere.material.needsUpdate = true;
     },
     undefined,
-    (err) => console.warn("❌ Background jpg not found (placeholder used):", ASSETS.backgroundSphereTex, err)
+    (err) => console.warn("❌ Background missing (placeholder used):", ASSETS.backgroundSphereTex, err)
   );
 }
 
-// Load GLB model
+// Load GLB model (fallback if missing)
 const gltfLoader = new GLTFLoader();
 loadCenterModel();
 
@@ -149,6 +145,7 @@ function loadCenterModel(){
         }
       });
 
+      // Normalize scale & center
       const box = new THREE.Box3().setFromObject(model);
       const size = new THREE.Vector3();
       box.getSize(size);
@@ -166,9 +163,8 @@ function loadCenterModel(){
     },
     undefined,
     (e) => {
-      console.warn("❌ Model not found (fallback used):", ASSETS.modelMeOnHill, e);
+      console.warn("❌ Model missing (fallback used):", ASSETS.modelMeOnHill, e);
 
-      // fallback “person”
       const body = new THREE.Mesh(
         new THREE.CapsuleGeometry(0.35, 0.7, 10, 18),
         new THREE.MeshStandardMaterial({ color: 0xa8b3bd, roughness: 0.85, metalness: 0.05 })
@@ -216,7 +212,6 @@ function createFolderRing(){
         varying vec2 vUv;
         uniform float uCurve;
         uniform float uWobble;
-
         void main(){
           vUv = uv;
           vec3 p = position;
@@ -230,7 +225,6 @@ function createFolderRing(){
         varying vec2 vUv;
         uniform sampler2D uMap;
         uniform float uOpacity;
-
         void main(){
           vec4 tex = texture2D(uMap, vUv);
           if(tex.a < 0.02) discard;
@@ -298,7 +292,7 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.closePath();
 }
 
-// Orbit controls via scroll + drag
+// Orbit via scroll + drag
 let targetProgress = 0;
 let progress = 0;
 let targetAzimuth = 0;
@@ -335,7 +329,7 @@ canvas.addEventListener("pointerup", (e) => {
   try { canvas.releasePointerCapture(e.pointerId); } catch {}
 });
 
-// Clicking folders
+// Click folders
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
@@ -381,21 +375,12 @@ async function openPanel(folder){
   if (location.hash !== `#${folder.id}`) history.replaceState(null, "", `#${folder.id}`);
 
   try{
-    const res = await fetch(folder.page, { cache: "no-store" });
+    const res = await fetch(folder.page);
     const html = await res.text();
     panelBody.innerHTML = html;
   }catch(err){
-    panelBody.innerHTML = `<p>Couldn’t load <code>${folder.page}</code>. Make sure the file exists.</p>`;
+    panelBody.innerHTML = `<p>Couldn’t load <code>${folder.page}</code>.</p>`;
     console.warn("❌ Panel fetch failed:", folder.page, err);
-  }
-}
-
-// open hash on load
-{
-  const id = (location.hash || "").replace("#", "");
-  if (id) {
-    const f = FOLDERS.find(x => x.id === id);
-    if (f) openPanel(f);
   }
 }
 
@@ -443,7 +428,6 @@ function tick(){
   }
 
   const camAngle = wrapAngle(azimuth);
-
   for (const mesh of folderMeshes) {
     const f = mesh.userData.folder;
     const folderAngle = wrapAngle(THREE.MathUtils.degToRad(f.angleDeg));
@@ -462,8 +446,8 @@ function tick(){
 }
 
 function smoothstep(edge0, edge1, x){
-  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
+  const v = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return v * v * (3 - 2 * v);
 }
 function wrapAngle(a){
   const twoPi = Math.PI * 2;

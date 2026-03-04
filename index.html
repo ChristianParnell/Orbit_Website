@@ -4,34 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Orbit Portfolio</title>
+
   <link rel="stylesheet" href="./styles.css" />
 
-  <!-- Optional: remove favicon 404 -->
+  <!-- Avoid favicon.ico 404 on GitHub Pages -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
-
-  <!-- ✅ CRITICAL FIX: Import Map so "three" works on GitHub Pages (no bundler needed) -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 
 <body>
   <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
+
+  <!-- This makes the page scrollable (scroll drives orbit) -->
   <div id="scrollArea" aria-hidden="true"></div>
 
+  <!-- HUD -->
   <div id="hud">
     <div class="brand">
       <div class="brand__name">YOUR NAME</div>
-      <div class="brand__tag">Scroll to orbit • Click folders to open</div>
+      <div class="brand__tag">Scroll to orbit • Drag to rotate • Click folders</div>
     </div>
-    <div class="hint">Scroll to rotate • Drag to orbit • Click folders</div>
+
+    <div class="hint">Scroll to rotate • Drag to orbit • Click folders to open</div>
   </div>
 
+  <!-- Panel -->
   <div id="panel" class="panel" aria-hidden="true">
     <div class="panel__topbar">
       <div id="panelTitle" class="panel__title">Title</div>
@@ -40,6 +36,7 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
+  <!-- IMPORTANT: ES module -->
   <script type="module" src="./main.js"></script>
 </body>
 </html>
