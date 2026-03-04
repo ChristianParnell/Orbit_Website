@@ -1,13 +1,7 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-/**
- * Base URL computed from the script location.
- * Works on:
- * - https://christianparnell.github.io/Orbit_Website/
- * - local servers
- * - renamed repos
- */
+/** Base URL from where this module lives (works on GitHub Pages project sites) */
 const BASE_URL = new URL("./", import.meta.url);
 
 // DOM
@@ -23,50 +17,37 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-// Quick proof JS is running
-hintEl.textContent = "JS running ✅ Scroll / drag to orbit";
+// Hard proof it executed:
+window.__ORBIT_MAIN_LOADED__ = true;
+console.log("✅ main.js running:", import.meta.url);
+hintEl.textContent = "main.js loaded ✅ Building scene…";
 
-// Tiny loader helper (we only have 2 “real” asset tasks)
-const progress = { total: 2, done: 0 };
-function setPct(p) {
-  const pct = Math.max(0, Math.min(100, Math.round(p)));
-  loaderFill.style.width = `${pct}%`;
-  loaderPct.textContent = `${pct}%`;
+// If they double-click index.html (file://), assets/models fetch will often fail.
+if (location.protocol === "file:") {
+  hintEl.textContent = "Running from file:// ❌ Use Live Server / http.server for modules & models";
 }
-function markDone() {
-  progress.done++;
-  setPct((progress.done / progress.total) * 100);
-  if (progress.done >= progress.total) {
-    setTimeout(() => loaderEl.classList.add("is-hidden"), 250);
-    hintEl.textContent = "Scroll / drag to orbit • Click folders";
-  }
-}
-setPct(0);
 
 // Helpers
-function u(path) {
-  return new URL(path, BASE_URL).href;
-}
-function clamp01(x) {
-  return Math.max(0, Math.min(1, x));
-}
-function smoothstep(edge0, edge1, x) {
-  const t = clamp01((x - edge0) / (edge1 - edge0));
+const u = (p) => new URL(p, BASE_URL).href;
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const smoothstep = (a, b, x) => {
+  const t = clamp01((x - a) / (b - a));
   return t * t * (3 - 2 * t);
-}
-function wrapAngle(a) {
+};
+const wrapAngle = (a) => {
   const twoPi = Math.PI * 2;
   return ((a % twoPi) + twoPi) % twoPi;
-}
-function smallestAngleDiff(a, b) {
+};
+const smallestAngleDiff = (a, b) => {
   const twoPi = Math.PI * 2;
   let d = Math.abs(a - b) % twoPi;
   if (d > Math.PI) d = twoPi - d;
   return d;
-}
+};
 
-// We try BOTH spellings so your site works even with current repo typos.
-// (You can later rename modles→models and achivments→achievements and it’ll still work.)
+// IMPORTANT: your repo currently has typos:
+// assets/modles/  (not models)  + pages/achivments.html
+// So we try both spellings so it works immediately.
 const PATHS = {
   modelCandidates: [
     u("assets/models/me_on_hill.glb"),
@@ -83,7 +64,7 @@ const PATHS = {
   }
 };
 
-// Chapters (timeline stops)
+// Chapters
 const CHAPTERS = [
   { id: "about",        label: "About",        progress: 0.06, angleDeg: 20,  pages: PATHS.pageCandidates.about },
   { id: "gallery",      label: "Gallery",      progress: 0.32, angleDeg: 95,  pages: PATHS.pageCandidates.gallery },
@@ -121,6 +102,23 @@ function setActiveDot(id) {
 }
 
 buildChapterUI();
+
+// Loader progress (2 tasks: sky + model)
+const progress = { total: 2, done: 0 };
+function setPct(p) {
+  const pct = Math.max(0, Math.min(100, Math.round(p)));
+  loaderFill.style.width = `${pct}%`;
+  loaderPct.textContent = `${pct}%`;
+}
+function markDone() {
+  progress.done++;
+  setPct((progress.done / progress.total) * 100);
+  if (progress.done >= progress.total) {
+    setTimeout(() => loaderEl.classList.add("is-hidden"), 250);
+    hintEl.textContent = "Scroll / drag to orbit • Click folders";
+  }
+}
+setPct(0);
 
 // Three.js setup
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -162,7 +160,7 @@ scene.add(center);
   center.add(ground);
 }
 
-// Procedural sky (fallback)
+// Procedural sky fallback
 function makeSkyTexture() {
   const w = 1024, h = 512;
   const c = document.createElement("canvas");
@@ -194,7 +192,7 @@ function makeSkyTexture() {
   return tex;
 }
 
-// Background sphere (fog disabled)
+// Background sphere
 let backgroundSphere = null;
 {
   const geo = new THREE.SphereGeometry(70, 48, 48);
@@ -210,22 +208,14 @@ let backgroundSphere = null;
   scene.add(backgroundSphere);
 }
 
-// Load background image (optional)
+// Load texture with fallback list
 const texLoader = new THREE.TextureLoader();
 function loadTextureWithFallback(urls, onDone) {
   let i = 0;
   const tryNext = () => {
-    if (i >= urls.length) {
-      onDone(false);
-      return;
-    }
+    if (i >= urls.length) return onDone(null);
     const url = urls[i++];
-    texLoader.load(
-      url,
-      (tex) => onDone(tex),
-      undefined,
-      () => tryNext()
-    );
+    texLoader.load(url, (tex) => onDone(tex), undefined, () => tryNext());
   };
   tryNext();
 }
@@ -237,7 +227,7 @@ loadTextureWithFallback(PATHS.skyCandidates, (tex) => {
     backgroundSphere.material.map = tex;
     backgroundSphere.material.needsUpdate = true;
   }
-  markDone(); // bg task
+  markDone(); // sky done
 });
 
 // Folder ring
@@ -350,7 +340,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Model load (fallback on failure)
+// Load model with fallback list
 const gltfLoader = new GLTFLoader();
 
 function addFallbackModel() {
@@ -372,17 +362,9 @@ function addFallbackModel() {
 function loadGltfWithFallback(urls, onDone) {
   let i = 0;
   const tryNext = () => {
-    if (i >= urls.length) {
-      onDone(null);
-      return;
-    }
+    if (i >= urls.length) return onDone(null);
     const url = urls[i++];
-    gltfLoader.load(
-      url,
-      (gltf) => onDone(gltf),
-      undefined,
-      () => tryNext()
-    );
+    gltfLoader.load(url, (gltf) => onDone(gltf), undefined, () => tryNext());
   };
   tryNext();
 }
@@ -409,10 +391,10 @@ loadGltfWithFallback(PATHS.modelCandidates, (gltf) => {
     addFallbackModel();
   }
 
-  markDone(); // model task
+  markDone(); // model done
 });
 
-// Picking (click folders)
+// Picking folders
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
@@ -445,7 +427,7 @@ async function fetchFirstOk(urls) {
       if (res.ok) return await res.text();
     } catch {}
   }
-  throw new Error("All fetch attempts failed.");
+  throw new Error("All fetch attempts failed");
 }
 
 async function openPanel(ch) {
@@ -454,10 +436,9 @@ async function openPanel(ch) {
   panel.setAttribute("aria-hidden", "false");
 
   try {
-    const html = await fetchFirstOk(ch.pages);
-    panelBody.innerHTML = html;
+    panelBody.innerHTML = await fetchFirstOk(ch.pages);
   } catch {
-    panelBody.innerHTML = `<p>Couldn’t load this panel content.</p>`;
+    panelBody.innerHTML = `<p>Couldn’t load panel content.</p>`;
   }
 }
 
@@ -468,7 +449,7 @@ function closePanel() {
   panelBody.innerHTML = "";
 }
 
-// Greta-style timeline controls
+// Timeline controls
 const timeline = { value: 0.02, target: 0.02, velocity: 0, lastInteractT: performance.now() };
 
 function normalizeWheel(e) {

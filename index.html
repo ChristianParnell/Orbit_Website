@@ -6,8 +6,18 @@
   <meta name="theme-color" content="#070A0C" />
   <title>Orbit Portfolio</title>
 
-  <link rel="stylesheet" href="./styles.css?v=7" />
+  <link rel="stylesheet" href="./styles.css?v=8" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
+
+  <!-- ✅ This is the key: importmap so GLTFLoader + addons resolve in browser -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 
 <body>
@@ -29,7 +39,7 @@
     </div>
 
     <div class="bottomRow">
-      <div class="hint" id="hint">Loading…</div>
+      <div class="hint" id="hint">Booting…</div>
       <div class="chapters" id="chapters" aria-label="Chapters"></div>
     </div>
   </div>
@@ -42,12 +52,46 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
-  <noscript>
-    <div style="position:fixed;inset:16px;z-index:50;background:#111;color:#fff;padding:12px;border-radius:12px;max-width:560px;">
-      This site needs JavaScript enabled (Three.js + modules).
-    </div>
-  </noscript>
+  <!-- ✅ Bootloader: GUARANTEES we attempt to import main.js and show errors on-screen -->
+  <script type="module">
+    const hint = document.getElementById("hint");
 
-  <script type="module" src="./main.js?v=7"></script>
+    // If you ever worry about caching, bump BUILD to any new value.
+    const BUILD = "2026-03-04_8";
+
+    const mainUrl = new URL("./main.js", import.meta.url).href + `?v=${encodeURIComponent(BUILD)}`;
+
+    hint.textContent = "Loading main.js…";
+
+    try {
+      await import(mainUrl);
+      // main.js will update the hint again if it runs 👍
+    } catch (err) {
+      console.error("Failed to import main.js:", err);
+      hint.textContent = "main.js failed to load ❌ (open DevTools Console)";
+
+      const box = document.createElement("div");
+      box.style.position = "fixed";
+      box.style.left = "16px";
+      box.style.right = "16px";
+      box.style.bottom = "16px";
+      box.style.zIndex = "9999";
+      box.style.padding = "14px";
+      box.style.borderRadius = "16px";
+      box.style.background = "rgba(10,12,14,0.92)";
+      box.style.border = "1px solid rgba(232,238,242,0.18)";
+      box.style.color = "rgba(232,238,242,0.92)";
+      box.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+      box.style.lineHeight = "1.45";
+      box.innerHTML = `
+        <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">JavaScript didn’t start 🧯</div>
+        <div style="opacity:0.85;font-size:13px;">
+          Open DevTools → Console, and copy the first red error.
+          Common cause: module imports (fixed by importmap), or a blocked CDN.
+        </div>
+      `;
+      document.body.appendChild(box);
+    }
+  </script>
 </body>
 </html>
