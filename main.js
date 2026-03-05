@@ -25,18 +25,16 @@ function hardFail(msg, err){
   console.error(msg, err || "");
   if (hintEl) hintEl.textContent = `❌ ${msg}`;
 }
-
-// ✅ prevents the “quaternion sign flip” that causes sudden 180° rolls
-function keepQuatContinuous(q, prev){
-  if (q.dot(prev) < 0) { q.x *= -1; q.y *= -1; q.z *= -1; q.w *= -1; }
-  prev.copy(q);
+// Smooth approach
+function damp(current, target, lambda, dt){
+  return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
 }
 
 if (!canvas) hardFail("Canvas #webgl not found.");
 if (!hintEl) hardFail("HUD #hint not found.");
 if (!chaptersEl) hardFail("HUD #chapters not found.");
 
-console.log("✅ Helix main.js loaded. THREE revision:", THREE.REVISION);
+console.log("✅ Helix + Covers main.js loaded. THREE revision:", THREE.REVISION);
 hintEl.textContent = "Scene starting…";
 
 // Palette
@@ -58,17 +56,31 @@ const ASSETS = {
   audio: u("assets/audio/ambient.mp3"),
 };
 
-// Chapters
+// Chapters (+ covers + links)
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.10, page: u("pages/about.html") },
-  { id: "gallery",      label: "Gallery",      progress: 0.35, page: u("pages/gallery.html") },
-  { id: "achievements", label: "Achievements", progress: 0.60, page: u("pages/achievements.html") },
-  { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
+  { id:"about",        label:"About",        page:u("pages/about.html"),        cover:u("assets/covers/about.jpg") },
+  { id:"gallery",      label:"Gallery",      page:u("pages/gallery.html"),      cover:u("assets/covers/gallery.jpg") },
+  { id:"achievements", label:"Achievements", page:u("pages/achievements.html"), cover:u("assets/covers/achievements.jpg") },
+  { id:"contact",      label:"Contact",      page:u("pages/contact.html"),      cover:u("assets/covers/contact.jpg") },
+
+  // ✅ link tiles you asked for
+  { id:"fab",      label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",         cover:u("assets/covers/fab.jpg") },
+  { id:"steam",    label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/", cover:u("assets/covers/steam_22minutes.jpg") },
+  { id:"sketchfab",label:"Sketchfab Models",   href:"https://sketchfab.com/OblixStudio/models",          cover:u("assets/covers/sketchfab.jpg") },
 ];
+
+// auto progress spread (nice even navigation)
+(function assignProgress(){
+  const n = CHAPTERS.length;
+  for (let i=0;i<n;i++){
+    // keep ends away from 0/1 so highlight feels nicer
+    CHAPTERS[i].progress = (i + 1) / (n + 1);
+  }
+})();
 
 // Tuning
 const T = {
-  // motion input
+  // scroll control
   scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
   maxVel: 0.0030,
@@ -78,29 +90,28 @@ const T = {
   idleDelayMs: 120,
   stopEps: 0.00002,
 
-  // model framing (center it more)
+  // model framing (more centered)
   modelTargetSize: 9.8,
-  modelLift: -0.55,            // raise/lower model
+  modelLift: -0.25,
   modelYawDeg: 10,
 
-  // camera fixed (ignore orbit)
-  camAzimuth: Math.PI * 0.5,   // camera on +Z
-  camRadius: 18.6,
-  camYBase: 6.2,
-  camYBob: 0.20,
-  lookY: 1.85,
+  // camera fixed (focus helix)
+  camAzimuth: Math.PI * 0.5,  // looking from +Z
+  camRadius: 16.4,
+  camYBase: 5.6,
+  camYBob: 0.18,
+  lookY: 1.95,
 
-  // ✅ HELIX (corkscrew)
-  helixRadius: 8.6,            // closer to model
-  helixThetaOffset: Math.PI * 0.5, // puts the “center” tile in front
-  helixAngleStep: 1.35,        // radians per tile step along helix (tighten/loosen corkscrew)
-  helixPitch: 3.20,            // vertical rise per tile step (bigger = more corkscrew)
-  helixYOffset: 5.2,           // overall height of ribbon
-  helixFrontPull: 0.95,        // pulls the center tile closer to camera a bit
-  helixRadiusGrow: 0.55,       // grows radius slightly as you move away from center
+  // ✅ HELIX (real corkscrew)
+  helixRadius: 6.8,          // closer to mesh
+  helixThetaOffset: Math.PI * 0.5,
+  helixAngleStep: 1.35,      // rotation per tile step
+  helixPitch: 3.10,          // vertical rise per tile step
+  helixYOffset: 4.6,         // overall helix height
+  helixFrontPull: 0.75,      // nudge center tile forward
+  helixRadiusGrow: 0.35,     // slight radius increase away from center
 
-  // visibility
-  visibleRange: 1.85,
+  visibleRange: 2.15,
   fadeSoftness: 1.10,
 
   // tiles
@@ -109,13 +120,11 @@ const T = {
   tileCurve: 0.080,
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // ✅ straighten near camera WITHOUT roll flips
-  straightenNear: 8.7,
-  straightenFar: 17.5,
-  straightenPush: 0.85,
-  straightenScale: 0.12,
-  straightenFaceMin: 0.25,
-  straightenFaceMax: 0.90,
+  // hover animation
+  hoverDamp: 10.0,
+  flagAmp: 0.22,      // how much it waves when hovered
+  flagSpeed: 6.5,     // wave speed
+  revealWidth: 0.09,  // thickness of the color “front”
 };
 
 // Loading manager
@@ -127,7 +136,7 @@ manager.onProgress = (_url, loaded, total) => {
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  hintEl.textContent = "Scroll / drag • Click tiles • (audio starts on interaction)";
+  hintEl.textContent = "Scroll / drag • Hover tiles • Click to open";
 };
 
 // Renderer / scene / camera
@@ -266,7 +275,6 @@ new THREE.TextureLoader(manager).load(
   () => console.warn("Fog texture missing/failed, using fallback fog texture.")
 );
 
-// Fog group
 const fogGroup = new THREE.Group();
 scene.add(fogGroup);
 
@@ -437,8 +445,8 @@ window.addEventListener("pointerdown", gestureKick, { once:true });
 window.addEventListener("wheel", gestureKick, { once:true, passive:true });
 window.addEventListener("keydown", gestureKick, { once:true });
 
-// Tile textures
-function makeCoverTexture(){
+// ---------- Cover fallback texture ----------
+function makeFallbackCoverTexture(){
   const w=1024, h=640;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const ctx=c.getContext("2d");
@@ -466,16 +474,14 @@ function makeCoverTexture(){
   ctx.lineWidth=12;
   ctx.strokeRect(30,30,w-60,h-60);
 
-  ctx.strokeStyle="rgba(232,238,242,0.18)";
-  ctx.lineWidth=6;
-  ctx.strokeRect(56,56,w-112,h-112);
-
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy=8;
   return tex;
 }
+const FALLBACK_COVER_TEX = makeFallbackCoverTexture();
 
+// Title texture
 function makeTitleTexture(text){
   const w=1024, h=256;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -503,53 +509,136 @@ function makeTitleTexture(text){
   return tex;
 }
 
-// Tiles
+// ---------- Tiles ----------
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
 
 const clickableMeshes = [];
 const tileItems = [];
 
-(function createTiles(){
-  const coverTex = makeCoverTexture();
+const texLoader = new THREE.TextureLoader(manager);
+const TILE_ASPECT = T.tileW / T.tileH;
 
+function makeCoverMaterial(){
+  const mat = new THREE.ShaderMaterial({
+    transparent:true,
+    depthWrite:false,
+    side:THREE.DoubleSide,
+    uniforms:{
+      uTex:       { value: FALLBACK_COVER_TEX },
+      uTexAspect: { value: 1.0 },
+      uTileAspect:{ value: TILE_ASPECT },
+
+      uOpacity:   { value: 0.0 },
+      uCurve:     { value: T.tileCurve },
+
+      uTime:      { value: 0.0 },
+      uHover:     { value: 0.0 },
+
+      uFlagAmp:   { value: T.flagAmp },
+      uFlagSpeed: { value: T.flagSpeed },
+      uRevealW:   { value: T.revealWidth }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      uniform float uCurve;
+      uniform float uTime;
+      uniform float uHover;
+      uniform float uFlagAmp;
+      uniform float uFlagSpeed;
+
+      void main(){
+        vUv = uv;
+        vec3 p = position;
+
+        // gentle folder curve
+        float x = p.x;
+        p.z -= (x*x) * uCurve;
+
+        // flag / wind flap only when hovered
+        float amp = uHover * uFlagAmp;
+        float w1 = sin((uv.y*8.0 + uv.x*2.5) + uTime*uFlagSpeed);
+        float w2 = sin((uv.y*5.0 - uv.x*3.0) + uTime*(uFlagSpeed*0.8));
+        p.z += (w1*0.10 + w2*0.08) * amp;
+        p.y += (w1*0.04) * amp;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D uTex;
+      uniform float uTexAspect;
+      uniform float uTileAspect;
+
+      uniform float uOpacity;
+      uniform float uTime;
+      uniform float uHover;
+      uniform float uRevealW;
+
+      vec2 coverUV(vec2 uv, float texA, float tileA){
+        // "background-size: cover" cropping
+        vec2 s = vec2(1.0, 1.0);
+        if (texA > tileA){
+          // image wider -> scale X
+          s.x = texA / tileA;
+        }else{
+          // image taller -> scale Y
+          s.y = tileA / texA;
+        }
+        return (uv - 0.5) * s + 0.5;
+      }
+
+      void main(){
+        vec2 uv = coverUV(vUv, uTexAspect, uTileAspect);
+        vec4 t = texture2D(uTex, uv);
+
+        // grayscale
+        float g = dot(t.rgb, vec3(0.299, 0.587, 0.114));
+        vec3 gray = vec3(g);
+
+        // "flop into color" reveal front (left -> right), with a wavy edge
+        float wave = sin(vUv.y * 7.0 + uTime * 7.0) * 0.03 * uHover;
+        float edge = -0.20 + uHover * 1.20 + wave;  // -0.2..1.0-ish
+        float m = 1.0 - smoothstep(edge - uRevealW, edge + uRevealW, vUv.x);
+
+        // subtle extra shimmer along the edge when hovering
+        float edgeGlow = smoothstep(0.0, 1.0, uHover) * (1.0 - smoothstep(0.0, 0.12, abs(vUv.x - edge)));
+        vec3 col = mix(gray, t.rgb, m);
+        col += edgeGlow * 0.06;
+
+        gl_FragColor = vec4(col, uOpacity);
+      }
+    `
+  });
+  return mat;
+}
+
+(function createTiles(){
   for (let i=0;i<CHAPTERS.length;i++){
     const ch = CHAPTERS[i];
 
     const coverGeo = new THREE.PlaneGeometry(T.tileW, T.tileH, 30, 1);
-    const coverMat = new THREE.ShaderMaterial({
-      transparent:true,
-      depthWrite:false,
-      side:THREE.DoubleSide,
-      uniforms:{
-        uMap:{ value: coverTex },
-        uOpacity:{ value: 0.0 },
-        uCurve:{ value: T.tileCurve },
-        uWobble:{ value: 0.0 }
+    const coverMat = makeCoverMaterial();
+
+    // load the chapter cover texture
+    texLoader.load(
+      ch.cover,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        coverMat.uniforms.uTex.value = tex;
+        // aspect ratio for “cover” crop
+        const img = tex.image;
+        if (img && img.width && img.height){
+          coverMat.uniforms.uTexAspect.value = img.width / img.height;
+        }
       },
-      vertexShader: `
-        varying vec2 vUv;
-        uniform float uCurve;
-        uniform float uWobble;
-        void main(){
-          vUv = uv;
-          vec3 p = position;
-          float x = p.x;
-          p.z -= (x*x) * uCurve;
-          p.y += sin((uv.x * 3.14159) + uWobble) * 0.010;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform sampler2D uMap;
-        uniform float uOpacity;
-        void main(){
-          vec4 tex = texture2D(uMap, vUv);
-          gl_FragColor = vec4(tex.rgb, uOpacity);
-        }
-      `
-    });
+      undefined,
+      () => {
+        console.warn("Cover missing/failed:", ch.cover, "(using fallback)");
+      }
+    );
 
     const cover = new THREE.Mesh(coverGeo, coverMat);
     cover.userData.chapter = ch;
@@ -568,15 +657,17 @@ const tileItems = [];
     tileGroup.add(g);
     clickableMeshes.push(cover);
 
-    tileItems.push({
+    const item = {
       group:g, cover, title, chapter:ch, index:i,
-      qPrevBase: new THREE.Quaternion(),
-      qPrevStraight: new THREE.Quaternion()
-    });
+      hover:0,
+      hoverTarget:0
+    };
+    cover.userData.item = item;
+    tileItems.push(item);
   }
 })();
 
-// Model load
+// ---------- Model load ----------
 const gltfLoader = new GLTFLoader(manager);
 
 function addFallbackModel(){
@@ -615,7 +706,7 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// Panel logic (muffle audio while open)
+// ---------- Panel logic ----------
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -634,7 +725,6 @@ async function openPanel(ch){
     panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
   }
 }
-
 function closePanel(){
   if (!panel || !panelTitle || !panelBody) return;
   panel.classList.remove("is-open");
@@ -644,9 +734,42 @@ function closePanel(){
   setMuffle(false);
 }
 
-// Picking
+// ---------- Picking + Hover ----------
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
+let hoveredItem = null;
+
+function setHovered(next){
+  if (hoveredItem === next) return;
+  if (hoveredItem) hoveredItem.hoverTarget = 0;
+  hoveredItem = next;
+  if (hoveredItem) hoveredItem.hoverTarget = 1;
+  canvas.style.cursor = hoveredItem ? "pointer" : "default";
+}
+
+function updatePointerNDC(e){
+  const rect = canvas.getBoundingClientRect();
+  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+}
+
+canvas.addEventListener("pointermove", (e)=>{
+  if (panel?.classList.contains("is-open")){
+    setHovered(null);
+    return;
+  }
+  updatePointerNDC(e);
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(clickableMeshes, false);
+  if (!hits.length){
+    setHovered(null);
+    return;
+  }
+  const item = hits[0].object.userData.item || null;
+  setHovered(item);
+});
+
+canvas.addEventListener("pointerleave", ()=> setHovered(null));
 
 canvas.addEventListener("click", async (e) => {
   if (panel?.classList.contains("is-open")) return;
@@ -654,10 +777,7 @@ canvas.addEventListener("click", async (e) => {
   await ensureAudio().catch(()=>{});
   applyAudioTargets();
 
-  const rect = canvas.getBoundingClientRect();
-  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-
+  updatePointerNDC(e);
   raycaster.setFromCamera(pointerNdc, camera);
   const hits = raycaster.intersectObjects(clickableMeshes, false);
   if (!hits.length) return;
@@ -668,10 +788,14 @@ canvas.addEventListener("click", async (e) => {
   timeline.vel = 0;
   timeline.lastInteractT = performance.now();
 
+  if (ch.href){
+    window.open(ch.href, "_blank", "noopener,noreferrer");
+    return;
+  }
   openPanel(ch).catch(()=>{});
 });
 
-// Chapters dots (UI only)
+// ---------- Chapters UI ----------
 let activeChapterId = null;
 function buildChapterUI(){
   chaptersEl.innerHTML="";
@@ -684,7 +808,12 @@ function buildChapterUI(){
       timeline.value = clamp01(ch.progress);
       timeline.vel = 0;
       timeline.lastInteractT = performance.now();
-      openPanel(ch).catch(()=>{});
+
+      if (ch.href){
+        window.open(ch.href, "_blank", "noopener,noreferrer");
+      }else{
+        openPanel(ch).catch(()=>{});
+      }
     });
     chaptersEl.appendChild(dot);
   });
@@ -748,7 +877,7 @@ function progressToIndex(v){
   const min=Math.min(...CHAPTERS.map(c=>c.progress));
   const max=Math.max(...CHAPTERS.map(c=>c.progress));
   const t=clamp01((v-min)/Math.max(1e-6,(max-min)));
-  return t*(CHAPTERS.length-1); // continuous
+  return t*(CHAPTERS.length-1);
 }
 
 // Resize
@@ -761,19 +890,12 @@ window.addEventListener("resize", ()=>{
 
 // Temps
 const up = new THREE.Vector3(0,1,0);
-const toCam = new THREE.Vector3();
-const vToCam = new THREE.Vector3();
-
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
-
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
 const basis = new THREE.Matrix4();
-
-const qBase = new THREE.Quaternion();
-const qStraight = new THREE.Quaternion();
 
 requestAnimationFrame(tick);
 function tick(){
@@ -786,27 +908,26 @@ function tick(){
 
   timeline.vel *= Math.exp(-damping * dt);
   if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
-
   timeline.value = clamp01(timeline.value + timeline.vel);
 
-  // Camera fixed (ignore orbit)
+  // Camera fixed
   const camY = T.camYBase + Math.sin(time*0.35)*T.camYBob;
   const camAz = T.camAzimuth;
-
   camera.position.set(Math.cos(camAz)*T.camRadius, camY, Math.sin(camAz)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
-  // Background drift
   bg.rotation.y = 0.35 + time*0.01;
 
-  // UI highlight
+  // UI highlight text
   const near = nearestChapter(timeline.value);
   if (activeChapterId !== near.id){
     activeChapterId = near.id;
     setActiveDot(activeChapterId);
   }
   if (!panel?.classList.contains("is-open")){
-    hintEl.textContent = `${near.label} • Click tile to open`;
+    hintEl.textContent = near.href
+      ? `${near.label} • Click to open link`
+      : `${near.label} • Click tile to open`;
   }
 
   // Fog motion
@@ -834,27 +955,22 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // ✅ HELIX DRIVER
+  // ✅ HELIX (ribbon frame)
   const centerIdx = progressToIndex(timeline.value);
 
-  // dy/dtheta for a true helix tangent (stable ribbon frame)
+  // dy/dtheta for helix tangent stability
   const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
 
   for(const item of tileItems){
-    const { group, cover, title, index, qPrevBase, qPrevStraight } = item;
-
+    const { group, cover, title, index } = item;
     const rel = index - centerIdx;
 
-    // helix parameter
     const theta = T.helixThetaOffset + rel * T.helixAngleStep;
 
-    // radius: closer to model, slightly grows out as rel increases
     const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.helixFrontPull;
     const r = T.helixRadius + Math.abs(rel)*T.helixRadiusGrow + frontBoost;
 
-    // helix position (corkscrew upward/downward)
     const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
-
     group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
 
     // visibility
@@ -864,21 +980,21 @@ function tick(){
       T.visibleRange + T.fadeSoftness,
       dAbs
     );
+    const vis01 = clamp01(vis);
 
-    cover.material.uniforms.uOpacity.value = clamp01(vis);
-    cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
+    // hover easing (drives the shader)
+    item.hover = damp(item.hover, item.hoverTarget, T.hoverDamp, dt);
 
-    // vectors to camera
-    toCam.copy(camera.position).sub(group.position);
-    const dist = toCam.length();
-    vToCam.copy(toCam).normalize();
+    // feed cover shader
+    const mat = cover.material;
+    mat.uniforms.uOpacity.value = vis01;
+    mat.uniforms.uTime.value = time;
+    mat.uniforms.uHover.value = item.hover;
 
-    // ✅ Ribbon frame on helix:
-    // zAxis = radial outward (tile normal)
+    // Ribbon orientation: Z = radial outward, X = helix tangent
     radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
     zAxis.copy(radial);
 
-    // xAxis = helix tangent (diagonal up along corkscrew)
     tangent.set(
       -Math.sin(theta) * r,
       dy_dtheta,
@@ -886,48 +1002,14 @@ function tick(){
     ).normalize();
     xAxis.copy(tangent);
 
-    // yAxis completes frame (stable, no random roll flips)
     yAxis.crossVectors(zAxis, xAxis).normalize();
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
-    qBase.setFromRotationMatrix(basis);
-    keepQuatContinuous(qBase, qPrevBase);
-    group.quaternion.copy(qBase);
+    group.quaternion.setFromRotationMatrix(basis);
 
-    // ✅ Straighten near camera (YAW ONLY so it never roll-flips)
-    const facing = clamp01(zAxis.dot(vToCam));
-    const distFac = clamp01((T.straightenFar - dist) / Math.max(0.0001, (T.straightenFar - T.straightenNear)));
-    const faceFac = smoothstep(T.straightenFaceMin, T.straightenFaceMax, facing);
-    const straighten = clamp01(distFac * faceFac * vis);
-
-    if (straighten > 0.00001){
-      // yaw-only direction to camera (upright)
-      const dirXZ = new THREE.Vector3(vToCam.x, 0, vToCam.z);
-      if (dirXZ.lengthSq() < 1e-6) dirXZ.copy(zAxis);
-      dirXZ.normalize();
-
-      zAxis.copy(dirXZ);
-      xAxis.crossVectors(up, zAxis);
-      if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
-      xAxis.normalize();
-      yAxis.crossVectors(zAxis, xAxis).normalize();
-
-      basis.makeBasis(xAxis, yAxis, zAxis);
-      qStraight.setFromRotationMatrix(basis);
-      keepQuatContinuous(qStraight, qPrevStraight);
-
-      group.quaternion.slerp(qStraight, straighten);
-
-      // focus push / scale (optional but nice)
-      group.position.addScaledVector(vToCam, straighten * T.straightenPush);
-      group.scale.setScalar(1.0 + straighten * T.straightenScale);
-    }else{
-      group.scale.setScalar(1.0);
-    }
-
-    // title strongest when straightened/front
-    title.material.opacity = clamp01(vis * (0.18 + 0.82 * straighten));
+    // Title reacts to hover too
+    title.material.opacity = clamp01(vis01 * (0.22 + 0.78 * item.hover));
   }
 
   renderer.render(scene, camera);
