@@ -26,11 +26,17 @@ function hardFail(msg, err){
   if (hintEl) hintEl.textContent = `❌ ${msg}`;
 }
 
+// ✅ prevents the “quaternion sign flip” that causes sudden 180° rolls
+function keepQuatContinuous(q, prev){
+  if (q.dot(prev) < 0) { q.x *= -1; q.y *= -1; q.z *= -1; q.w *= -1; }
+  prev.copy(q);
+}
+
 if (!canvas) hardFail("Canvas #webgl not found.");
 if (!hintEl) hardFail("HUD #hint not found.");
 if (!chaptersEl) hardFail("HUD #chapters not found.");
 
-console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
+console.log("✅ Helix main.js loaded. THREE revision:", THREE.REVISION);
 hintEl.textContent = "Scene starting…";
 
 // Palette
@@ -44,7 +50,7 @@ const PAL = {
   text:  new THREE.Color("#E8EEF2"),
 };
 
-// Assets (MATCH THESE FILES)
+// Assets
 const ASSETS = {
   model: u("assets/models/me_on_hill.glb"),
   sky:   u("assets/backgrounds/sky_sphere.jpg"),
@@ -62,57 +68,54 @@ const CHAPTERS = [
 
 // Tuning
 const T = {
-  // ✅ orbit must be slow (user scrolls more)
+  // motion input
   scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
   maxVel: 0.0030,
 
-  // ✅ smooth slow-down (no snapping)
   dampingActive: 9.0,
   dampingIdle: 34.0,
   idleDelayMs: 120,
   stopEps: 0.00002,
 
-  modelTargetSize: 9.2,
+  // model framing (center it more)
+  modelTargetSize: 9.8,
+  modelLift: -0.55,            // raise/lower model
+  modelYawDeg: 10,
 
-  orbitTurns: 1.55,
-  camRadius: 20.5,
-  camYBase: 6.1,
-  camYAmplitude: 1.20,
-  lookY: 1.25,
+  // camera fixed (ignore orbit)
+  camAzimuth: Math.PI * 0.5,   // camera on +Z
+  camRadius: 18.6,
+  camYBase: 6.2,
+  camYBob: 0.20,
+  lookY: 1.85,
 
-  // ✅ HELIX PATH (corkscrew)
-  spiralRadius: 12.8,
-  spiralYOffset: 5.5,
+  // ✅ HELIX (corkscrew)
+  helixRadius: 8.6,            // closer to model
+  helixThetaOffset: Math.PI * 0.5, // puts the “center” tile in front
+  helixAngleStep: 1.35,        // radians per tile step along helix (tighten/loosen corkscrew)
+  helixPitch: 3.20,            // vertical rise per tile step (bigger = more corkscrew)
+  helixYOffset: 5.2,           // overall height of ribbon
+  helixFrontPull: 0.95,        // pulls the center tile closer to camera a bit
+  helixRadiusGrow: 0.55,       // grows radius slightly as you move away from center
 
-  // stronger corkscrew vertical rise
-  spiralYStep: 6.6,
+  // visibility
+  visibleRange: 1.85,
+  fadeSoftness: 1.10,
 
-  // ✅ evenly distribute tiles around ring (fixes “wrong spacing”)
-  tileAngleStep: (Math.PI * 2) / CHAPTERS.length,
-
-  // keeps front tile a bit closer
-  frontPush: 0.75,
-  radiusGrow: 0.65,
-
-  visibleRange: 1.75,
-  fadeSoftness: 1.15,
-
-  // big folders
+  // tiles
   tileW: 4.05,
   tileH: 2.45,
   tileCurve: 0.080,
-
-  // title offset (2D plane, not billboard)
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // ✅ straighten when close
-  straightenNear: 10.5,
-  straightenFar: 20.0,
-  straightenPush: 0.95,
+  // ✅ straighten near camera WITHOUT roll flips
+  straightenNear: 8.7,
+  straightenFar: 17.5,
+  straightenPush: 0.85,
   straightenScale: 0.12,
-  straightenFaceMin: 0.20,
-  straightenFaceMax: 0.86,
+  straightenFaceMin: 0.25,
+  straightenFaceMax: 0.90,
 };
 
 // Loading manager
@@ -215,7 +218,7 @@ new THREE.TextureLoader(manager).load(
   () => {}
 );
 
-// Fog fallback texture (always visible)
+// Fog fallback texture
 function makeFogTextureFallback(){
   const w=512, h=512;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -564,18 +567,24 @@ const tileItems = [];
 
     tileGroup.add(g);
     clickableMeshes.push(cover);
-    tileItems.push({ group:g, cover, title, chapter:ch, index:i });
+
+    tileItems.push({
+      group:g, cover, title, chapter:ch, index:i,
+      qPrevBase: new THREE.Quaternion(),
+      qPrevStraight: new THREE.Quaternion()
+    });
   }
 })();
 
 // Model load
 const gltfLoader = new GLTFLoader(manager);
+
 function addFallbackModel(){
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
     new THREE.MeshStandardMaterial({ color:PAL.text.getHex(), roughness:0.88, metalness:0.02 })
   );
-  body.position.y = -0.45;
+  body.position.y = 0.0;
   center.add(body);
 }
 
@@ -595,8 +604,10 @@ gltfLoader.load(
     const box2 = new THREE.Box3().setFromObject(model);
     const centerPoint = new THREE.Vector3();
     box2.getCenter(centerPoint);
+
     model.position.sub(centerPoint);
-    model.position.y += -1.35;
+    model.position.y += T.modelLift;
+    model.rotation.y = THREE.MathUtils.degToRad(T.modelYawDeg);
 
     center.add(model);
   },
@@ -688,7 +699,7 @@ function setActiveDot(id){
 }
 buildChapterUI();
 
-// Timeline: position + velocity (no snapping / no auto-nearest movement)
+// Timeline: position + velocity
 const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
@@ -748,11 +759,13 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
 });
 
-// Temps (no allocations inside the loop)
+// Temps
+const up = new THREE.Vector3(0,1,0);
+const toCam = new THREE.Vector3();
 const vToCam = new THREE.Vector3();
+
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
-const up = new THREE.Vector3(0,1,0);
 
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
@@ -760,15 +773,14 @@ const zAxis = new THREE.Vector3();
 const basis = new THREE.Matrix4();
 
 const qBase = new THREE.Quaternion();
-const qBillboard = new THREE.Quaternion();
-const toCam = new THREE.Vector3();
+const qStraight = new THREE.Quaternion();
 
 requestAnimationFrame(tick);
 function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // Smooth decel (no snapping)
+  // Smooth decel
   const idleMs = performance.now() - timeline.lastInteractT;
   const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
 
@@ -777,17 +789,17 @@ function tick(){
 
   timeline.value = clamp01(timeline.value + timeline.vel);
 
-  // Camera orbit
-  const azimuth = (timeline.value*T.orbitTurns)*Math.PI*2 + 1.06;
-  const camY = T.camYBase + Math.sin(timeline.value*Math.PI*2)*T.camYAmplitude;
+  // Camera fixed (ignore orbit)
+  const camY = T.camYBase + Math.sin(time*0.35)*T.camYBob;
+  const camAz = T.camAzimuth;
 
-  camera.position.set(Math.cos(azimuth)*T.camRadius, camY, Math.sin(azimuth)*T.camRadius);
+  camera.position.set(Math.cos(camAz)*T.camRadius, camY, Math.sin(camAz)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
-  bg.rotation.y = azimuth*0.10 + 0.35;
-  bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
+  // Background drift
+  bg.rotation.y = 0.35 + time*0.01;
 
-  // UI highlight only
+  // UI highlight
   const near = nearestChapter(timeline.value);
   if (activeChapterId !== near.id){
     activeChapterId = near.id;
@@ -822,26 +834,30 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // ✅ Corkscrew driver (continuous)
+  // ✅ HELIX DRIVER
   const centerIdx = progressToIndex(timeline.value);
 
-  // Tiles (upright + corkscrew upward + straighten near camera)
+  // dy/dtheta for a true helix tangent (stable ribbon frame)
+  const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
+
   for(const item of tileItems){
-    const { group, cover, title, index } = item;
-    const rel = index - centerIdx; // continuous
+    const { group, cover, title, index, qPrevBase, qPrevStraight } = item;
 
-    // ✅ corkscrew UP as you scroll
-    const yPos = T.spiralYOffset - rel*T.spiralYStep + Math.sin(time*0.9 + index*0.6)*0.06;
+    const rel = index - centerIdx;
 
-    // ✅ around the model in a clean helix
-    const ang = azimuth + rel*T.tileAngleStep;
+    // helix parameter
+    const theta = T.helixThetaOffset + rel * T.helixAngleStep;
 
-    const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.frontPush;
-    const r = T.spiralRadius + Math.abs(rel)*T.radiusGrow + frontBoost;
+    // radius: closer to model, slightly grows out as rel increases
+    const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.helixFrontPull;
+    const r = T.helixRadius + Math.abs(rel)*T.helixRadiusGrow + frontBoost;
 
-    group.position.set(Math.cos(ang)*r, yPos, Math.sin(ang)*r);
+    // helix position (corkscrew upward/downward)
+    const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
 
-    // visibility fade with distance from center tile
+    group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
+
+    // visibility
     const dAbs = Math.abs(rel);
     const vis = 1.0 - smoothstep(
       T.visibleRange - T.fadeSoftness,
@@ -852,54 +868,66 @@ function tick(){
     cover.material.uniforms.uOpacity.value = clamp01(vis);
     cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
 
-    // vectors
+    // vectors to camera
     toCam.copy(camera.position).sub(group.position);
     const dist = toCam.length();
     vToCam.copy(toCam).normalize();
 
-    radial.set(Math.cos(ang), 0, Math.sin(ang)).normalize();     // outward
-    tangent.set(-Math.sin(ang), 0, Math.cos(ang)).normalize();   // flow direction
+    // ✅ Ribbon frame on helix:
+    // zAxis = radial outward (tile normal)
+    radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
+    zAxis.copy(radial);
 
-    // ✅ BASE ORIENTATION: UPRIGHT (NO DOWNWARD 40° TILT)
-    // We want tiles to face IN toward the model by default (like orbiting photo cards).
-    zAxis.copy(radial).multiplyScalar(-1).normalize(); // inward normal
-    xAxis.copy(up).cross(zAxis);
-    if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
-    xAxis.normalize();
-    yAxis.copy(zAxis).cross(xAxis).normalize();
+    // xAxis = helix tangent (diagonal up along corkscrew)
+    tangent.set(
+      -Math.sin(theta) * r,
+      dy_dtheta,
+      Math.cos(theta) * r
+    ).normalize();
+    xAxis.copy(tangent);
+
+    // yAxis completes frame (stable, no random roll flips)
+    yAxis.crossVectors(zAxis, xAxis).normalize();
+    xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
     qBase.setFromRotationMatrix(basis);
+    keepQuatContinuous(qBase, qPrevBase);
     group.quaternion.copy(qBase);
 
-    // ✅ STRAIGHTEN WHEN CLOSE (smooth billboard blend)
-    const facing = clamp01(zAxis.dot(vToCam)); // 1 when camera is in front of the card
+    // ✅ Straighten near camera (YAW ONLY so it never roll-flips)
+    const facing = clamp01(zAxis.dot(vToCam));
     const distFac = clamp01((T.straightenFar - dist) / Math.max(0.0001, (T.straightenFar - T.straightenNear)));
     const faceFac = smoothstep(T.straightenFaceMin, T.straightenFaceMax, facing);
     const straighten = clamp01(distFac * faceFac * vis);
 
-    // build billboard (upright)
-    zAxis.copy(vToCam); // face camera
-    xAxis.copy(up).cross(zAxis);
-    if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
-    xAxis.normalize();
-    yAxis.copy(zAxis).cross(xAxis).normalize();
+    if (straighten > 0.00001){
+      // yaw-only direction to camera (upright)
+      const dirXZ = new THREE.Vector3(vToCam.x, 0, vToCam.z);
+      if (dirXZ.lengthSq() < 1e-6) dirXZ.copy(zAxis);
+      dirXZ.normalize();
 
-    basis.makeBasis(xAxis, yAxis, zAxis);
-    qBillboard.setFromRotationMatrix(basis);
+      zAxis.copy(dirXZ);
+      xAxis.crossVectors(up, zAxis);
+      if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
+      xAxis.normalize();
+      yAxis.crossVectors(zAxis, xAxis).normalize();
 
-    group.quaternion.slerp(qBillboard, straighten);
+      basis.makeBasis(xAxis, yAxis, zAxis);
+      qStraight.setFromRotationMatrix(basis);
+      keepQuatContinuous(qStraight, qPrevStraight);
 
-    // optional focus push + scale
-    if (straighten > 0.0001){
+      group.quaternion.slerp(qStraight, straighten);
+
+      // focus push / scale (optional but nice)
       group.position.addScaledVector(vToCam, straighten * T.straightenPush);
       group.scale.setScalar(1.0 + straighten * T.straightenScale);
     }else{
       group.scale.setScalar(1.0);
     }
 
-    // Title fade (stronger when straightened)
-    title.material.opacity = clamp01((0.15 + 0.85*straighten) * vis);
+    // title strongest when straightened/front
+    title.material.opacity = clamp01(vis * (0.18 + 0.82 * straighten));
   }
 
   renderer.render(scene, camera);
