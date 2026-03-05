@@ -1,7 +1,10 @@
+// main.js (GitHub Pages safe, no bundler)
+// Uses esm.sh so GLTFLoader works in the browser without importmaps.
+
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-/* ---------------- URL helper ---------------- */
+/* ---------------- Base URL helper ---------------- */
 const BASE_URL = new URL("./", import.meta.url);
 const u = (p) => new URL(p, BASE_URL).href;
 
@@ -18,20 +21,50 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
-function smoothstep(e0, e1, x){
-  const t = clamp01((x - e0) / (e1 - e0));
+function hardFail(msg, err) {
+  console.error(msg, err || "");
+  if (hintEl) hintEl.textContent = `❌ ${msg}`;
+  const box = document.createElement("div");
+  box.style.position = "fixed";
+  box.style.left = "16px";
+  box.style.right = "16px";
+  box.style.bottom = "16px";
+  box.style.zIndex = "9999";
+  box.style.padding = "14px";
+  box.style.borderRadius = "16px";
+  box.style.background = "rgba(10,12,14,0.94)";
+  box.style.border = "1px solid rgba(232,238,242,0.18)";
+  box.style.color = "rgba(232,238,242,0.92)";
+  box.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  box.style.lineHeight = "1.45";
+  box.innerHTML = `
+    <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">Orbit error 🧯</div>
+    <div style="opacity:0.85;font-size:13px;">${msg}</div>
+    <div style="opacity:0.7;font-size:12px;margin-top:8px;">Open DevTools → Console for the first red error line.</div>
+  `;
+  document.body.appendChild(box);
+}
+
+if (!canvas) hardFail("Canvas #webgl not found. Check index.html has <canvas id='webgl'>.");
+if (!hintEl) hardFail("HUD #hint not found. Check index.html has <div id='hint'>.");
+if (!chaptersEl) hardFail("HUD #chapters not found. Check index.html has <div id='chapters'>.");
+
+console.log("✅ Orbit main.js running:", import.meta.url);
+hintEl.textContent = "main.js loaded ✅ building scene…";
+
+/* ---------------- Utilities ---------------- */
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+function smoothstep(edge0, edge1, x) {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
 }
-function damp(current, target, lambda, dt){
+function damp(current, target, lambda, dt) {
   return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
 }
-function keepQuatContinuous(q, prev){
+function keepQuatContinuous(q, prev) {
   if (q.dot(prev) < 0) { q.x *= -1; q.y *= -1; q.z *= -1; q.w *= -1; }
   prev.copy(q);
 }
-
-if (!canvas) { console.error("Canvas #webgl not found"); }
 
 /* ---------------- Palette ---------------- */
 const PAL = {
@@ -41,96 +74,95 @@ const PAL = {
 };
 
 /* ---------------- Assets ---------------- */
-// NOTE: these must exist in your deployed folder
 const ASSETS = {
   sky:   u("assets/backgrounds/sky_sphere.jpg"),
-  fog:   u("assets/textures/fog.jpg"),
+  fog:   u("assets/textures/fog.jpg"),     // used for animated fog cards (works even without alpha)
   audio: u("assets/audio/ambient.mp3"),
 };
 
-// model candidates (so it works even if you currently have spaces)
 const MODEL_CANDIDATES = [
   u("assets/models/me_on_hill.glb"),
   u("assets/models/me on hill.glb"),
 ];
 
-/* ---------------- Chapters (covers use coverKey, not extension) ---------------- */
+/* ---------------- Chapters ---------------- */
 const CHAPTERS = [
   { id:"about",        label:"About",              page:u("pages/about.html"),              coverKey:"about" },
   { id:"gallery",      label:"Gallery",            page:u("pages/gallery.html"),            coverKey:"gallery" },
   { id:"achievements", label:"Achievements",       page:u("pages/achievements.html"),       coverKey:"achievements" },
   { id:"contact",      label:"Contact",            page:u("pages/contact.html"),            coverKey:"contact" },
 
-  { id:"fab",       label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",               coverKey:"fab" },
-  { id:"steam",     label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/",   coverKey:"steam_22minutes" },
+  { id:"fab",       label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",              coverKey:"fab" },
+  { id:"steam",     label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/",  coverKey:"steam_22minutes" },
   { id:"sketchfab", label:"Sketchfab Models",   href:"https://sketchfab.com/OblixStudio/models",                coverKey:"sketchfab" },
 ];
 
-// spread progress evenly
 (function assignProgress(){
   const n = CHAPTERS.length;
-  for (let i=0;i<n;i++){
-    CHAPTERS[i].progress = (i + 1) / (n + 1);
-  }
+  for (let i = 0; i < n; i++) CHAPTERS[i].progress = (i + 1) / (n + 1);
 })();
 
 /* ---------------- Tuning ---------------- */
 const T = {
-  // scroll feel
-  scrollSensitivity: 0.000006,
-  dragSensitivity: 0.010,
-  maxVel: 0.0030,
-  dampingActive: 9.0,
-  dampingIdle: 34.0,
-  idleDelayMs: 120,
-  stopEps: 0.00002,
+  // input feel (slower, smoother)
+  wheelSpeed: 0.00085,
+  dragSpeed:  0.060,
+  friction:   0.86,     // per 60fps step (applied smoothly)
+  follow:     0.10,     // how quickly value follows target
+  maxVel:     0.07,     // clamp velocity for safety
 
-  // camera
-  camAzimuth: Math.PI * 0.5,
-  camRadius: 16.2,
-  camYBase: 5.5,
-  camYBob: 0.18,
-  lookY: 1.95,
+  // camera orbit (bridge from your working orbit)
+  orbitTurns: 1.35,
+  orbitRadius: 14.2,
+  pitchStartDeg: 64,
+  pitchEndDeg: 78,
+  lookY: 1.85,
+  camYAdd: 0.55,
 
-  // helix ribbon (closer to model)
-  helixRadius: 6.2,
-  helixThetaOffset: Math.PI * 0.5,
-  helixAngleStep: 1.22,
-  helixPitch: 3.10,
-  helixYOffset: 4.4,
-  helixFrontPull: 0.65,
-  helixRadiusGrow: 0.28,
-
-  visibleRange: 2.25,
+  // helix layout
+  helixRadius: 7.1,
+  helixAngleStep: 0.92,
+  helixPitch: 2.55,
+  helixYOffset: 4.0,
+  helixRadiusGrow: 0.18,
+  helixFrontPull: 0.75,
+  visibleRange: 2.35,
   fadeSoftness: 1.10,
 
-  // tile geometry
+  // tile geometry + shading
   tileW: 4.05,
   tileH: 2.45,
   tileCurve: 0.08,
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // hover animation
+  // hover
   hoverDamp: 10.0,
   flagAmp: 0.22,
   flagSpeed: 6.5,
   revealWidth: 0.09,
 
-  // ✅ upright fix: choose one
-  // If tiles still look inverted, change this to "X" or "Y"
-  flipAxis: "Z", // "Z" | "X" | "Y"
+  // ✅ Orientation fix (THIS is the big one)
+  bankDeg: 40,               // “on its side” corkscrew vibe
+  pitchFactor: 0.75,         // how much slope pitch to apply (keeps it from going vertical)
+  faceOutward: true,         // readable covers (faces camera side)
+  extraYawDeg: 0,            // if you want a tiny twist, set e.g. 6
+
+  // fog
+  fogNear: 6,
+  fogFar: 48,
+  fogCards: 12,
 };
 
 /* ---------------- Loading Manager ---------------- */
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
-  loaderFill && (loaderFill.style.width = `${pct}%`);
-  loaderPct && (loaderPct.textContent = `${pct}%`);
+  if (loaderFill) loaderFill.style.width = `${pct}%`;
+  if (loaderPct) loaderPct.textContent = `${pct}%`;
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  hintEl && (hintEl.textContent = "Scroll / drag • Hover tiles • Click to open");
+  if (hintEl) hintEl.textContent = "Scroll / drag • Hover tiles • Click to open";
 };
 
 /* ---------------- Renderer / Scene / Camera ---------------- */
@@ -143,7 +175,9 @@ renderer.toneMappingExposure = 1.07;
 
 const scene = new THREE.Scene();
 scene.background = PAL.deep.clone();
-scene.fog = new THREE.Fog(PAL.deep.getHex(), 18, 110);
+
+// ✅ fog now actually visible
+scene.fog = new THREE.Fog(PAL.deep.getHex(), T.fogNear, T.fogFar);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 900);
 const clock = new THREE.Clock();
@@ -167,10 +201,22 @@ function makeSkyFallback(){
   g.addColorStop(0.48, "#6786A7");
   g.addColorStop(1, "#464C52");
   ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+
+  // soft stars
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  for (let i=0;i<900;i++){
+    const x=Math.random()*w, y=Math.random()*h, r=Math.random()*1.2;
+    ctx.globalAlpha = 0.12 + Math.random()*0.55;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace=THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+
 const bg = new THREE.Mesh(
   new THREE.SphereGeometry(160, 48, 48),
   new THREE.MeshBasicMaterial({ map: makeSkyFallback(), side: THREE.BackSide })
@@ -191,11 +237,23 @@ new THREE.TextureLoader(manager).load(
   ()=>{}
 );
 
-/* ---------------- Model (with guaranteed fallback) ---------------- */
+/* ---------------- Center / Ground ---------------- */
 const center = new THREE.Group();
 scene.add(center);
 
+{
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(7.0, 96),
+    new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 1.0, metalness: 0.0 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = 0;
+  center.add(ground);
+}
+
+/* ---------------- Model (guaranteed) ---------------- */
 let modelLoaded = false;
+
 function addFallbackModel(){
   if (modelLoaded) return;
   modelLoaded = true;
@@ -209,10 +267,33 @@ function addFallbackModel(){
 
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(2.3, 2.7, 0.75, 28),
-    new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness:1.0, metalness:0.0 })
+    new THREE.MeshStandardMaterial({ color: 0x1f252b, roughness:1.0, metalness:0.0 })
   );
   base.position.y = 0.35;
   center.add(base);
+
+  hintEl && (hintEl.textContent = "⚠️ Model missing → showing fallback");
+}
+
+function fitCenterAndFloor(model, desiredSize = 12.0){
+  const box = new THREE.Box3().setFromObject(model);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  const maxAxis = Math.max(size.x, size.y, size.z);
+  const scale = desiredSize / Math.max(0.0001, maxAxis);
+  model.scale.setScalar(scale);
+
+  // recalc after scale
+  const box2 = new THREE.Box3().setFromObject(model);
+  const centerPt = new THREE.Vector3();
+  const minPt = new THREE.Vector3();
+  box2.getCenter(centerPt);
+  box2.getMin(minPt);
+
+  model.position.sub(centerPt); // center at origin
+  model.position.y -= minPt.y;  // put bottom on ground (y=0)
+  model.position.y += 0.02;     // tiny lift to avoid z-fighting
 }
 
 function loadGLTFAny(urls){
@@ -230,24 +311,12 @@ function loadGLTFAny(urls){
         modelLoaded = true;
 
         const model = gltf.scene;
+        fitCenterAndFloor(model, 13.5); // ✅ bigger + centered
 
-        // auto scale to a target size
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        const maxAxis = Math.max(size.x, size.y, size.z);
-        const scale = 9.6 / Math.max(0.0001, maxAxis);
-        model.scale.setScalar(scale);
-
-        const box2 = new THREE.Box3().setFromObject(model);
-        const centerPoint = new THREE.Vector3();
-        box2.getCenter(centerPoint);
-        model.position.sub(centerPoint);
-
-        model.position.y += -0.25;
-        model.rotation.y = THREE.MathUtils.degToRad(10);
-
+        model.rotation.y = THREE.MathUtils.degToRad(12);
         center.add(model);
+
+        hintEl && (hintEl.textContent = "Model loaded ✅ Scroll / drag to orbit");
       },
       undefined,
       ()=>tryAt(i+1)
@@ -256,12 +325,97 @@ function loadGLTFAny(urls){
   tryAt(0);
 }
 loadGLTFAny(MODEL_CANDIDATES);
-setTimeout(()=>{ if(!modelLoaded) addFallbackModel(); }, 1500);
+setTimeout(()=>{ if(!modelLoaded) addFallbackModel(); }, 1600);
 
-/* ---------------- Covers (try multiple extensions automatically) ---------------- */
+/* ---------------- Fog Cards (uses fog.jpg even without alpha) ---------------- */
+const fogGroup = new THREE.Group();
+scene.add(fogGroup);
+
+function makeFogMaterial(tex){
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    uniforms: {
+      uTex: { value: tex },
+      uOpacity: { value: 0.18 },
+      uTime: { value: 0.0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D uTex;
+      uniform float uOpacity;
+      uniform float uTime;
+
+      void main(){
+        // subtle drift
+        vec2 uv = vUv;
+        uv.x += sin(uTime * 0.15 + vUv.y * 3.0) * 0.02;
+        uv.y += cos(uTime * 0.12 + vUv.x * 2.0) * 0.02;
+
+        vec3 t = texture2D(uTex, uv).rgb;
+
+        // fog.jpg likely has no alpha → use luminance as alpha
+        float a = dot(t, vec3(0.3333));
+        a = smoothstep(0.10, 0.92, a);
+
+        // soft edges
+        float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(0.0, 0.12, vUv.y) *
+                     smoothstep(0.0, 0.12, 1.0 - vUv.x) * smoothstep(0.0, 0.12, 1.0 - vUv.y);
+
+        a *= edge;
+
+        gl_FragColor = vec4(vec3(0.92), a * uOpacity);
+      }
+    `
+  });
+}
+
+const fogPlanes = [];
+new THREE.TextureLoader(manager).load(
+  ASSETS.fog,
+  (tex)=>{
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+
+    for (let i = 0; i < T.fogCards; i++){
+      const geo = new THREE.PlaneGeometry(10.5, 6.5);
+      const mat = makeFogMaterial(tex);
+      mat.uniforms.uOpacity.value = 0.12 + (i / (T.fogCards - 1)) * 0.10;
+
+      const m = new THREE.Mesh(geo, mat);
+      m.userData.seed = Math.random() * 1000;
+      m.userData.baseY = 1.2 + Math.random() * 3.2;
+      m.userData.scale = 0.85 + Math.random() * 0.65;
+      m.scale.setScalar(m.userData.scale);
+
+      fogGroup.add(m);
+      fogPlanes.push(m);
+    }
+  },
+  undefined,
+  ()=>console.warn("Fog texture missing/failed:", ASSETS.fog)
+);
+
+/* ---------------- Covers (try multiple extensions) ---------------- */
 const COVER_EXTS = ["jpg","jpeg","png","webp"];
 function coverCandidates(key){
   return COVER_EXTS.map(ext => u(`assets/covers/${key}.${ext}`));
+}
+function loadTextureAny(urls, onOk, onFail){
+  const loader = new THREE.TextureLoader(manager);
+  const tryAt = (i) => {
+    if (i >= urls.length){ onFail && onFail(); return; }
+    loader.load(urls[i], (tex)=>onOk(tex, urls[i]), undefined, ()=>tryAt(i+1));
+  };
+  tryAt(0);
 }
 
 function makeFallbackCoverTexture(){
@@ -299,7 +453,7 @@ function makeTitleTexture(text){
   return tex;
 }
 
-/* ---------------- Cover Shader (B/W -> flap -> color) ---------------- */
+/* ---------------- Cover Shader (B/W -> reveal -> color) ---------------- */
 const TILE_ASPECT = T.tileW / T.tileH;
 
 function makeCoverMaterial(){
@@ -368,23 +522,6 @@ function makeCoverMaterial(){
   });
 }
 
-function loadTextureAny(urls, onOk, onFail){
-  const loader = new THREE.TextureLoader(manager);
-  const tryAt = (i) => {
-    if (i >= urls.length){
-      onFail && onFail();
-      return;
-    }
-    loader.load(
-      urls[i],
-      (tex)=>onOk(tex, urls[i]),
-      undefined,
-      ()=>tryAt(i+1)
-    );
-  };
-  tryAt(0);
-}
-
 /* ---------------- Tiles ---------------- */
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
@@ -406,9 +543,7 @@ const tileItems = [];
         tex.anisotropy = 8;
         coverMat.uniforms.uTex.value = tex;
         const img = tex.image;
-        if (img && img.width && img.height){
-          coverMat.uniforms.uTexAspect.value = img.width / img.height;
-        }
+        if (img && img.width && img.height) coverMat.uniforms.uTexAspect.value = img.width / img.height;
       },
       ()=>console.warn("Cover missing/failed:", ch.coverKey)
     );
@@ -435,6 +570,39 @@ const tileItems = [];
     tileItems.push(item);
   }
 })();
+
+/* ---------------- Chapter UI dots ---------------- */
+let activeChapterId = null;
+
+function buildChapterUI(){
+  chaptersEl.innerHTML = "";
+  CHAPTERS.forEach((ch) => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = "chapterDot";
+    dot.title = ch.label;
+    dot.addEventListener("click", () => {
+      timeline.target = clamp01(ch.progress);
+      timeline.velocity = 0;
+
+      if (ch.href) window.open(ch.href, "_blank", "noopener,noreferrer");
+      else openPanel(ch).catch(()=>{});
+    });
+    chaptersEl.appendChild(dot);
+  });
+
+  const label = document.createElement("div");
+  label.className = "chapterLabel";
+  label.textContent = "Chapters";
+  chaptersEl.appendChild(label);
+}
+
+function setActiveDot(id){
+  const dots = Array.from(chaptersEl.querySelectorAll(".chapterDot"));
+  dots.forEach((d, i) => d.classList.toggle("is-active", CHAPTERS[i]?.id === id));
+}
+
+buildChapterUI();
 
 /* ---------------- Panel ---------------- */
 panelClose?.addEventListener("click", closePanel);
@@ -498,44 +666,47 @@ canvas.addEventListener("click", (e)=>{
   if (!hits.length) return;
 
   const ch = hits[0].object.userData.chapter;
-  timeline.value = clamp01(ch.progress);
-  timeline.vel = 0;
+  timeline.target = clamp01(ch.progress);
+  timeline.velocity = 0;
   timeline.lastInteractT = performance.now();
 
   if (ch.href) window.open(ch.href, "_blank", "noopener,noreferrer");
   else openPanel(ch).catch(()=>{});
 });
 
-/* ---------------- Timeline input ---------------- */
-const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
+/* ---------------- Timeline input (smooth orbit, no snapping) ---------------- */
+const timeline = { value:0.02, target:0.02, velocity:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
   let dy = e.deltaY;
-  if (e.deltaMode===1) dy*=16;
-  else if (e.deltaMode===2) dy*=window.innerHeight;
+  if (e.deltaMode===1) dy *= 16;
+  else if (e.deltaMode===2) dy *= window.innerHeight;
   return dy;
 }
-window.addEventListener("wheel",(e)=>{
+
+window.addEventListener("wheel", (e)=>{
   e.preventDefault();
   timeline.lastInteractT = performance.now();
-  timeline.vel += normalizeWheel(e) * T.scrollSensitivity;
-  timeline.vel = THREE.MathUtils.clamp(timeline.vel, -T.maxVel, T.maxVel);
-},{ passive:false });
+  timeline.velocity += normalizeWheel(e) * T.wheelSpeed;
+  timeline.velocity = THREE.MathUtils.clamp(timeline.velocity, -T.maxVel, T.maxVel);
+}, { passive:false });
 
-let dragging=false, dragStartX=0, dragStartVel=0;
+let dragging=false;
+let dragStartX=0;
+let dragStartTarget=0;
+
 canvas.addEventListener("pointerdown",(e)=>{
   dragging=true;
   timeline.lastInteractT=performance.now();
   dragStartX=e.clientX;
-  dragStartVel=timeline.vel;
+  dragStartTarget=timeline.target;
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove",(e)=>{
   if(!dragging) return;
   timeline.lastInteractT=performance.now();
   const dx=(e.clientX-dragStartX)/Math.max(1,window.innerWidth);
-  timeline.vel = dragStartVel - dx * T.dragSensitivity;
-  timeline.vel = THREE.MathUtils.clamp(timeline.vel, -T.maxVel, T.maxVel);
+  timeline.target = clamp01(dragStartTarget - dx * T.dragSpeed);
 });
 canvas.addEventListener("pointerup",(e)=>{
   dragging=false;
@@ -565,23 +736,22 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
 });
 
-/* ---------------- Helix orientation temps + flip ---------------- */
+/* ---------------- Orientation temps ---------------- */
 const UP = new THREE.Vector3(0,1,0);
-const radial = new THREE.Vector3();
-const tangent = new THREE.Vector3();
-const xAxis = new THREE.Vector3();
-const yAxis = new THREE.Vector3();
-const zAxis = new THREE.Vector3();
+const zAxis = new THREE.Vector3(); // forward/normal
+const xAxis = new THREE.Vector3(); // right
+const yAxis = new THREE.Vector3(); // up
 const basis = new THREE.Matrix4();
 const qTmp = new THREE.Quaternion();
 
-const qFlipX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), Math.PI);
-const qFlipY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
-const qFlipZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), Math.PI);
-function applyFlip(q){
-  if (T.flipAxis === "X") q.multiply(qFlipX);
-  else if (T.flipAxis === "Y") q.multiply(qFlipY);
-  else q.multiply(qFlipZ);
+const qBank = new THREE.Quaternion();
+const qPitch = new THREE.Quaternion();
+const qYaw = new THREE.Quaternion();
+
+function computeSlopeAngle(r){
+  // helix slope angle relative to horizontal arc length
+  const horiz = Math.max(0.0001, r * T.helixAngleStep);
+  return Math.atan2(T.helixPitch, horiz);
 }
 
 /* ---------------- Loop ---------------- */
@@ -590,27 +760,61 @@ function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // damping
-  const idleMs = performance.now() - timeline.lastInteractT;
-  const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
-  timeline.vel *= Math.exp(-damping * dt);
-  if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
-  timeline.value = clamp01(timeline.value + timeline.vel);
+  // smooth inertial feel
+  timeline.velocity *= Math.pow(T.friction, dt * 60);
+  timeline.target = clamp01(timeline.target + timeline.velocity);
+  timeline.value = THREE.MathUtils.lerp(timeline.value, timeline.target, 1 - Math.pow(1 - T.follow, dt * 60));
 
-  // camera
-  const camY = T.camYBase + Math.sin(time*0.35)*T.camYBob;
-  camera.position.set(Math.cos(T.camAzimuth)*T.camRadius, camY, Math.sin(T.camAzimuth)*T.camRadius);
+  // orbit camera (bridge from your working orbit)
+  const azimuth = timeline.value * T.orbitTurns * Math.PI * 2.0;
+  const pitchStart = THREE.MathUtils.degToRad(T.pitchStartDeg);
+  const pitchEnd   = THREE.MathUtils.degToRad(T.pitchEndDeg);
+  const pitch = THREE.MathUtils.lerp(pitchStart, pitchEnd, smoothstep(0.06, 0.94, timeline.value));
+
+  const y = Math.cos(pitch) * T.orbitRadius;
+  const rr = Math.sin(pitch) * T.orbitRadius;
+  const cx = Math.cos(azimuth) * rr;
+  const cz = Math.sin(azimuth) * rr;
+
+  camera.position.set(cx, y + T.camYAdd, cz);
   camera.lookAt(0, T.lookY, 0);
 
-  // helix
+  // subtle background motion
+  bg.rotation.y = azimuth * 0.18 + 0.35;
+  bg.rotation.x = Math.sin(azimuth * 0.12) * 0.03;
+
+  // fog cards (billboard + drift)
+  if (fogPlanes.length){
+    const dir = new THREE.Vector3(camera.position.x, 0, camera.position.z).normalize();
+    for (let i=0;i<fogPlanes.length;i++){
+      const p = fogPlanes[i];
+      const seed = p.userData.seed || 0;
+
+      const d = 3.2 + i * 2.35;
+      p.position.set(
+        dir.x * d + Math.sin(time * 0.22 + seed) * 1.2,
+        p.userData.baseY + Math.sin(time * 0.35 + seed) * 0.35,
+        dir.z * d + Math.cos(time * 0.20 + seed) * 1.2
+      );
+
+      // billboard
+      p.quaternion.copy(camera.quaternion);
+
+      p.material.uniforms.uTime.value = time;
+    }
+  }
+
+  // helix tiles (tied to camera azimuth so the flow feels “locked” and intentional)
   const centerIdx = progressToIndex(timeline.value);
-  const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
+  const bank = THREE.MathUtils.degToRad(T.bankDeg);
+  const yaw  = THREE.MathUtils.degToRad(T.extraYawDeg);
 
   for (const item of tileItems){
     const { group, cover, title, index, qPrev } = item;
     const rel = index - centerIdx;
 
-    const theta = T.helixThetaOffset + rel * T.helixAngleStep;
+    // camera-anchored helix angle
+    const theta = azimuth + rel * T.helixAngleStep;
 
     const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.helixFrontPull;
     const r = T.helixRadius + Math.abs(rel)*T.helixRadiusGrow + frontBoost;
@@ -618,7 +822,7 @@ function tick(){
     const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
     group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
 
-    // fade
+    // visibility by index distance
     const dAbs = Math.abs(rel);
     const vis = 1.0 - smoothstep(T.visibleRange - T.fadeSoftness, T.visibleRange + T.fadeSoftness, dAbs);
     const vis01 = clamp01(vis);
@@ -632,31 +836,43 @@ function tick(){
     mat.uniforms.uTime.value = time;
     mat.uniforms.uHover.value = item.hover;
 
-    // ribbon basis (stable)
-    radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
-    zAxis.copy(radial);
+    // ✅ Stable orientation:
+    // - face outward (readable from camera side)
+    // - add “corkscrew bank” (~40°) + gentle slope pitch (no vertical freakout)
+    zAxis.set(Math.cos(theta), 0, Math.sin(theta)).normalize(); // outward
+    if (!T.faceOutward) zAxis.multiplyScalar(-1);
 
-    tangent.set(-Math.sin(theta), dy_dtheta, Math.cos(theta)).normalize();
-    xAxis.copy(tangent);
-
-    yAxis.crossVectors(zAxis, xAxis).normalize();
-    if (yAxis.dot(UP) < 0){
-      xAxis.multiplyScalar(-1);
-      yAxis.multiplyScalar(-1);
-    }
-    xAxis.crossVectors(yAxis, zAxis).normalize();
+    xAxis.crossVectors(UP, zAxis).normalize();       // right
+    yAxis.crossVectors(zAxis, xAxis).normalize();    // up (stable)
 
     basis.makeBasis(xAxis, yAxis, zAxis);
     qTmp.setFromRotationMatrix(basis);
 
-    // ✅ upright fix (choose axis via T.flipAxis)
-    applyFlip(qTmp);
+    const slope = computeSlopeAngle(r) * T.pitchFactor;
+    qBank.setFromAxisAngle(new THREE.Vector3(0,0,1), bank);     // local roll (corkscrew)
+    qPitch.setFromAxisAngle(new THREE.Vector3(1,0,0), -slope);  // local pitch (gentle)
+    qYaw.setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);       // optional tiny twist
+
+    qTmp.multiply(qYaw);
+    qTmp.multiply(qBank);
+    qTmp.multiply(qPitch);
 
     keepQuatContinuous(qTmp, qPrev);
     group.quaternion.copy(qTmp);
 
     title.material.opacity = clamp01(vis01 * (0.22 + 0.78 * item.hover));
   }
+
+  // chapter dots + hint
+  const near = nearestChapter(timeline.value);
+  if (activeChapterId !== near.id){
+    activeChapterId = near.id;
+    setActiveDot(activeChapterId);
+    if (hintEl) hintEl.textContent = `${near.label} • Hover / click tile`;
+  }
+
+  // subtle center motion
+  center.rotation.y = Math.sin(time * 0.22) * 0.05;
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
