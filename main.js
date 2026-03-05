@@ -835,7 +835,7 @@ function tick(){
     mat.uniforms.uOpacity.value = vis01;
     mat.uniforms.uTime.value = time;
     mat.uniforms.uHover.value = item.hover;
-    .
+    
     // ✅ Stable orientation:
     // - face outward (readable from camera side)
     // - add “corkscrew bank” (~40°) + gentle slope pitch (no vertical freakout)
