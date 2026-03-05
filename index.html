@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,7 +7,7 @@
   <meta name="theme-color" content="#464C52" />
   <title>Orbit Portfolio</title>
 
-  <link rel="stylesheet" href="./styles.css?v=7" />
+  <link rel="stylesheet" href="./styles.css?v=8" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🌊</text></svg>">
 </head>
 
@@ -25,7 +26,7 @@
   <div id="hud">
     <div class="brand">
       <div class="brand__name">YOUR NAME</div>
-      <div class="brand__tag">Scroll / drag to orbit • Click tiles • ESC closes</div>
+      <div class="brand__tag">Scroll / drag to orbit • Hover tiles • Click to open • ESC closes</div>
     </div>
 
     <div class="bottomRow">
@@ -42,9 +43,10 @@
     <div id="panelBody" class="panel__body"></div>
   </div>
 
+  <!-- Bootloader that shows an on-screen error if main.js fails -->
   <script type="module">
     const hint = document.getElementById("hint");
-    const BUILD = "7"; // bump on every deploy
+    const BUILD = "8"; // bump on deploy
     const mainUrl = `./main.js?v=${encodeURIComponent(BUILD)}`;
 
     function showBootError(message, err) {
@@ -70,25 +72,10 @@
         <div style="font-weight:800;letter-spacing:0.03em;margin-bottom:6px;">JavaScript didn’t start 🧯</div>
         <div style="opacity:0.85;font-size:13px;">${message}</div>
         <div style="opacity:0.7;font-size:12px;margin-top:8px;">
-          Check: correct folder published, correct filenames, and main.js is the updated file.
+          Open DevTools → Console and copy the first red error line.
         </div>
       `;
       document.body.appendChild(box);
-    }
-
-    async function nukeSWAndCaches() {
-      try {
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          for (const r of regs) await r.unregister();
-        }
-      } catch {}
-      try {
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-      } catch {}
     }
 
     function firstRealLine(text) {
@@ -106,8 +93,6 @@
     hint.textContent = `Checking ${mainUrl}…`;
 
     try {
-      await nukeSWAndCaches();
-
       const res = await fetch(mainUrl, { cache: "no-store" });
       if (!res.ok) throw new Error(`Fetch main.js failed: ${res.status} ${res.statusText}`);
 
@@ -117,14 +102,13 @@
 
       if (!firstLine.startsWith("import")) {
         throw new Error(
-          "main.js is not being served as the ES module version (no 'import' found at the top). " +
-          "Make sure the very first non-comment line in main.js is an import."
+          "main.js is not being served as an ES module version (no 'import' found at the top). " +
+          "Make sure the first non-comment line in main.js is an import."
         );
       }
 
       hint.textContent = "main.js verified ✅ loading…";
       await import(mainUrl);
-
     } catch (e) {
       showBootError(e?.message || String(e), e);
     }
