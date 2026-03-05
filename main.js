@@ -25,12 +25,16 @@ function hardFail(msg, err){
   console.error(msg, err || "");
   if (hintEl) hintEl.textContent = `❌ ${msg}`;
 }
+// Smooth approach
+function damp(current, target, lambda, dt){
+  return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
+}
 
 if (!canvas) hardFail("Canvas #webgl not found.");
 if (!hintEl) hardFail("HUD #hint not found.");
 if (!chaptersEl) hardFail("HUD #chapters not found.");
 
-console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
+console.log("✅ Helix + Covers main.js loaded. THREE revision:", THREE.REVISION);
 hintEl.textContent = "Scene starting…";
 
 // Palette
@@ -44,7 +48,7 @@ const PAL = {
   text:  new THREE.Color("#E8EEF2"),
 };
 
-// Assets (MATCH THESE FILES)
+// Assets
 const ASSETS = {
   model: u("assets/models/me_on_hill.glb"),
   sky:   u("assets/backgrounds/sky_sphere.jpg"),
@@ -52,17 +56,31 @@ const ASSETS = {
   audio: u("assets/audio/ambient.mp3"),
 };
 
-// Chapters
+// Chapters (+ covers + links)
 const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.10, page: u("pages/about.html") },
-  { id: "gallery",      label: "Gallery",      progress: 0.35, page: u("pages/gallery.html") },
-  { id: "achievements", label: "Achievements", progress: 0.60, page: u("pages/achievements.html") },
-  { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
+  { id:"about",        label:"About",        page:u("pages/about.html"),        cover:u("assets/covers/about.jpg") },
+  { id:"gallery",      label:"Gallery",      page:u("pages/gallery.html"),      cover:u("assets/covers/gallery.jpg") },
+  { id:"achievements", label:"Achievements", page:u("pages/achievements.html"), cover:u("assets/covers/achievements.jpg") },
+  { id:"contact",      label:"Contact",      page:u("pages/contact.html"),      cover:u("assets/covers/contact.jpg") },
+
+  // ✅ link tiles you asked for
+  { id:"fab",      label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",         cover:u("assets/covers/fab.jpg") },
+  { id:"steam",    label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/", cover:u("assets/covers/steam_22minutes.jpg") },
+  { id:"sketchfab",label:"Sketchfab Models",   href:"https://sketchfab.com/OblixStudio/models",          cover:u("assets/covers/sketchfab.jpg") },
 ];
+
+// auto progress spread (nice even navigation)
+(function assignProgress(){
+  const n = CHAPTERS.length;
+  for (let i=0;i<n;i++){
+    // keep ends away from 0/1 so highlight feels nicer
+    CHAPTERS[i].progress = (i + 1) / (n + 1);
+  }
+})();
 
 // Tuning
 const T = {
-  // ✅ MUCH slower scroll orbit (you must scroll more)
+  // scroll control
   scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
   maxVel: 0.0030,
@@ -72,52 +90,41 @@ const T = {
   idleDelayMs: 120,
   stopEps: 0.00002,
 
-  // ✅ Model placement (match the reference vibe)
-  modelTargetSize: 10.2,
-  modelYOffset: -0.70,     // move model up/down
-  modelYawDeg: 10,         // rotate model a touch
-  modelExtraLift: 0.0,     // if your rock base is clipping, raise this
+  // model framing (more centered)
+  modelTargetSize: 9.8,
+  modelLift: -0.25,
+  modelYawDeg: 10,
 
-  // ✅ Camera (more “stable” like the screenshot)
-  camRadius: 23.0,
-  camAzBase: 1.05,
-  camFollow: 0.18,         // 0 = camera stays fixed, 1 = camera fully follows orbit
+  // camera fixed (focus helix)
+  camAzimuth: Math.PI * 0.5,  // looking from +Z
+  camRadius: 16.4,
   camYBase: 5.6,
-  camYAmplitude: 0.35,
-  lookY: 2.85,
+  camYBob: 0.18,
+  lookY: 1.95,
 
-  // ✅ Tiles orbit around the model (ring / cylinder feel)
-  orbitTurns: 1.0,         // 1 full revolution over timeline 0..1
-  ringRadius: 18.0,
-  ringRadiusWobble: 0.55,  // small organic variation
-  ringYBase: 6.0,
-  ringYWaveAmp: 1.9,
-  ringYProgressAmp: 2.2,   // tiles get unique heights based on their progress
-  ringBobAmp: 0.08,
+  // ✅ HELIX (real corkscrew)
+  helixRadius: 6.8,          // closer to mesh
+  helixThetaOffset: Math.PI * 0.5,
+  helixAngleStep: 1.35,      // rotation per tile step
+  helixPitch: 3.10,          // vertical rise per tile step
+  helixYOffset: 4.6,         // overall helix height
+  helixFrontPull: 0.75,      // nudge center tile forward
+  helixRadiusGrow: 0.35,     // slight radius increase away from center
 
-  // Default “stuck on a ring” tilt/lean (NOT straight-on)
-  ringTiltDeg: 18,         // pitch tilt
-  ringRollDeg: 10,         // per-tile roll randomness
+  visibleRange: 2.15,
+  fadeSoftness: 1.10,
 
-  // ✅ Straighten when close to camera
-  straightenNear: 10.5,    // starts really straightening here (closer)
-  straightenFar: 19.0,     // stops straightening here (farther)
-  straightenPush: 1.35,    // pulls tile slightly toward camera as it straightens
-  straightenScale: 0.14,   // grows slightly when straightened
-  straightenFrontMin: 0.20,
-  straightenFrontMax: 0.86,
-
-  // Tile size/curve
+  // tiles
   tileW: 4.05,
   tileH: 2.45,
   tileCurve: 0.080,
-
-  // title offset (local space on card)
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // Visibility / fade (front tiles strongest like the reference)
-  fadeSoftness: 0.22,
-  minOpacity: 0.14,
+  // hover animation
+  hoverDamp: 10.0,
+  flagAmp: 0.22,      // how much it waves when hovered
+  flagSpeed: 6.5,     // wave speed
+  revealWidth: 0.09,  // thickness of the color “front”
 };
 
 // Loading manager
@@ -129,7 +136,7 @@ manager.onProgress = (_url, loaded, total) => {
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  hintEl.textContent = "Scroll / drag • Click tiles • (audio starts on interaction)";
+  hintEl.textContent = "Scroll / drag • Hover tiles • Click to open";
 };
 
 // Renderer / scene / camera
@@ -438,8 +445,8 @@ window.addEventListener("pointerdown", gestureKick, { once:true });
 window.addEventListener("wheel", gestureKick, { once:true, passive:true });
 window.addEventListener("keydown", gestureKick, { once:true });
 
-// Tile textures
-function makeCoverTexture(){
+// ---------- Cover fallback texture ----------
+function makeFallbackCoverTexture(){
   const w=1024, h=640;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const ctx=c.getContext("2d");
@@ -467,16 +474,14 @@ function makeCoverTexture(){
   ctx.lineWidth=12;
   ctx.strokeRect(30,30,w-60,h-60);
 
-  ctx.strokeStyle="rgba(232,238,242,0.18)";
-  ctx.lineWidth=6;
-  ctx.strokeRect(56,56,w-112,h-112);
-
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy=8;
   return tex;
 }
+const FALLBACK_COVER_TEX = makeFallbackCoverTexture();
 
+// Title texture
 function makeTitleTexture(text){
   const w=1024, h=256;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -504,53 +509,136 @@ function makeTitleTexture(text){
   return tex;
 }
 
-// Tiles
+// ---------- Tiles ----------
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
 
 const clickableMeshes = [];
 const tileItems = [];
 
-(function createTiles(){
-  const coverTex = makeCoverTexture();
+const texLoader = new THREE.TextureLoader(manager);
+const TILE_ASPECT = T.tileW / T.tileH;
 
+function makeCoverMaterial(){
+  const mat = new THREE.ShaderMaterial({
+    transparent:true,
+    depthWrite:false,
+    side:THREE.DoubleSide,
+    uniforms:{
+      uTex:       { value: FALLBACK_COVER_TEX },
+      uTexAspect: { value: 1.0 },
+      uTileAspect:{ value: TILE_ASPECT },
+
+      uOpacity:   { value: 0.0 },
+      uCurve:     { value: T.tileCurve },
+
+      uTime:      { value: 0.0 },
+      uHover:     { value: 0.0 },
+
+      uFlagAmp:   { value: T.flagAmp },
+      uFlagSpeed: { value: T.flagSpeed },
+      uRevealW:   { value: T.revealWidth }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      uniform float uCurve;
+      uniform float uTime;
+      uniform float uHover;
+      uniform float uFlagAmp;
+      uniform float uFlagSpeed;
+
+      void main(){
+        vUv = uv;
+        vec3 p = position;
+
+        // gentle folder curve
+        float x = p.x;
+        p.z -= (x*x) * uCurve;
+
+        // flag / wind flap only when hovered
+        float amp = uHover * uFlagAmp;
+        float w1 = sin((uv.y*8.0 + uv.x*2.5) + uTime*uFlagSpeed);
+        float w2 = sin((uv.y*5.0 - uv.x*3.0) + uTime*(uFlagSpeed*0.8));
+        p.z += (w1*0.10 + w2*0.08) * amp;
+        p.y += (w1*0.04) * amp;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D uTex;
+      uniform float uTexAspect;
+      uniform float uTileAspect;
+
+      uniform float uOpacity;
+      uniform float uTime;
+      uniform float uHover;
+      uniform float uRevealW;
+
+      vec2 coverUV(vec2 uv, float texA, float tileA){
+        // "background-size: cover" cropping
+        vec2 s = vec2(1.0, 1.0);
+        if (texA > tileA){
+          // image wider -> scale X
+          s.x = texA / tileA;
+        }else{
+          // image taller -> scale Y
+          s.y = tileA / texA;
+        }
+        return (uv - 0.5) * s + 0.5;
+      }
+
+      void main(){
+        vec2 uv = coverUV(vUv, uTexAspect, uTileAspect);
+        vec4 t = texture2D(uTex, uv);
+
+        // grayscale
+        float g = dot(t.rgb, vec3(0.299, 0.587, 0.114));
+        vec3 gray = vec3(g);
+
+        // "flop into color" reveal front (left -> right), with a wavy edge
+        float wave = sin(vUv.y * 7.0 + uTime * 7.0) * 0.03 * uHover;
+        float edge = -0.20 + uHover * 1.20 + wave;  // -0.2..1.0-ish
+        float m = 1.0 - smoothstep(edge - uRevealW, edge + uRevealW, vUv.x);
+
+        // subtle extra shimmer along the edge when hovering
+        float edgeGlow = smoothstep(0.0, 1.0, uHover) * (1.0 - smoothstep(0.0, 0.12, abs(vUv.x - edge)));
+        vec3 col = mix(gray, t.rgb, m);
+        col += edgeGlow * 0.06;
+
+        gl_FragColor = vec4(col, uOpacity);
+      }
+    `
+  });
+  return mat;
+}
+
+(function createTiles(){
   for (let i=0;i<CHAPTERS.length;i++){
     const ch = CHAPTERS[i];
 
     const coverGeo = new THREE.PlaneGeometry(T.tileW, T.tileH, 30, 1);
-    const coverMat = new THREE.ShaderMaterial({
-      transparent:true,
-      depthWrite:false,
-      side:THREE.DoubleSide,
-      uniforms:{
-        uMap:{ value: coverTex },
-        uOpacity:{ value: 0.0 },
-        uCurve:{ value: T.tileCurve },
-        uWobble:{ value: 0.0 }
+    const coverMat = makeCoverMaterial();
+
+    // load the chapter cover texture
+    texLoader.load(
+      ch.cover,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        coverMat.uniforms.uTex.value = tex;
+        // aspect ratio for “cover” crop
+        const img = tex.image;
+        if (img && img.width && img.height){
+          coverMat.uniforms.uTexAspect.value = img.width / img.height;
+        }
       },
-      vertexShader: `
-        varying vec2 vUv;
-        uniform float uCurve;
-        uniform float uWobble;
-        void main(){
-          vUv = uv;
-          vec3 p = position;
-          float x = p.x;
-          p.z -= (x*x) * uCurve;
-          p.y += sin((uv.x * 3.14159) + uWobble) * 0.010;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform sampler2D uMap;
-        uniform float uOpacity;
-        void main(){
-          vec4 tex = texture2D(uMap, vUv);
-          gl_FragColor = vec4(tex.rgb, uOpacity);
-        }
-      `
-    });
+      undefined,
+      () => {
+        console.warn("Cover missing/failed:", ch.cover, "(using fallback)");
+      }
+    );
 
     const cover = new THREE.Mesh(coverGeo, coverMat);
     cover.userData.chapter = ch;
@@ -566,24 +654,28 @@ const tileItems = [];
     g.add(cover);
     g.add(title);
 
-    // per-tile stable randomness (so it feels like the screenshot)
-    const roll = (Math.random()*2 - 1) * THREE.MathUtils.degToRad(T.ringRollDeg);
-    const seed = Math.random() * 1000;
-
     tileGroup.add(g);
     clickableMeshes.push(cover);
-    tileItems.push({ group:g, cover, title, chapter:ch, index:i, roll, seed });
+
+    const item = {
+      group:g, cover, title, chapter:ch, index:i,
+      hover:0,
+      hoverTarget:0
+    };
+    cover.userData.item = item;
+    tileItems.push(item);
   }
 })();
 
-// Model load
+// ---------- Model load ----------
 const gltfLoader = new GLTFLoader(manager);
+
 function addFallbackModel(){
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
     new THREE.MeshStandardMaterial({ color:PAL.text.getHex(), roughness:0.88, metalness:0.02 })
   );
-  body.position.y = 1.0;
+  body.position.y = 0.0;
   center.add(body);
 }
 
@@ -605,9 +697,7 @@ gltfLoader.load(
     box2.getCenter(centerPoint);
 
     model.position.sub(centerPoint);
-
-    // ✅ position like the reference
-    model.position.y += T.modelYOffset + T.modelExtraLift;
+    model.position.y += T.modelLift;
     model.rotation.y = THREE.MathUtils.degToRad(T.modelYawDeg);
 
     center.add(model);
@@ -616,7 +706,7 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// Panel logic (muffle audio while open)
+// ---------- Panel logic ----------
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -635,7 +725,6 @@ async function openPanel(ch){
     panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
   }
 }
-
 function closePanel(){
   if (!panel || !panelTitle || !panelBody) return;
   panel.classList.remove("is-open");
@@ -645,9 +734,42 @@ function closePanel(){
   setMuffle(false);
 }
 
-// Picking
+// ---------- Picking + Hover ----------
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
+let hoveredItem = null;
+
+function setHovered(next){
+  if (hoveredItem === next) return;
+  if (hoveredItem) hoveredItem.hoverTarget = 0;
+  hoveredItem = next;
+  if (hoveredItem) hoveredItem.hoverTarget = 1;
+  canvas.style.cursor = hoveredItem ? "pointer" : "default";
+}
+
+function updatePointerNDC(e){
+  const rect = canvas.getBoundingClientRect();
+  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+}
+
+canvas.addEventListener("pointermove", (e)=>{
+  if (panel?.classList.contains("is-open")){
+    setHovered(null);
+    return;
+  }
+  updatePointerNDC(e);
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(clickableMeshes, false);
+  if (!hits.length){
+    setHovered(null);
+    return;
+  }
+  const item = hits[0].object.userData.item || null;
+  setHovered(item);
+});
+
+canvas.addEventListener("pointerleave", ()=> setHovered(null));
 
 canvas.addEventListener("click", async (e) => {
   if (panel?.classList.contains("is-open")) return;
@@ -655,10 +777,7 @@ canvas.addEventListener("click", async (e) => {
   await ensureAudio().catch(()=>{});
   applyAudioTargets();
 
-  const rect = canvas.getBoundingClientRect();
-  pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-
+  updatePointerNDC(e);
   raycaster.setFromCamera(pointerNdc, camera);
   const hits = raycaster.intersectObjects(clickableMeshes, false);
   if (!hits.length) return;
@@ -669,10 +788,14 @@ canvas.addEventListener("click", async (e) => {
   timeline.vel = 0;
   timeline.lastInteractT = performance.now();
 
+  if (ch.href){
+    window.open(ch.href, "_blank", "noopener,noreferrer");
+    return;
+  }
   openPanel(ch).catch(()=>{});
 });
 
-// Chapters dots (UI only)
+// ---------- Chapters UI ----------
 let activeChapterId = null;
 function buildChapterUI(){
   chaptersEl.innerHTML="";
@@ -685,7 +808,12 @@ function buildChapterUI(){
       timeline.value = clamp01(ch.progress);
       timeline.vel = 0;
       timeline.lastInteractT = performance.now();
-      openPanel(ch).catch(()=>{});
+
+      if (ch.href){
+        window.open(ch.href, "_blank", "noopener,noreferrer");
+      }else{
+        openPanel(ch).catch(()=>{});
+      }
     });
     chaptersEl.appendChild(dot);
   });
@@ -700,7 +828,7 @@ function setActiveDot(id){
 }
 buildChapterUI();
 
-// Timeline: position + velocity (no snapping / no auto-nearest movement)
+// Timeline: position + velocity
 const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
@@ -745,6 +873,12 @@ function nearestChapter(v){
   }
   return best;
 }
+function progressToIndex(v){
+  const min=Math.min(...CHAPTERS.map(c=>c.progress));
+  const max=Math.max(...CHAPTERS.map(c=>c.progress));
+  const t=clamp01((v-min)/Math.max(1e-6,(max-min)));
+  return t*(CHAPTERS.length-1);
+}
 
 // Resize
 window.addEventListener("resize", ()=>{
@@ -755,56 +889,45 @@ window.addEventListener("resize", ()=>{
 });
 
 // Temps
-const vToCam = new THREE.Vector3();
+const up = new THREE.Vector3(0,1,0);
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
-const up = new THREE.Vector3(0,1,0);
-
-const normal = new THREE.Vector3();
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
 const basis = new THREE.Matrix4();
-
-const camDir = new THREE.Vector3();
-const qBillboard = new THREE.Quaternion();
-const qBase = new THREE.Quaternion();
 
 requestAnimationFrame(tick);
 function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // Smooth decel (no snapping)
+  // Smooth decel
   const idleMs = performance.now() - timeline.lastInteractT;
   const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
 
   timeline.vel *= Math.exp(-damping * dt);
   if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
-
   timeline.value = clamp01(timeline.value + timeline.vel);
 
-  // ✅ Orbit phase (tiles orbit model)
-  const orbitPhase = timeline.value * (Math.PI * 2) * T.orbitTurns;
-
-  // ✅ Camera: mostly stable, only subtle follow (like the reference)
-  const camAz = T.camAzBase + orbitPhase * T.camFollow;
-  const camY = T.camYBase + Math.sin(orbitPhase) * T.camYAmplitude;
+  // Camera fixed
+  const camY = T.camYBase + Math.sin(time*0.35)*T.camYBob;
+  const camAz = T.camAzimuth;
   camera.position.set(Math.cos(camAz)*T.camRadius, camY, Math.sin(camAz)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
-  // Background slight drift
-  bg.rotation.y = camAz*0.10 + 0.35;
-  bg.rotation.x = Math.sin(camAz*0.08)*0.020;
+  bg.rotation.y = 0.35 + time*0.01;
 
-  // UI highlight only
+  // UI highlight text
   const near = nearestChapter(timeline.value);
   if (activeChapterId !== near.id){
     activeChapterId = near.id;
     setActiveDot(activeChapterId);
   }
   if (!panel?.classList.contains("is-open")){
-    hintEl.textContent = `${near.label} • Click tile to open`;
+    hintEl.textContent = near.href
+      ? `${near.label} • Click to open link`
+      : `${near.label} • Click tile to open`;
   }
 
   // Fog motion
@@ -832,100 +955,61 @@ function tick(){
     m.lookAt(camera.position);
   }
 
-  // Precompute camera direction from center (for “frontness”)
-  camDir.copy(camera.position);
-  camDir.y = 0;
-  if (camDir.lengthSq() < 1e-6) camDir.set(0,0,1);
-  camDir.normalize();
+  // ✅ HELIX (ribbon frame)
+  const centerIdx = progressToIndex(timeline.value);
 
-  // ✅ Tiles: orbit around model + straighten near camera
+  // dy/dtheta for helix tangent stability
+  const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
+
   for(const item of tileItems){
-    const { group, cover, title, chapter, index, roll, seed } = item;
+    const { group, cover, title, index } = item;
+    const rel = index - centerIdx;
 
-    // angle where this chapter should live around the ring
-    // when timeline.value === chapter.progress => relAng = 0 => tile is FRONT
-    const relAng = (chapter.progress - timeline.value) * (Math.PI * 2) * T.orbitTurns;
+    const theta = T.helixThetaOffset + rel * T.helixAngleStep;
 
-    // ring radius + tiny wobble to feel less perfect
-    const r = T.ringRadius + Math.sin(relAng*0.35 + seed) * T.ringRadiusWobble;
+    const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.helixFrontPull;
+    const r = T.helixRadius + Math.abs(rel)*T.helixRadiusGrow + frontBoost;
 
-    // position around ring (front = +Z side)
-    const px = Math.sin(relAng) * r;
-    const pz = Math.cos(relAng) * r;
+    const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
+    group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
 
-    // height variation (gives the “floating timeline photos” feel)
-    const yPos =
-      T.ringYBase
-      + Math.sin(relAng*0.9 + seed*0.5) * T.ringYWaveAmp
-      + (chapter.progress - 0.5) * T.ringYProgressAmp
-      + Math.sin(time*0.9 + index*0.6) * T.ringBobAmp;
+    // visibility
+    const dAbs = Math.abs(rel);
+    const vis = 1.0 - smoothstep(
+      T.visibleRange - T.fadeSoftness,
+      T.visibleRange + T.fadeSoftness,
+      dAbs
+    );
+    const vis01 = clamp01(vis);
 
-    group.position.set(px, yPos, pz);
+    // hover easing (drives the shader)
+    item.hover = damp(item.hover, item.hoverTarget, T.hoverDamp, dt);
 
-    // radial/tangent around ring
-    radial.set(px, 0, pz).normalize();                    // outward
-    tangent.set(Math.cos(relAng), 0, -Math.sin(relAng)).normalize(); // direction of travel
+    // feed cover shader
+    const mat = cover.material;
+    mat.uniforms.uOpacity.value = vis01;
+    mat.uniforms.uTime.value = time;
+    mat.uniforms.uHover.value = item.hover;
 
-    // how “front” the tile is (1 = front, -1 = back)
-    const front = radial.dot(camDir);
+    // Ribbon orientation: Z = radial outward, X = helix tangent
+    radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
+    zAxis.copy(radial);
 
-    // fade cards a bit on the back side (like the reference)
-    const vis = clamp01(T.minOpacity + smoothstep(-0.10 - T.fadeSoftness, 0.38 + T.fadeSoftness, front));
-    cover.material.uniforms.uOpacity.value = vis;
-    cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
+    tangent.set(
+      -Math.sin(theta) * r,
+      dy_dtheta,
+      Math.cos(theta) * r
+    ).normalize();
+    xAxis.copy(tangent);
 
-    // -------- Base orientation: feels like cards orbiting a cylinder --------
-    // plane normal should face inward (toward the model)
-    normal.copy(radial).multiplyScalar(-1);
-
-    // tilt the card slightly (so it's not perfectly upright)
-    const tilt = THREE.MathUtils.degToRad(T.ringTiltDeg);
-    normal.applyAxisAngle(tangent, -tilt); // negative = leans downward a bit
-
-    // build basis so +Z is normal, +X is tangent
-    xAxis.copy(tangent).normalize();
-    zAxis.copy(normal).normalize();
     yAxis.crossVectors(zAxis, xAxis).normalize();
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
-    qBase.setFromRotationMatrix(basis);
+    group.quaternion.setFromRotationMatrix(basis);
 
-    // add a little per-tile roll (like the screenshot)
-    group.quaternion.copy(qBase);
-    group.rotateZ(roll);
-
-    // -------- Straighten near camera --------
-    vToCam.copy(camera.position).sub(group.position);
-    const dist = vToCam.length();
-    vToCam.normalize();
-
-    const distFac = clamp01((T.straightenFar - dist) / Math.max(0.0001, (T.straightenFar - T.straightenNear)));
-    const frontFac = smoothstep(T.straightenFrontMin, T.straightenFrontMax, front);
-    const straighten = clamp01(distFac * frontFac);
-
-    // Billboard quaternion (upright, clean, faces camera)
-    zAxis.copy(vToCam); // +Z looks toward camera
-    xAxis.crossVectors(up, zAxis);
-    if (xAxis.lengthSq() < 1e-6) xAxis.set(1,0,0);
-    xAxis.normalize();
-    yAxis.crossVectors(zAxis, xAxis).normalize();
-    basis.makeBasis(xAxis, yAxis, zAxis);
-    qBillboard.setFromRotationMatrix(basis);
-
-    // slerp into “straight” when close
-    group.quaternion.slerp(qBillboard, straighten);
-
-    // slight push & scale when straightened (nice “focus” feel)
-    if (straighten > 0.0001){
-      group.position.addScaledVector(vToCam, straighten * T.straightenPush);
-      group.scale.setScalar(1.0 + straighten * T.straightenScale);
-    }else{
-      group.scale.setScalar(1.0);
-    }
-
-    // Title is strongest when it’s straightened and front-facing
-    title.material.opacity = clamp01(vis * (0.25 + 0.75*straighten));
+    // Title reacts to hover too
+    title.material.opacity = clamp01(vis01 * (0.22 + 0.78 * item.hover));
   }
 
   renderer.render(scene, camera);
