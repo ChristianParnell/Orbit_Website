@@ -1,9 +1,11 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
+/* ---------------- URL helper ---------------- */
 const BASE_URL = new URL("./", import.meta.url);
 const u = (p) => new URL(p, BASE_URL).href;
 
+/* ---------------- DOM ---------------- */
 const canvas = document.getElementById("webgl");
 const loaderEl = document.getElementById("loader");
 const loaderFill = document.getElementById("loaderFill");
@@ -21,104 +23,118 @@ function smoothstep(e0, e1, x){
   const t = clamp01((x - e0) / (e1 - e0));
   return t * t * (3 - 2 * t);
 }
-function hardFail(msg, err){
-  console.error(msg, err || "");
-  if (hintEl) hintEl.textContent = `❌ ${msg}`;
+function damp(current, target, lambda, dt){
+  return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
+}
+function keepQuatContinuous(q, prev){
+  if (q.dot(prev) < 0) { q.x *= -1; q.y *= -1; q.z *= -1; q.w *= -1; }
+  prev.copy(q);
 }
 
-if (!canvas) hardFail("Canvas #webgl not found.");
-if (!hintEl) hardFail("HUD #hint not found.");
-if (!chaptersEl) hardFail("HUD #chapters not found.");
+if (!canvas) { console.error("Canvas #webgl not found"); }
 
-console.log("✅ Orbit main.js loaded. THREE revision:", THREE.REVISION);
-hintEl.textContent = "Scene starting…";
-
-// Palette
+/* ---------------- Palette ---------------- */
 const PAL = {
-  sky:   new THREE.Color("#91C6FF"),
-  sand:  new THREE.Color("#BD9C64"),
-  sun:   new THREE.Color("#FCBA47"),
-  slate: new THREE.Color("#6786A7"),
-  moss:  new THREE.Color("#7D7361"),
-  deep:  new THREE.Color("#464C52"),
-  text:  new THREE.Color("#E8EEF2"),
+  sky:  new THREE.Color("#91C6FF"),
+  deep: new THREE.Color("#464C52"),
+  text: new THREE.Color("#E8EEF2"),
 };
 
-// Assets (MATCH THESE FILES)
+/* ---------------- Assets ---------------- */
+// NOTE: these must exist in your deployed folder
 const ASSETS = {
-  model: u("assets/models/me_on_hill.glb"),
   sky:   u("assets/backgrounds/sky_sphere.jpg"),
   fog:   u("assets/textures/fog.jpg"),
   audio: u("assets/audio/ambient.mp3"),
 };
 
-// Chapters
-const CHAPTERS = [
-  { id: "about",        label: "About",        progress: 0.10, page: u("pages/about.html") },
-  { id: "gallery",      label: "Gallery",      progress: 0.35, page: u("pages/gallery.html") },
-  { id: "achievements", label: "Achievements", progress: 0.60, page: u("pages/achievements.html") },
-  { id: "contact",      label: "Contact",      progress: 0.85, page: u("pages/contact.html") },
+// model candidates (so it works even if you currently have spaces)
+const MODEL_CANDIDATES = [
+  u("assets/models/me_on_hill.glb"),
+  u("assets/models/me on hill.glb"),
 ];
 
-// Tuning
+/* ---------------- Chapters (covers use coverKey, not extension) ---------------- */
+const CHAPTERS = [
+  { id:"about",        label:"About",              page:u("pages/about.html"),              coverKey:"about" },
+  { id:"gallery",      label:"Gallery",            page:u("pages/gallery.html"),            coverKey:"gallery" },
+  { id:"achievements", label:"Achievements",       page:u("pages/achievements.html"),       coverKey:"achievements" },
+  { id:"contact",      label:"Contact",            page:u("pages/contact.html"),            coverKey:"contact" },
+
+  { id:"fab",       label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",               coverKey:"fab" },
+  { id:"steam",     label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/",   coverKey:"steam_22minutes" },
+  { id:"sketchfab", label:"Sketchfab Models",   href:"https://sketchfab.com/OblixStudio/models",                coverKey:"sketchfab" },
+];
+
+// spread progress evenly
+(function assignProgress(){
+  const n = CHAPTERS.length;
+  for (let i=0;i<n;i++){
+    CHAPTERS[i].progress = (i + 1) / (n + 1);
+  }
+})();
+
+/* ---------------- Tuning ---------------- */
 const T = {
-  // ✅ MUCH slower orbit (user must scroll more)
+  // scroll feel
   scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
   maxVel: 0.0030,
-
-  // ✅ quick smooth slow-down (no snapping)
   dampingActive: 9.0,
   dampingIdle: 34.0,
   idleDelayMs: 120,
   stopEps: 0.00002,
 
-  modelTargetSize: 9.2,
+  // camera
+  camAzimuth: Math.PI * 0.5,
+  camRadius: 16.2,
+  camYBase: 5.5,
+  camYBob: 0.18,
+  lookY: 1.95,
 
-  orbitTurns: 1.55,
-  camRadius: 20.5,
-  camYBase: 6.1,
-  camYAmplitude: 1.20,
-  lookY: 1.25,
+  // helix ribbon (closer to model)
+  helixRadius: 6.2,
+  helixThetaOffset: Math.PI * 0.5,
+  helixAngleStep: 1.22,
+  helixPitch: 3.10,
+  helixYOffset: 4.4,
+  helixFrontPull: 0.65,
+  helixRadiusGrow: 0.28,
 
-  // spiral path (close to model)
-  spiralRadius: 12.8,
-  spiralYStep: 4.9,
-  spiralYOffset: 5.5,
-  tileAngleStep: 3.15,
-  frontPush: 0.75,
-  radiusGrow: 0.65,
+  visibleRange: 2.25,
+  fadeSoftness: 1.10,
 
-  visibleRange: 1.75,
-  fadeSoftness: 1.15,
-
-  // big folders
+  // tile geometry
   tileW: 4.05,
   tileH: 2.45,
-  tileCurve: 0.080,
-
-  // title offset (2D plane, not billboard)
+  tileCurve: 0.08,
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
-  // ✅ spring thread angle (this is the “ramp” tilt)
-  helixTiltDeg: 40,
-  helixTiltNearDeg: 26, // relax a bit near camera (never straight)
+  // hover animation
+  hoverDamp: 10.0,
+  flagAmp: 0.22,
+  flagSpeed: 6.5,
+  revealWidth: 0.09,
+
+  // ✅ upright fix: choose one
+  // If tiles still look inverted, change this to "X" or "Y"
+  flipAxis: "Z", // "Z" | "X" | "Y"
 };
 
-// Loading manager
+/* ---------------- Loading Manager ---------------- */
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
-  if (loaderFill) loaderFill.style.width = `${pct}%`;
-  if (loaderPct) loaderPct.textContent = `${pct}%`;
+  loaderFill && (loaderFill.style.width = `${pct}%`);
+  loaderPct && (loaderPct.textContent = `${pct}%`);
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  hintEl.textContent = "Scroll / drag • Click tiles • (audio starts on interaction)";
+  hintEl && (hintEl.textContent = "Scroll / drag • Hover tiles • Click to open");
 };
 
-// Renderer / scene / camera
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+/* ---------------- Renderer / Scene / Camera ---------------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -129,12 +145,10 @@ const scene = new THREE.Scene();
 scene.background = PAL.deep.clone();
 scene.fog = new THREE.Fog(PAL.deep.getHex(), 18, 110);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 900);
-camera.position.set(0, 6.0, T.camRadius);
-
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 900);
 const clock = new THREE.Clock();
 
-// Lights
+/* ---------------- Lights ---------------- */
 scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.05));
 const key = new THREE.DirectionalLight(0xffffff, 0.95);
 key.position.set(4.2, 5.8, 3.2);
@@ -143,51 +157,23 @@ const rim = new THREE.DirectionalLight(PAL.sky.getHex(), 0.55);
 rim.position.set(-6.0, 2.6, -3.8);
 scene.add(rim);
 
-// Center group (model)
-const center = new THREE.Group();
-scene.add(center);
-
-// Background sphere
-function makeSkyTexture(){
-  const w = 1024, h = 512;
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const ctx = c.getContext("2d");
-
-  const g = ctx.createLinearGradient(0,0,0,h);
+/* ---------------- Background Sphere (fallback + optional image) ---------------- */
+function makeSkyFallback(){
+  const w=1024,h=512;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d");
+  const g=ctx.createLinearGradient(0,0,0,h);
   g.addColorStop(0, "#91C6FF");
-  g.addColorStop(0.38, "#6786A7");
+  g.addColorStop(0.48, "#6786A7");
   g.addColorStop(1, "#464C52");
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,w,h);
-
-  const sun = ctx.createRadialGradient(w*0.72, h*0.30, 10, w*0.72, h*0.30, 260);
-  sun.addColorStop(0, "rgba(252,186,71,0.26)");
-  sun.addColorStop(1, "rgba(252,186,71,0.0)");
-  ctx.fillStyle = sun;
-  ctx.fillRect(0,0,w,h);
-
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  for (let i=0;i<650;i++){
-    const x = Math.random()*w;
-    const y = Math.random()*h;
-    const r = Math.random()*1.2;
-    ctx.globalAlpha = 0.08 + Math.random()*0.30;
-    ctx.beginPath();
-    ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace=THREE.SRGBColorSpace;
   return tex;
 }
-
 const bg = new THREE.Mesh(
   new THREE.SphereGeometry(160, 48, 48),
-  new THREE.MeshBasicMaterial({ map: makeSkyTexture(), side: THREE.BackSide })
+  new THREE.MeshBasicMaterial({ map: makeSkyFallback(), side: THREE.BackSide })
 );
 bg.material.fog = false;
 bg.rotation.y = 0.35;
@@ -195,302 +181,211 @@ scene.add(bg);
 
 new THREE.TextureLoader(manager).load(
   ASSETS.sky,
-  (tex) => {
+  (tex)=>{
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     bg.material.map = tex;
     bg.material.needsUpdate = true;
   },
   undefined,
-  () => {}
+  ()=>{}
 );
 
-// Fog fallback texture (always visible)
-function makeFogTextureFallback(){
-  const w=512, h=512;
-  const c=document.createElement("canvas"); c.width=w; c.height=h;
-  const ctx=c.getContext("2d");
+/* ---------------- Model (with guaranteed fallback) ---------------- */
+const center = new THREE.Group();
+scene.add(center);
 
-  ctx.fillStyle="black";
-  ctx.fillRect(0,0,w,h);
+let modelLoaded = false;
+function addFallbackModel(){
+  if (modelLoaded) return;
+  modelLoaded = true;
 
-  for(let i=0;i<95;i++){
-    const x=Math.random()*w, y=Math.random()*h;
-    const r=50+Math.random()*150;
-    const grd=ctx.createRadialGradient(x,y,0,x,y,r);
-    grd.addColorStop(0, "rgba(255,255,255,0.95)");
-    grd.addColorStop(1, "rgba(0,0,0,0.0)");
-    ctx.globalAlpha = 0.17 + Math.random()*0.25;
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha=1;
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.85, 1.8, 10, 18),
+    new THREE.MeshStandardMaterial({ color: PAL.text.getHex(), roughness:0.85, metalness:0.02 })
+  );
+  body.position.set(0, 1.25, 0);
+  center.add(body);
 
-  const tex=new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  return tex;
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.3, 2.7, 0.75, 28),
+    new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness:1.0, metalness:0.0 })
+  );
+  base.position.y = 0.35;
+  center.add(base);
 }
 
-let fogTex = makeFogTextureFallback();
-const fogMats = [];
+function loadGLTFAny(urls){
+  const loader = new GLTFLoader(manager);
+  const tryAt = (i) => {
+    if (i >= urls.length){
+      console.warn("Model missing/failed:", urls);
+      addFallbackModel();
+      return;
+    }
+    loader.load(
+      urls[i],
+      (gltf)=>{
+        if (modelLoaded) return;
+        modelLoaded = true;
 
-new THREE.TextureLoader(manager).load(
-  ASSETS.fog,
-  (t) => {
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.minFilter = THREE.LinearFilter;
-    t.magFilter = THREE.LinearFilter;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    fogTex = t;
-    for (const m of fogMats) m.uniforms.uMap.value = fogTex;
-  },
-  undefined,
-  () => console.warn("Fog texture missing/failed, using fallback fog texture.")
-);
+        const model = gltf.scene;
 
-// Fog group
-const fogGroup = new THREE.Group();
-scene.add(fogGroup);
+        // auto scale to a target size
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const maxAxis = Math.max(size.x, size.y, size.z);
+        const scale = 9.6 / Math.max(0.0001, maxAxis);
+        model.scale.setScalar(scale);
 
-function makeFogMaterial(){
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.NormalBlending,
-    uniforms: {
-      uMap:      { value: fogTex },
-      uOpacity:  { value: 0.72 },
-      uBlackCut: { value: 0.02 },
-      uSoft:     { value: 0.86 },
-      uTint:     { value: PAL.sky.clone().lerp(PAL.text, 0.55) }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
-    `,
-    fragmentShader: `
-      varying vec2 vUv;
-      uniform sampler2D uMap;
-      uniform float uOpacity;
-      uniform float uBlackCut;
-      uniform float uSoft;
-      uniform vec3 uTint;
-      void main(){
-        vec3 c = texture2D(uMap, vUv).rgb;
-        float luma = dot(c, vec3(0.299,0.587,0.114));
-        float a = smoothstep(uBlackCut, uBlackCut + uSoft, luma);
-        float edge = smoothstep(0.02,0.22,vUv.x)*smoothstep(0.02,0.22,vUv.y)*
-                     smoothstep(0.02,0.22,1.0-vUv.x)*smoothstep(0.02,0.22,1.0-vUv.y);
-        a *= edge;
-        if(a < 0.01) discard;
-        gl_FragColor = vec4(uTint, a * uOpacity);
-      }
-    `
-  });
-  fogMats.push(mat);
-  return mat;
+        const box2 = new THREE.Box3().setFromObject(model);
+        const centerPoint = new THREE.Vector3();
+        box2.getCenter(centerPoint);
+        model.position.sub(centerPoint);
+
+        model.position.y += -0.25;
+        model.rotation.y = THREE.MathUtils.degToRad(10);
+
+        center.add(model);
+      },
+      undefined,
+      ()=>tryAt(i+1)
+    );
+  };
+  tryAt(0);
+}
+loadGLTFAny(MODEL_CANDIDATES);
+setTimeout(()=>{ if(!modelLoaded) addFallbackModel(); }, 1500);
+
+/* ---------------- Covers (try multiple extensions automatically) ---------------- */
+const COVER_EXTS = ["jpg","jpeg","png","webp"];
+function coverCandidates(key){
+  return COVER_EXTS.map(ext => u(`assets/covers/${key}.${ext}`));
 }
 
-const fogPuffs = [];
-(function createFog(){
-  const puffCount = 58;
-  const puffGeo = new THREE.PlaneGeometry(6.6, 6.6);
-
-  for (let i=0;i<puffCount;i++){
-    const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.28 + Math.random()*0.46;
-
-    const m = new THREE.Mesh(puffGeo, mat);
-    m.userData = {
-      ang: Math.random()*Math.PI*2,
-      radius: 3.2 + Math.random()*9.8,
-      yBase: -0.8 + Math.random()*8.0,
-      speed: 0.05 + Math.random()*0.12,
-      bobAmp: 0.22 + Math.random()*0.65,
-      spin: (Math.random()*2-1)*0.22,
-      drift: 0.35 + Math.random()*0.95,
-      scaleBase: 0.90 + Math.random()*2.4,
-      seed: Math.random()*1000
-    };
-    m.scale.setScalar(m.userData.scaleBase);
-    fogGroup.add(m);
-    fogPuffs.push(m);
-  }
-})();
-
-// Audio (loop + muffle)
-const audioState = {
-  ctx:null, src:null, gain:null, filter:null,
-  started:false,
-  baseVolume: clamp01(parseFloat(localStorage.getItem("orbit_volume") ?? "0.52")),
-  isMuffled:false
-};
-
-function createVolumeUI(){
-  const wrap = document.createElement("div");
-  Object.assign(wrap.style, {
-    position:"fixed", left:"18px", bottom:"18px", zIndex:"25",
-    pointerEvents:"auto", display:"flex", gap:"10px", alignItems:"center",
-    padding:"10px 12px", borderRadius:"999px",
-    background:"rgba(145,198,255,0.10)", border:"1px solid rgba(232,238,242,0.16)",
-    backdropFilter:"blur(12px)",
-    color:"rgba(232,238,242,0.92)",
-    fontFamily:"ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial",
-    fontSize:"12px", letterSpacing:"0.12em", textTransform:"uppercase", userSelect:"none"
-  });
-
-  const label = document.createElement("div"); label.textContent="VOL";
-  const slider = document.createElement("input");
-  slider.type="range"; slider.min="0"; slider.max="100";
-  slider.value=String(Math.round(audioState.baseVolume*100));
-  Object.assign(slider.style,{ width:"140px", accentColor:"#FCBA47", cursor:"pointer" });
-  const pct = document.createElement("div"); pct.textContent=`${slider.value}%`; pct.style.opacity="0.78";
-
-  slider.addEventListener("input", () => {
-    audioState.baseVolume = clamp01(parseInt(slider.value,10)/100);
-    localStorage.setItem("orbit_volume", String(audioState.baseVolume));
-    pct.textContent = `${slider.value}%`;
-    applyAudioTargets();
-  });
-
-  wrap.appendChild(label); wrap.appendChild(slider); wrap.appendChild(pct);
-  document.body.appendChild(wrap);
-}
-createVolumeUI();
-
-async function ensureAudio(){
-  if (audioState.started) return;
-  audioState.started = true;
-
-  try{
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioCtx();
-
-    const res = await fetch(ASSETS.audio, { cache:"no-store" });
-    if (!res.ok) throw new Error(`Audio fetch failed: ${res.status}`);
-    const arr = await res.arrayBuffer();
-    const buffer = await ctx.decodeAudioData(arr);
-
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.loop = true;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = 18000;
-    filter.Q.value = 0.7;
-
-    const gain = ctx.createGain();
-    gain.gain.value = audioState.baseVolume;
-
-    src.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    src.start(0);
-
-    audioState.ctx = ctx;
-    audioState.src = src;
-    audioState.filter = filter;
-    audioState.gain = gain;
-  }catch(e){
-    console.warn("Audio failed:", e);
-  }
-}
-
-function applyAudioTargets(){
-  if (!audioState.ctx || !audioState.filter || !audioState.gain) return;
-  const now = audioState.ctx.currentTime;
-  const muffled = audioState.isMuffled;
-
-  const targetFreq = muffled ? 720 : 18000;
-  const targetGain = audioState.baseVolume * (muffled ? 0.55 : 1.0);
-
-  audioState.filter.frequency.cancelScheduledValues(now);
-  audioState.gain.gain.cancelScheduledValues(now);
-
-  audioState.filter.frequency.setTargetAtTime(targetFreq, now, 0.08);
-  audioState.gain.gain.setTargetAtTime(targetGain, now, 0.12);
-}
-function setMuffle(m){ audioState.isMuffled = m; applyAudioTargets(); }
-
-function gestureKick(){ ensureAudio().then(applyAudioTargets).catch(()=>{}); }
-window.addEventListener("pointerdown", gestureKick, { once:true });
-window.addEventListener("wheel", gestureKick, { once:true, passive:true });
-window.addEventListener("keydown", gestureKick, { once:true });
-
-// Tile textures
-function makeCoverTexture(){
+function makeFallbackCoverTexture(){
   const w=1024, h=640;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const ctx=c.getContext("2d");
-
-  const g = ctx.createLinearGradient(0,0,w,h);
+  const g=ctx.createLinearGradient(0,0,w,h);
   g.addColorStop(0, "#91C6FF");
-  g.addColorStop(0.45, "#6786A7");
+  g.addColorStop(0.50, "#6786A7");
   g.addColorStop(1, "#464C52");
-  ctx.fillStyle=g;
-  ctx.fillRect(0,0,w,h);
-
-  ctx.globalAlpha=0.12;
-  ctx.strokeStyle="#E8EEF2";
-  ctx.lineWidth=2;
-  for(let i=0;i<26;i++){
-    const y=(i/26)*h;
-    ctx.beginPath();
-    ctx.moveTo(0, y + (Math.random()*10-5));
-    ctx.lineTo(w, y + (Math.random()*10-5));
-    ctx.stroke();
-  }
-  ctx.globalAlpha=1;
-
-  ctx.strokeStyle="rgba(252,186,71,0.65)";
-  ctx.lineWidth=12;
-  ctx.strokeRect(30,30,w-60,h-60);
-
-  ctx.strokeStyle="rgba(232,238,242,0.18)";
-  ctx.lineWidth=6;
-  ctx.strokeRect(56,56,w-112,h-112);
-
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
   const tex=new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace=THREE.SRGBColorSpace;
   tex.anisotropy=8;
   return tex;
 }
+const FALLBACK_COVER_TEX = makeFallbackCoverTexture();
 
+/* ---------------- Title Texture ---------------- */
 function makeTitleTexture(text){
-  const w=1024, h=256;
+  const w=1024,h=256;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const ctx=c.getContext("2d");
   ctx.clearRect(0,0,w,h);
-
   ctx.font="850 92px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   ctx.textAlign="left";
   ctx.textBaseline="middle";
-
   ctx.fillStyle="rgba(0,0,0,0.35)";
   ctx.fillText(text.toUpperCase(), 98, h/2+8);
-
   ctx.fillStyle="rgba(232,238,242,0.96)";
   ctx.fillText(text.toUpperCase(), 94, h/2+4);
-
-  ctx.globalAlpha=0.85;
-  ctx.fillStyle="rgba(252,186,71,0.75)";
-  ctx.fillRect(94, h/2+62, Math.min(700, ctx.measureText(text.toUpperCase()).width), 6);
-  ctx.globalAlpha=1;
-
   const tex=new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace=THREE.SRGBColorSpace;
   tex.anisotropy=8;
   return tex;
 }
 
-// Tiles
+/* ---------------- Cover Shader (B/W -> flap -> color) ---------------- */
+const TILE_ASPECT = T.tileW / T.tileH;
+
+function makeCoverMaterial(){
+  return new THREE.ShaderMaterial({
+    transparent:true,
+    depthWrite:false,
+    side:THREE.DoubleSide,
+    uniforms:{
+      uTex:{ value: FALLBACK_COVER_TEX },
+      uTexAspect:{ value: 1.0 },
+      uTileAspect:{ value: TILE_ASPECT },
+      uOpacity:{ value: 0.0 },
+      uCurve:{ value: T.tileCurve },
+      uTime:{ value: 0.0 },
+      uHover:{ value: 0.0 },
+      uFlagAmp:{ value: T.flagAmp },
+      uFlagSpeed:{ value: T.flagSpeed },
+      uRevealW:{ value: T.revealWidth }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      uniform float uCurve, uTime, uHover, uFlagAmp, uFlagSpeed;
+      void main(){
+        vUv = uv;
+        vec3 p = position;
+        float x = p.x;
+        p.z -= (x*x) * uCurve;
+
+        float amp = uHover * uFlagAmp;
+        float w1 = sin((uv.y*8.0 + uv.x*2.5) + uTime*uFlagSpeed);
+        float w2 = sin((uv.y*5.0 - uv.x*3.0) + uTime*(uFlagSpeed*0.8));
+        p.z += (w1*0.10 + w2*0.08) * amp;
+        p.y += (w1*0.04) * amp;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D uTex;
+      uniform float uTexAspect, uTileAspect;
+      uniform float uOpacity, uTime, uHover, uRevealW;
+
+      vec2 coverUV(vec2 uv, float texA, float tileA){
+        vec2 s = vec2(1.0);
+        if (texA > tileA) s.x = texA / tileA;
+        else s.y = tileA / texA;
+        return (uv - 0.5) * s + 0.5;
+      }
+
+      void main(){
+        vec2 uv = coverUV(vUv, uTexAspect, uTileAspect);
+        vec4 t = texture2D(uTex, uv);
+
+        float g = dot(t.rgb, vec3(0.299,0.587,0.114));
+        vec3 gray = vec3(g);
+
+        float wave = sin(vUv.y * 7.0 + uTime * 7.0) * 0.03 * uHover;
+        float edge = -0.20 + uHover * 1.20 + wave;
+        float m = 1.0 - smoothstep(edge - uRevealW, edge + uRevealW, vUv.x);
+
+        vec3 col = mix(gray, t.rgb, m);
+        gl_FragColor = vec4(col, uOpacity);
+      }
+    `
+  });
+}
+
+function loadTextureAny(urls, onOk, onFail){
+  const loader = new THREE.TextureLoader(manager);
+  const tryAt = (i) => {
+    if (i >= urls.length){
+      onFail && onFail();
+      return;
+    }
+    loader.load(
+      urls[i],
+      (tex)=>onOk(tex, urls[i]),
+      undefined,
+      ()=>tryAt(i+1)
+    );
+  };
+  tryAt(0);
+}
+
+/* ---------------- Tiles ---------------- */
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
 
@@ -498,45 +393,25 @@ const clickableMeshes = [];
 const tileItems = [];
 
 (function createTiles(){
-  const coverTex = makeCoverTexture();
-
   for (let i=0;i<CHAPTERS.length;i++){
     const ch = CHAPTERS[i];
 
     const coverGeo = new THREE.PlaneGeometry(T.tileW, T.tileH, 30, 1);
-    const coverMat = new THREE.ShaderMaterial({
-      transparent:true,
-      depthWrite:false,
-      side:THREE.DoubleSide,
-      uniforms:{
-        uMap:{ value: coverTex },
-        uOpacity:{ value: 0.0 },
-        uCurve:{ value: T.tileCurve },
-        uWobble:{ value: 0.0 }
+    const coverMat = makeCoverMaterial();
+
+    loadTextureAny(
+      coverCandidates(ch.coverKey),
+      (tex)=>{
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        coverMat.uniforms.uTex.value = tex;
+        const img = tex.image;
+        if (img && img.width && img.height){
+          coverMat.uniforms.uTexAspect.value = img.width / img.height;
+        }
       },
-      vertexShader: `
-        varying vec2 vUv;
-        uniform float uCurve;
-        uniform float uWobble;
-        void main(){
-          vUv = uv;
-          vec3 p = position;
-          float x = p.x;
-          p.z -= (x*x) * uCurve;
-          p.y += sin((uv.x * 3.14159) + uWobble) * 0.010;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform sampler2D uMap;
-        uniform float uOpacity;
-        void main(){
-          vec4 tex = texture2D(uMap, vUv);
-          gl_FragColor = vec4(tex.rgb, uOpacity);
-        }
-      `
-    });
+      ()=>console.warn("Cover missing/failed:", ch.coverKey)
+    );
 
     const cover = new THREE.Mesh(coverGeo, coverMat);
     cover.userData.chapter = ch;
@@ -551,134 +426,87 @@ const tileItems = [];
     const g = new THREE.Group();
     g.add(cover);
     g.add(title);
-
     tileGroup.add(g);
+
     clickableMeshes.push(cover);
-    tileItems.push({ group:g, cover, title, chapter:ch, index:i });
+
+    const item = { group:g, cover, title, chapter:ch, index:i, hover:0, hoverTarget:0, qPrev:new THREE.Quaternion() };
+    cover.userData.item = item;
+    tileItems.push(item);
   }
 })();
 
-// Model load
-const gltfLoader = new GLTFLoader(manager);
-function addFallbackModel(){
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.75, 1.5, 10, 18),
-    new THREE.MeshStandardMaterial({ color:PAL.text.getHex(), roughness:0.88, metalness:0.02 })
-  );
-  body.position.y = -0.45;
-  center.add(body);
-}
-
-gltfLoader.load(
-  ASSETS.model,
-  (gltf) => {
-    const model = gltf.scene;
-
-    const box = new THREE.Box3().setFromObject(model);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-
-    const maxAxis = Math.max(size.x, size.y, size.z);
-    const scale = T.modelTargetSize / Math.max(0.0001, maxAxis);
-    model.scale.setScalar(scale);
-
-    const box2 = new THREE.Box3().setFromObject(model);
-    const centerPoint = new THREE.Vector3();
-    box2.getCenter(centerPoint);
-    model.position.sub(centerPoint);
-    model.position.y += -1.35;
-
-    center.add(model);
-  },
-  undefined,
-  () => addFallbackModel()
-);
-
-// Panel logic (muffle audio while open)
+/* ---------------- Panel ---------------- */
 panelClose?.addEventListener("click", closePanel);
-window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
+window.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closePanel(); });
 
 async function openPanel(ch){
   if (!panel || !panelTitle || !panelBody) return;
-  setMuffle(true);
   panelTitle.textContent = ch.label;
   panel.classList.add("is-open");
   panel.setAttribute("aria-hidden","false");
-
   try{
     const res = await fetch(ch.page, { cache:"no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(res.status);
     panelBody.innerHTML = await res.text();
   }catch{
     panelBody.innerHTML = `<p>Couldn’t load <code>${ch.page}</code>.</p>`;
   }
 }
-
 function closePanel(){
   if (!panel || !panelTitle || !panelBody) return;
   panel.classList.remove("is-open");
   panel.setAttribute("aria-hidden","true");
   panelTitle.textContent = "";
   panelBody.innerHTML = "";
-  setMuffle(false);
 }
 
-// Picking
+/* ---------------- Hover + click picking ---------------- */
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
+let hoveredItem = null;
 
-canvas.addEventListener("click", async (e) => {
-  if (panel?.classList.contains("is-open")) return;
-
-  await ensureAudio().catch(()=>{});
-  applyAudioTargets();
-
+function updatePointerNDC(e){
   const rect = canvas.getBoundingClientRect();
   pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+}
+function setHovered(next){
+  if (hoveredItem === next) return;
+  if (hoveredItem) hoveredItem.hoverTarget = 0;
+  hoveredItem = next;
+  if (hoveredItem) hoveredItem.hoverTarget = 1;
+  canvas.style.cursor = hoveredItem ? "pointer" : "default";
+}
 
+canvas.addEventListener("pointermove", (e)=>{
+  if (panel?.classList.contains("is-open")) { setHovered(null); return; }
+  updatePointerNDC(e);
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(clickableMeshes, false);
+  if (!hits.length){ setHovered(null); return; }
+  setHovered(hits[0].object.userData.item || null);
+});
+canvas.addEventListener("pointerleave", ()=>setHovered(null));
+
+canvas.addEventListener("click", (e)=>{
+  if (panel?.classList.contains("is-open")) return;
+
+  updatePointerNDC(e);
   raycaster.setFromCamera(pointerNdc, camera);
   const hits = raycaster.intersectObjects(clickableMeshes, false);
   if (!hits.length) return;
 
   const ch = hits[0].object.userData.chapter;
-
   timeline.value = clamp01(ch.progress);
   timeline.vel = 0;
   timeline.lastInteractT = performance.now();
 
-  openPanel(ch).catch(()=>{});
+  if (ch.href) window.open(ch.href, "_blank", "noopener,noreferrer");
+  else openPanel(ch).catch(()=>{});
 });
 
-// Chapters dots (UI only)
-let activeChapterId = null;
-function buildChapterUI(){
-  chaptersEl.innerHTML="";
-  CHAPTERS.forEach((ch)=>{
-    const dot=document.createElement("button");
-    dot.type="button";
-    dot.className="chapterDot";
-    dot.title=ch.label;
-    dot.addEventListener("click", ()=>{
-      timeline.value = clamp01(ch.progress);
-      timeline.vel = 0;
-      timeline.lastInteractT = performance.now();
-      openPanel(ch).catch(()=>{});
-    });
-    chaptersEl.appendChild(dot);
-  });
-  const label=document.createElement("div");
-  label.className="chapterLabel";
-  label.textContent="Chapters";
-  chaptersEl.appendChild(label);
-}
-function setActiveDot(id){
-  const dots = Array.from(chaptersEl.querySelectorAll(".chapterDot"));
-  dots.forEach((d,i)=> d.classList.toggle("is-active", CHAPTERS[i]?.id===id));
-}
-buildChapterUI();
-
-// Timeline: position + velocity (no snapping / no auto-nearest movement)
+/* ---------------- Timeline input ---------------- */
 const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
@@ -687,8 +515,7 @@ function normalizeWheel(e){
   else if (e.deltaMode===2) dy*=window.innerHeight;
   return dy;
 }
-
-window.addEventListener("wheel", (e)=>{
+window.addEventListener("wheel",(e)=>{
   e.preventDefault();
   timeline.lastInteractT = performance.now();
   timeline.vel += normalizeWheel(e) * T.scrollSensitivity;
@@ -730,7 +557,7 @@ function progressToIndex(v){
   return t*(CHAPTERS.length-1);
 }
 
-// Resize
+/* ---------------- Resize ---------------- */
 window.addEventListener("resize", ()=>{
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -738,143 +565,97 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
 });
 
-// Temps (no allocations inside the loop)
-const vToCam = new THREE.Vector3();
+/* ---------------- Helix orientation temps + flip ---------------- */
+const UP = new THREE.Vector3(0,1,0);
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
-const up = new THREE.Vector3(0,1,0);
-
-const normal = new THREE.Vector3();
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
 const basis = new THREE.Matrix4();
+const qTmp = new THREE.Quaternion();
 
+const qFlipX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), Math.PI);
+const qFlipY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
+const qFlipZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), Math.PI);
+function applyFlip(q){
+  if (T.flipAxis === "X") q.multiply(qFlipX);
+  else if (T.flipAxis === "Y") q.multiply(qFlipY);
+  else q.multiply(qFlipZ);
+}
+
+/* ---------------- Loop ---------------- */
 requestAnimationFrame(tick);
 function tick(){
   const dt = Math.min(0.033, clock.getDelta());
   const time = clock.getElapsedTime();
 
-  // Smooth decel (no snapping)
+  // damping
   const idleMs = performance.now() - timeline.lastInteractT;
   const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
-
   timeline.vel *= Math.exp(-damping * dt);
   if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
-
   timeline.value = clamp01(timeline.value + timeline.vel);
 
-  // Camera orbit
-  const azimuth = (timeline.value*T.orbitTurns)*Math.PI*2 + 1.06;
-  const camY = T.camYBase + Math.sin(timeline.value*Math.PI*2)*T.camYAmplitude;
-
-  camera.position.set(Math.cos(azimuth)*T.camRadius, camY, Math.sin(azimuth)*T.camRadius);
+  // camera
+  const camY = T.camYBase + Math.sin(time*0.35)*T.camYBob;
+  camera.position.set(Math.cos(T.camAzimuth)*T.camRadius, camY, Math.sin(T.camAzimuth)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
-  bg.rotation.y = azimuth*0.10 + 0.35;
-  bg.rotation.x = Math.sin(azimuth*0.08)*0.020;
-
-  // UI highlight only (does not affect motion)
-  const near = nearestChapter(timeline.value);
-  if (activeChapterId !== near.id){
-    activeChapterId = near.id;
-    setActiveDot(activeChapterId);
-  }
-  if (!panel?.classList.contains("is-open")){
-    hintEl.textContent = `${near.label} • Click tile to open`;
-  }
-
-  // Fog motion
-  fogGroup.rotation.y += dt*0.050;
-  fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
-  fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
-
-  for(const m of fogPuffs){
-    const d=m.userData;
-    d.ang += dt*d.speed;
-
-    const driftX = Math.sin(time*0.22 + d.seed)*d.drift;
-    const driftZ = Math.cos(time*0.20 + d.seed)*d.drift;
-    const breath = Math.sin(time*0.15 + d.seed)*0.90;
-    const y = d.yBase + Math.sin(time*0.70 + d.seed)*d.bobAmp;
-
-    m.position.set(
-      Math.cos(d.ang)*(d.radius + breath) + driftX,
-      y,
-      Math.sin(d.ang)*(d.radius + breath) + driftZ
-    );
-
-    m.rotation.z += dt*d.spin;
-    m.scale.setScalar(d.scaleBase*(0.92 + 0.18*Math.sin(time*0.35 + d.seed)));
-    m.lookAt(camera.position);
-  }
-
-  // Tiles (spring/screw-thread orientation)
+  // helix
   const centerIdx = progressToIndex(timeline.value);
+  const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
 
-  for(const item of tileItems){
-    const { group, cover, title, index } = item;
+  for (const item of tileItems){
+    const { group, cover, title, index, qPrev } = item;
     const rel = index - centerIdx;
 
-    const yPos = T.spiralYOffset - rel*T.spiralYStep + Math.sin(time*0.9 + index*0.6)*0.06;
-    const ang = azimuth + rel*T.tileAngleStep;
+    const theta = T.helixThetaOffset + rel * T.helixAngleStep;
 
-    const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.frontPush;
-    const r = T.spiralRadius + Math.abs(rel)*T.radiusGrow + frontBoost;
+    const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.helixFrontPull;
+    const r = T.helixRadius + Math.abs(rel)*T.helixRadiusGrow + frontBoost;
 
-    group.position.set(Math.cos(ang)*r, yPos, Math.sin(ang)*r);
+    const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
+    group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
 
-    // visibility
+    // fade
     const dAbs = Math.abs(rel);
-    const vis = 1.0 - smoothstep(
-      T.visibleRange - T.fadeSoftness,
-      T.visibleRange + T.fadeSoftness,
-      dAbs
-    );
+    const vis = 1.0 - smoothstep(T.visibleRange - T.fadeSoftness, T.visibleRange + T.fadeSoftness, dAbs);
+    const vis01 = clamp01(vis);
 
-    cover.material.uniforms.uOpacity.value = clamp01(vis);
-    cover.material.uniforms.uWobble.value = time*1.1 + timeline.vel*35.0;
+    // hover easing
+    item.hover = damp(item.hover, item.hoverTarget, T.hoverDamp, dt);
 
-    // vectors
-    vToCam.copy(camera.position).sub(group.position).normalize();
+    // shader uniforms
+    const mat = cover.material;
+    mat.uniforms.uOpacity.value = vis01;
+    mat.uniforms.uTime.value = time;
+    mat.uniforms.uHover.value = item.hover;
 
-    // radial outward (from model)
-    radial.set(Math.cos(ang), 0, Math.sin(ang)).normalize();
+    // ribbon basis (stable)
+    radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
+    zAxis.copy(radial);
 
-    // tangent (direction of travel around the orbit)
-    tangent.set(-Math.sin(ang), 0, Math.cos(ang)).normalize();
+    tangent.set(-Math.sin(theta), dy_dtheta, Math.cos(theta)).normalize();
+    xAxis.copy(tangent);
 
-    // near-camera relax
-    const facing = clamp01(radial.dot(vToCam));
-    const dist = camera.position.distanceTo(group.position);
-    const distN = clamp01(1 - (dist - 10) / 14);
-    const soften = clamp01(smoothstep(0.35, 0.90, facing) * distN);
-
-    const baseTilt = THREE.MathUtils.degToRad(T.helixTiltDeg);
-    const nearTilt = THREE.MathUtils.degToRad(T.helixTiltNearDeg);
-    const tilt = THREE.MathUtils.lerp(baseTilt, nearTilt, soften);
-
-    // ✅ THIS is the spring/thread look:
-    // Tilt the folder's PLANE NORMAL around the tangent so the folder becomes the screw-thread surface.
-    normal.copy(radial).applyAxisAngle(tangent, tilt);
-
-    // Force downward corkscrew (never flips upward)
-    if (normal.y > 0) normal.copy(radial).applyAxisAngle(tangent, -tilt);
-
-    // Build orientation basis:
-    // X = tangent (flow direction)
-    // Z = tilted normal (thread surface normal)
-    // Y = completes right-handed frame
-    xAxis.copy(tangent).normalize();
-    zAxis.copy(normal).normalize();
     yAxis.crossVectors(zAxis, xAxis).normalize();
+    if (yAxis.dot(UP) < 0){
+      xAxis.multiplyScalar(-1);
+      yAxis.multiplyScalar(-1);
+    }
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
-    group.quaternion.setFromRotationMatrix(basis);
+    qTmp.setFromRotationMatrix(basis);
 
-    // Title fade (2D plane, not billboarded)
-    title.material.opacity = clamp01(smoothstep(0.12, 0.56, facing) * vis);
+    // ✅ upright fix (choose axis via T.flipAxis)
+    applyFlip(qTmp);
+
+    keepQuatContinuous(qTmp, qPrev);
+    group.quaternion.copy(qTmp);
+
+    title.material.opacity = clamp01(vis01 * (0.22 + 0.78 * item.hover));
   }
 
   renderer.render(scene, camera);
