@@ -25,9 +25,13 @@ function hardFail(msg, err){
   console.error(msg, err || "");
   if (hintEl) hintEl.textContent = `❌ ${msg}`;
 }
-// Smooth approach
 function damp(current, target, lambda, dt){
   return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
+}
+// ✅ prevent sudden quaternion sign flips (causes 180° flips)
+function keepQuatContinuous(q, prev){
+  if (q.dot(prev) < 0) { q.x *= -1; q.y *= -1; q.z *= -1; q.w *= -1; }
+  prev.copy(q);
 }
 
 if (!canvas) hardFail("Canvas #webgl not found.");
@@ -40,10 +44,6 @@ hintEl.textContent = "Scene starting…";
 // Palette
 const PAL = {
   sky:   new THREE.Color("#91C6FF"),
-  sand:  new THREE.Color("#BD9C64"),
-  sun:   new THREE.Color("#FCBA47"),
-  slate: new THREE.Color("#6786A7"),
-  moss:  new THREE.Color("#7D7361"),
   deep:  new THREE.Color("#464C52"),
   text:  new THREE.Color("#E8EEF2"),
 };
@@ -56,24 +56,22 @@ const ASSETS = {
   audio: u("assets/audio/ambient.mp3"),
 };
 
-// Chapters (+ covers + links)
+// Tiles (+ covers + links)
 const CHAPTERS = [
-  { id:"about",        label:"About",        page:u("pages/about.html"),        cover:u("assets/covers/about.jpg") },
-  { id:"gallery",      label:"Gallery",      page:u("pages/gallery.html"),      cover:u("assets/covers/gallery.jpg") },
-  { id:"achievements", label:"Achievements", page:u("pages/achievements.html"), cover:u("assets/covers/achievements.jpg") },
-  { id:"contact",      label:"Contact",      page:u("pages/contact.html"),      cover:u("assets/covers/contact.jpg") },
+  { id:"about",        label:"About",              page:u("pages/about.html"),              cover:u("assets/covers/about.jpg") },
+  { id:"gallery",      label:"Gallery",            page:u("pages/gallery.html"),            cover:u("assets/covers/gallery.jpg") },
+  { id:"achievements", label:"Achievements",       page:u("pages/achievements.html"),       cover:u("assets/covers/achievements.jpg") },
+  { id:"contact",      label:"Contact",            page:u("pages/contact.html"),            cover:u("assets/covers/contact.jpg") },
 
-  // ✅ link tiles you asked for
-  { id:"fab",      label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",         cover:u("assets/covers/fab.jpg") },
-  { id:"steam",    label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/", cover:u("assets/covers/steam_22minutes.jpg") },
-  { id:"sketchfab",label:"Sketchfab Models",   href:"https://sketchfab.com/OblixStudio/models",          cover:u("assets/covers/sketchfab.jpg") },
+  { id:"fab",          label:"Fab Profile",        href:"https://www.fab.com/sellers/Oblix%20Studio",               cover:u("assets/covers/fab.jpg") },
+  { id:"steam",        label:"22 Minutes (Steam)", href:"https://store.steampowered.com/app/2765180/22_Minutes/",   cover:u("assets/covers/steam_22minutes.jpg") },
+  { id:"sketchfab",    label:"Sketchfab Models",   href:"https://sketchfab.com/OblixStudio/models",                cover:u("assets/covers/sketchfab.jpg") },
 ];
 
-// auto progress spread (nice even navigation)
+// Even progress spacing
 (function assignProgress(){
   const n = CHAPTERS.length;
   for (let i=0;i<n;i++){
-    // keep ends away from 0/1 so highlight feels nicer
     CHAPTERS[i].progress = (i + 1) / (n + 1);
   }
 })();
@@ -84,13 +82,12 @@ const T = {
   scrollSensitivity: 0.000006,
   dragSensitivity: 0.010,
   maxVel: 0.0030,
-
   dampingActive: 9.0,
   dampingIdle: 34.0,
   idleDelayMs: 120,
   stopEps: 0.00002,
 
-  // model framing (more centered)
+  // model framing
   modelTargetSize: 9.8,
   modelLift: -0.25,
   modelYawDeg: 10,
@@ -102,14 +99,14 @@ const T = {
   camYBob: 0.18,
   lookY: 1.95,
 
-  // ✅ HELIX (real corkscrew)
-  helixRadius: 6.8,          // closer to mesh
+  // ✅ HELIX
+  helixRadius: 6.8,
   helixThetaOffset: Math.PI * 0.5,
-  helixAngleStep: 1.35,      // rotation per tile step
-  helixPitch: 3.10,          // vertical rise per tile step
-  helixYOffset: 4.6,         // overall helix height
-  helixFrontPull: 0.75,      // nudge center tile forward
-  helixRadiusGrow: 0.35,     // slight radius increase away from center
+  helixAngleStep: 1.35,
+  helixPitch: 3.10,
+  helixYOffset: 4.6,
+  helixFrontPull: 0.75,
+  helixRadiusGrow: 0.35,
 
   visibleRange: 2.15,
   fadeSoftness: 1.10,
@@ -122,9 +119,9 @@ const T = {
 
   // hover animation
   hoverDamp: 10.0,
-  flagAmp: 0.22,      // how much it waves when hovered
-  flagSpeed: 6.5,     // wave speed
-  revealWidth: 0.09,  // thickness of the color “front”
+  flagAmp: 0.22,
+  flagSpeed: 6.5,
+  revealWidth: 0.09,
 };
 
 // Loading manager
@@ -183,24 +180,6 @@ function makeSkyTexture(){
   ctx.fillStyle = g;
   ctx.fillRect(0,0,w,h);
 
-  const sun = ctx.createRadialGradient(w*0.72, h*0.30, 10, w*0.72, h*0.30, 260);
-  sun.addColorStop(0, "rgba(252,186,71,0.26)");
-  sun.addColorStop(1, "rgba(252,186,71,0.0)");
-  ctx.fillStyle = sun;
-  ctx.fillRect(0,0,w,h);
-
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  for (let i=0;i<650;i++){
-    const x = Math.random()*w;
-    const y = Math.random()*h;
-    const r = Math.random()*1.2;
-    ctx.globalAlpha = 0.08 + Math.random()*0.30;
-    ctx.beginPath();
-    ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -227,163 +206,13 @@ new THREE.TextureLoader(manager).load(
   () => {}
 );
 
-// Fog fallback texture
-function makeFogTextureFallback(){
-  const w=512, h=512;
-  const c=document.createElement("canvas"); c.width=w; c.height=h;
-  const ctx=c.getContext("2d");
-
-  ctx.fillStyle="black";
-  ctx.fillRect(0,0,w,h);
-
-  for(let i=0;i<95;i++){
-    const x=Math.random()*w, y=Math.random()*h;
-    const r=50+Math.random()*150;
-    const grd=ctx.createRadialGradient(x,y,0,x,y,r);
-    grd.addColorStop(0, "rgba(255,255,255,0.95)");
-    grd.addColorStop(1, "rgba(0,0,0,0.0)");
-    ctx.globalAlpha = 0.17 + Math.random()*0.25;
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha=1;
-
-  const tex=new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  return tex;
-}
-
-let fogTex = makeFogTextureFallback();
-const fogMats = [];
-
-new THREE.TextureLoader(manager).load(
-  ASSETS.fog,
-  (t) => {
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.minFilter = THREE.LinearFilter;
-    t.magFilter = THREE.LinearFilter;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    fogTex = t;
-    for (const m of fogMats) m.uniforms.uMap.value = fogTex;
-  },
-  undefined,
-  () => console.warn("Fog texture missing/failed, using fallback fog texture.")
-);
-
-const fogGroup = new THREE.Group();
-scene.add(fogGroup);
-
-function makeFogMaterial(){
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.NormalBlending,
-    uniforms: {
-      uMap:      { value: fogTex },
-      uOpacity:  { value: 0.72 },
-      uBlackCut: { value: 0.02 },
-      uSoft:     { value: 0.86 },
-      uTint:     { value: PAL.sky.clone().lerp(PAL.text, 0.55) }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
-    `,
-    fragmentShader: `
-      varying vec2 vUv;
-      uniform sampler2D uMap;
-      uniform float uOpacity;
-      uniform float uBlackCut;
-      uniform float uSoft;
-      uniform vec3 uTint;
-      void main(){
-        vec3 c = texture2D(uMap, vUv).rgb;
-        float luma = dot(c, vec3(0.299,0.587,0.114));
-        float a = smoothstep(uBlackCut, uBlackCut + uSoft, luma);
-        float edge = smoothstep(0.02,0.22,vUv.x)*smoothstep(0.02,0.22,vUv.y)*
-                     smoothstep(0.02,0.22,1.0-vUv.x)*smoothstep(0.02,0.22,1.0-vUv.y);
-        a *= edge;
-        if(a < 0.01) discard;
-        gl_FragColor = vec4(uTint, a * uOpacity);
-      }
-    `
-  });
-  fogMats.push(mat);
-  return mat;
-}
-
-const fogPuffs = [];
-(function createFog(){
-  const puffCount = 58;
-  const puffGeo = new THREE.PlaneGeometry(6.6, 6.6);
-
-  for (let i=0;i<puffCount;i++){
-    const mat = makeFogMaterial();
-    mat.uniforms.uOpacity.value = 0.28 + Math.random()*0.46;
-
-    const m = new THREE.Mesh(puffGeo, mat);
-    m.userData = {
-      ang: Math.random()*Math.PI*2,
-      radius: 3.2 + Math.random()*9.8,
-      yBase: -0.8 + Math.random()*8.0,
-      speed: 0.05 + Math.random()*0.12,
-      bobAmp: 0.22 + Math.random()*0.65,
-      spin: (Math.random()*2-1)*0.22,
-      drift: 0.35 + Math.random()*0.95,
-      scaleBase: 0.90 + Math.random()*2.4,
-      seed: Math.random()*1000
-    };
-    m.scale.setScalar(m.userData.scaleBase);
-    fogGroup.add(m);
-    fogPuffs.push(m);
-  }
-})();
-
-// Audio (loop + muffle)
+// -------- Audio (kept from your setup) --------
 const audioState = {
   ctx:null, src:null, gain:null, filter:null,
   started:false,
   baseVolume: clamp01(parseFloat(localStorage.getItem("orbit_volume") ?? "0.52")),
   isMuffled:false
 };
-
-function createVolumeUI(){
-  const wrap = document.createElement("div");
-  Object.assign(wrap.style, {
-    position:"fixed", left:"18px", bottom:"18px", zIndex:"25",
-    pointerEvents:"auto", display:"flex", gap:"10px", alignItems:"center",
-    padding:"10px 12px", borderRadius:"999px",
-    background:"rgba(145,198,255,0.10)", border:"1px solid rgba(232,238,242,0.16)",
-    backdropFilter:"blur(12px)",
-    color:"rgba(232,238,242,0.92)",
-    fontFamily:"ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial",
-    fontSize:"12px", letterSpacing:"0.12em", textTransform:"uppercase", userSelect:"none"
-  });
-
-  const label = document.createElement("div"); label.textContent="VOL";
-  const slider = document.createElement("input");
-  slider.type="range"; slider.min="0"; slider.max="100";
-  slider.value=String(Math.round(audioState.baseVolume*100));
-  Object.assign(slider.style,{ width:"140px", accentColor:"#FCBA47", cursor:"pointer" });
-  const pct = document.createElement("div"); pct.textContent=`${slider.value}%`; pct.style.opacity="0.78";
-
-  slider.addEventListener("input", () => {
-    audioState.baseVolume = clamp01(parseInt(slider.value,10)/100);
-    localStorage.setItem("orbit_volume", String(audioState.baseVolume));
-    pct.textContent = `${slider.value}%`;
-    applyAudioTargets();
-  });
-
-  wrap.appendChild(label); wrap.appendChild(slider); wrap.appendChild(pct);
-  document.body.appendChild(wrap);
-}
-createVolumeUI();
 
 async function ensureAudio(){
   if (audioState.started) return;
@@ -423,7 +252,6 @@ async function ensureAudio(){
     console.warn("Audio failed:", e);
   }
 }
-
 function applyAudioTargets(){
   if (!audioState.ctx || !audioState.filter || !audioState.gain) return;
   const now = audioState.ctx.currentTime;
@@ -439,13 +267,12 @@ function applyAudioTargets(){
   audioState.gain.gain.setTargetAtTime(targetGain, now, 0.12);
 }
 function setMuffle(m){ audioState.isMuffled = m; applyAudioTargets(); }
-
 function gestureKick(){ ensureAudio().then(applyAudioTargets).catch(()=>{}); }
 window.addEventListener("pointerdown", gestureKick, { once:true });
 window.addEventListener("wheel", gestureKick, { once:true, passive:true });
 window.addEventListener("keydown", gestureKick, { once:true });
 
-// ---------- Cover fallback texture ----------
+// -------- Cover fallback texture --------
 function makeFallbackCoverTexture(){
   const w=1024, h=640;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -457,22 +284,6 @@ function makeFallbackCoverTexture(){
   g.addColorStop(1, "#464C52");
   ctx.fillStyle=g;
   ctx.fillRect(0,0,w,h);
-
-  ctx.globalAlpha=0.12;
-  ctx.strokeStyle="#E8EEF2";
-  ctx.lineWidth=2;
-  for(let i=0;i<26;i++){
-    const y=(i/26)*h;
-    ctx.beginPath();
-    ctx.moveTo(0, y + (Math.random()*10-5));
-    ctx.lineTo(w, y + (Math.random()*10-5));
-    ctx.stroke();
-  }
-  ctx.globalAlpha=1;
-
-  ctx.strokeStyle="rgba(252,186,71,0.65)";
-  ctx.lineWidth=12;
-  ctx.strokeRect(30,30,w-60,h-60);
 
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -498,18 +309,13 @@ function makeTitleTexture(text){
   ctx.fillStyle="rgba(232,238,242,0.96)";
   ctx.fillText(text.toUpperCase(), 94, h/2+4);
 
-  ctx.globalAlpha=0.85;
-  ctx.fillStyle="rgba(252,186,71,0.75)";
-  ctx.fillRect(94, h/2+62, Math.min(700, ctx.measureText(text.toUpperCase()).width), 6);
-  ctx.globalAlpha=1;
-
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy=8;
   return tex;
 }
 
-// ---------- Tiles ----------
+// -------- Tiles --------
 const tileGroup = new THREE.Group();
 scene.add(tileGroup);
 
@@ -551,11 +357,9 @@ function makeCoverMaterial(){
         vUv = uv;
         vec3 p = position;
 
-        // gentle folder curve
         float x = p.x;
         p.z -= (x*x) * uCurve;
 
-        // flag / wind flap only when hovered
         float amp = uHover * uFlagAmp;
         float w1 = sin((uv.y*8.0 + uv.x*2.5) + uTime*uFlagSpeed);
         float w2 = sin((uv.y*5.0 - uv.x*3.0) + uTime*(uFlagSpeed*0.8));
@@ -577,13 +381,10 @@ function makeCoverMaterial(){
       uniform float uRevealW;
 
       vec2 coverUV(vec2 uv, float texA, float tileA){
-        // "background-size: cover" cropping
         vec2 s = vec2(1.0, 1.0);
         if (texA > tileA){
-          // image wider -> scale X
           s.x = texA / tileA;
         }else{
-          // image taller -> scale Y
           s.y = tileA / texA;
         }
         return (uv - 0.5) * s + 0.5;
@@ -593,16 +394,13 @@ function makeCoverMaterial(){
         vec2 uv = coverUV(vUv, uTexAspect, uTileAspect);
         vec4 t = texture2D(uTex, uv);
 
-        // grayscale
         float g = dot(t.rgb, vec3(0.299, 0.587, 0.114));
         vec3 gray = vec3(g);
 
-        // "flop into color" reveal front (left -> right), with a wavy edge
         float wave = sin(vUv.y * 7.0 + uTime * 7.0) * 0.03 * uHover;
-        float edge = -0.20 + uHover * 1.20 + wave;  // -0.2..1.0-ish
+        float edge = -0.20 + uHover * 1.20 + wave;
         float m = 1.0 - smoothstep(edge - uRevealW, edge + uRevealW, vUv.x);
 
-        // subtle extra shimmer along the edge when hovering
         float edgeGlow = smoothstep(0.0, 1.0, uHover) * (1.0 - smoothstep(0.0, 0.12, abs(vUv.x - edge)));
         vec3 col = mix(gray, t.rgb, m);
         col += edgeGlow * 0.06;
@@ -621,23 +419,19 @@ function makeCoverMaterial(){
     const coverGeo = new THREE.PlaneGeometry(T.tileW, T.tileH, 30, 1);
     const coverMat = makeCoverMaterial();
 
-    // load the chapter cover texture
     texLoader.load(
       ch.cover,
       (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
         coverMat.uniforms.uTex.value = tex;
-        // aspect ratio for “cover” crop
         const img = tex.image;
         if (img && img.width && img.height){
           coverMat.uniforms.uTexAspect.value = img.width / img.height;
         }
       },
       undefined,
-      () => {
-        console.warn("Cover missing/failed:", ch.cover, "(using fallback)");
-      }
+      () => console.warn("Cover missing/failed:", ch.cover, "(using fallback)")
     );
 
     const cover = new THREE.Mesh(coverGeo, coverMat);
@@ -660,14 +454,15 @@ function makeCoverMaterial(){
     const item = {
       group:g, cover, title, chapter:ch, index:i,
       hover:0,
-      hoverTarget:0
+      hoverTarget:0,
+      qPrev: new THREE.Quaternion()
     };
     cover.userData.item = item;
     tileItems.push(item);
   }
 })();
 
-// ---------- Model load ----------
+// -------- Model load --------
 const gltfLoader = new GLTFLoader(manager);
 
 function addFallbackModel(){
@@ -706,7 +501,7 @@ gltfLoader.load(
   () => addFallbackModel()
 );
 
-// ---------- Panel logic ----------
+// -------- Panel logic --------
 panelClose?.addEventListener("click", closePanel);
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
@@ -734,7 +529,7 @@ function closePanel(){
   setMuffle(false);
 }
 
-// ---------- Picking + Hover ----------
+// -------- Hover + Click picking --------
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 let hoveredItem = null;
@@ -761,17 +556,13 @@ canvas.addEventListener("pointermove", (e)=>{
   updatePointerNDC(e);
   raycaster.setFromCamera(pointerNdc, camera);
   const hits = raycaster.intersectObjects(clickableMeshes, false);
-  if (!hits.length){
-    setHovered(null);
-    return;
-  }
+  if (!hits.length){ setHovered(null); return; }
   const item = hits[0].object.userData.item || null;
   setHovered(item);
 });
-
 canvas.addEventListener("pointerleave", ()=> setHovered(null));
 
-canvas.addEventListener("click", async (e) => {
+canvas.addEventListener("click", async (e)=>{
   if (panel?.classList.contains("is-open")) return;
 
   await ensureAudio().catch(()=>{});
@@ -795,7 +586,7 @@ canvas.addEventListener("click", async (e) => {
   openPanel(ch).catch(()=>{});
 });
 
-// ---------- Chapters UI ----------
+// -------- Chapters UI --------
 let activeChapterId = null;
 function buildChapterUI(){
   chaptersEl.innerHTML="";
@@ -808,12 +599,8 @@ function buildChapterUI(){
       timeline.value = clamp01(ch.progress);
       timeline.vel = 0;
       timeline.lastInteractT = performance.now();
-
-      if (ch.href){
-        window.open(ch.href, "_blank", "noopener,noreferrer");
-      }else{
-        openPanel(ch).catch(()=>{});
-      }
+      if (ch.href) window.open(ch.href, "_blank", "noopener,noreferrer");
+      else openPanel(ch).catch(()=>{});
     });
     chaptersEl.appendChild(dot);
   });
@@ -828,7 +615,7 @@ function setActiveDot(id){
 }
 buildChapterUI();
 
-// Timeline: position + velocity
+// -------- Timeline input --------
 const timeline = { value:0.02, vel:0, lastInteractT:performance.now() };
 
 function normalizeWheel(e){
@@ -838,7 +625,7 @@ function normalizeWheel(e){
   return dy;
 }
 
-window.addEventListener("wheel", (e)=>{
+window.addEventListener("wheel",(e)=>{
   e.preventDefault();
   timeline.lastInteractT = performance.now();
   timeline.vel += normalizeWheel(e) * T.scrollSensitivity;
@@ -889,13 +676,14 @@ window.addEventListener("resize", ()=>{
 });
 
 // Temps
-const up = new THREE.Vector3(0,1,0);
+const UP = new THREE.Vector3(0,1,0);
 const radial = new THREE.Vector3();
 const tangent = new THREE.Vector3();
 const xAxis = new THREE.Vector3();
 const yAxis = new THREE.Vector3();
 const zAxis = new THREE.Vector3();
 const basis = new THREE.Matrix4();
+const qTmp = new THREE.Quaternion();
 
 requestAnimationFrame(tick);
 function tick(){
@@ -905,64 +693,35 @@ function tick(){
   // Smooth decel
   const idleMs = performance.now() - timeline.lastInteractT;
   const damping = (idleMs <= T.idleDelayMs || dragging) ? T.dampingActive : T.dampingIdle;
-
   timeline.vel *= Math.exp(-damping * dt);
   if (!dragging && Math.abs(timeline.vel) < T.stopEps) timeline.vel = 0;
   timeline.value = clamp01(timeline.value + timeline.vel);
 
   // Camera fixed
   const camY = T.camYBase + Math.sin(time*0.35)*T.camYBob;
-  const camAz = T.camAzimuth;
-  camera.position.set(Math.cos(camAz)*T.camRadius, camY, Math.sin(camAz)*T.camRadius);
+  camera.position.set(Math.cos(T.camAzimuth)*T.camRadius, camY, Math.sin(T.camAzimuth)*T.camRadius);
   camera.lookAt(0, T.lookY, 0);
 
   bg.rotation.y = 0.35 + time*0.01;
 
-  // UI highlight text
+  // HUD hint
   const near = nearestChapter(timeline.value);
   if (activeChapterId !== near.id){
     activeChapterId = near.id;
     setActiveDot(activeChapterId);
   }
   if (!panel?.classList.contains("is-open")){
-    hintEl.textContent = near.href
-      ? `${near.label} • Click to open link`
-      : `${near.label} • Click tile to open`;
+    hintEl.textContent = near.href ? `${near.label} • Click to open link` : `${near.label} • Click to open`;
   }
 
-  // Fog motion
-  fogGroup.rotation.y += dt*0.050;
-  fogGroup.position.x = Math.sin(time*0.18)*0.85 + Math.sin(time*0.53)*0.35;
-  fogGroup.position.z = Math.cos(time*0.16)*0.85 + Math.cos(time*0.49)*0.35;
-
-  for(const m of fogPuffs){
-    const d=m.userData;
-    d.ang += dt*d.speed;
-
-    const driftX = Math.sin(time*0.22 + d.seed)*d.drift;
-    const driftZ = Math.cos(time*0.20 + d.seed)*d.drift;
-    const breath = Math.sin(time*0.15 + d.seed)*0.90;
-    const y = d.yBase + Math.sin(time*0.70 + d.seed)*d.bobAmp;
-
-    m.position.set(
-      Math.cos(d.ang)*(d.radius + breath) + driftX,
-      y,
-      Math.sin(d.ang)*(d.radius + breath) + driftZ
-    );
-
-    m.rotation.z += dt*d.spin;
-    m.scale.setScalar(d.scaleBase*(0.92 + 0.18*Math.sin(time*0.35 + d.seed)));
-    m.lookAt(camera.position);
-  }
-
-  // ✅ HELIX (ribbon frame)
+  // ✅ HELIX placement + orientation (fixed upright!)
   const centerIdx = progressToIndex(timeline.value);
 
-  // dy/dtheta for helix tangent stability
+  // dy/dtheta for helix tangent
   const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
 
   for(const item of tileItems){
-    const { group, cover, title, index } = item;
+    const { group, cover, title, index, qPrev } = item;
     const rel = index - centerIdx;
 
     const theta = T.helixThetaOffset + rel * T.helixAngleStep;
@@ -973,7 +732,7 @@ function tick(){
     const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
     group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
 
-    // visibility
+    // fade
     const dAbs = Math.abs(rel);
     const vis = 1.0 - smoothstep(
       T.visibleRange - T.fadeSoftness,
@@ -982,19 +741,21 @@ function tick(){
     );
     const vis01 = clamp01(vis);
 
-    // hover easing (drives the shader)
+    // hover easing
     item.hover = damp(item.hover, item.hoverTarget, T.hoverDamp, dt);
 
-    // feed cover shader
+    // shader uniforms
     const mat = cover.material;
     mat.uniforms.uOpacity.value = vis01;
     mat.uniforms.uTime.value = time;
     mat.uniforms.uHover.value = item.hover;
 
-    // Ribbon orientation: Z = radial outward, X = helix tangent
+    // ----- ORIENTATION (ribbon on helix) -----
+    // zAxis = radial outward
     radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
     zAxis.copy(radial);
 
+    // xAxis = helix tangent (diagonal along the corkscrew)
     tangent.set(
       -Math.sin(theta) * r,
       dy_dtheta,
@@ -1002,13 +763,28 @@ function tick(){
     ).normalize();
     xAxis.copy(tangent);
 
+    // yAxis = completes basis
     yAxis.crossVectors(zAxis, xAxis).normalize();
+
+    // ✅ FIX: keep tiles from flipping upside-down
+    // If yAxis points downward, flip x/y to maintain upright orientation
+    if (yAxis.dot(UP) < 0){
+      xAxis.multiplyScalar(-1);
+      yAxis.multiplyScalar(-1);
+    }
+
+    // re-orthonormalize (important)
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
-    group.quaternion.setFromRotationMatrix(basis);
+    qTmp.setFromRotationMatrix(basis);
 
-    // Title reacts to hover too
+    // ✅ keep quaternion continuous over time
+    keepQuatContinuous(qTmp, qPrev);
+
+    group.quaternion.copy(qTmp);
+
+    // title reacts to hover
     title.material.opacity = clamp01(vis01 * (0.22 + 0.78 * item.hover));
   }
 
