@@ -18,20 +18,20 @@ const panelTitle = document.getElementById("panelTitle");
 const panelBody = document.getElementById("panelBody");
 const panelClose = document.getElementById("panelClose");
 
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
-function smoothstep(e0, e1, x){
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function smoothstep(e0, e1, x) {
   const t = clamp01((x - e0) / (e1 - e0));
   return t * t * (3 - 2 * t);
 }
-function damp(current, target, lambda, dt){
+function damp(current, target, lambda, dt) {
   return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-lambda * dt));
 }
-function keepQuatContinuous(q, prev){
+function keepQuatContinuous(q, prev) {
   if (q.dot(prev) < 0) { q.x *= -1; q.y *= -1; q.z *= -1; q.w *= -1; }
   prev.copy(q);
 }
 
-if (!canvas) { console.error("Canvas #webgl not found"); }
+if (!canvas) console.error("Canvas #webgl not found");
 
 /* ---------------- Palette ---------------- */
 const PAL = {
@@ -41,7 +41,6 @@ const PAL = {
 };
 
 /* ---------------- Assets ---------------- */
-// NOTE: these must exist in your deployed folder
 const ASSETS = {
   sky:   u("assets/backgrounds/sky_sphere.jpg"),
   fog:   u("assets/textures/fog.jpg"),
@@ -54,7 +53,7 @@ const MODEL_CANDIDATES = [
   u("assets/models/me on hill.glb"),
 ];
 
-/* ---------------- Chapters (covers use coverKey, not extension) ---------------- */
+/* ---------------- Chapters ---------------- */
 const CHAPTERS = [
   { id:"about",        label:"About",              page:u("pages/about.html"),              coverKey:"about" },
   { id:"gallery",      label:"Gallery",            page:u("pages/gallery.html"),            coverKey:"gallery" },
@@ -92,7 +91,7 @@ const T = {
   camYBob: 0.18,
   lookY: 1.95,
 
-  // helix ribbon (closer to model)
+  // helix ribbon
   helixRadius: 6.2,
   helixThetaOffset: Math.PI * 0.5,
   helixAngleStep: 1.22,
@@ -108,6 +107,12 @@ const T = {
   tileW: 4.05,
   tileH: 2.45,
   tileCurve: 0.08,
+
+  // IMPORTANT: base-on-helix alignment
+  // The helix position will be the "base line" of the tile.
+  // We offset tile content upward by tileH/2 so the bottom edge sits exactly on the helix.
+  tileBaseOnHelix: true,
+
   titleOffset: { x: -1.75, y: 0.05, z: 0.62 },
 
   // hover animation
@@ -116,8 +121,8 @@ const T = {
   flagSpeed: 6.5,
   revealWidth: 0.09,
 
-  // ✅ upright fix: choose one
-  // If tiles still look inverted, change this to "X" or "Y"
+  // ✅ upright fix: default matches your earlier request (rotate 180 around Z)
+  // If still wrong on your machine, try "X" or "Y".
   flipAxis: "Z", // "Z" | "X" | "Y"
 };
 
@@ -125,12 +130,15 @@ const T = {
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => {
   const pct = total ? Math.round((loaded / total) * 100) : 0;
-  loaderFill && (loaderFill.style.width = `${pct}%`);
-  loaderPct && (loaderPct.textContent = `${pct}%`);
+  if (loaderFill) loaderFill.style.width = `${pct}%`;
+  if (loaderPct) loaderPct.textContent = `${pct}%`;
 };
 manager.onLoad = () => {
   setTimeout(() => loaderEl?.classList.add("is-hidden"), 250);
-  hintEl && (hintEl.textContent = "Scroll / drag • Hover tiles • Click to open");
+  if (hintEl) hintEl.textContent = "Scroll / drag • Hover tiles • Click to open";
+};
+manager.onError = (url) => {
+  console.warn("LoadingManager error:", url);
 };
 
 /* ---------------- Renderer / Scene / Camera ---------------- */
@@ -148,11 +156,16 @@ scene.fog = new THREE.Fog(PAL.deep.getHex(), 18, 110);
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 900);
 const clock = new THREE.Clock();
 
-/* ---------------- Lights ---------------- */
-scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.05));
-const key = new THREE.DirectionalLight(0xffffff, 0.95);
-key.position.set(4.2, 5.8, 3.2);
+/* ---------------- Lights (a bit nicer, still simple) ---------------- */
+scene.add(new THREE.HemisphereLight(PAL.sky.getHex(), PAL.deep.getHex(), 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 1.05);
+key.position.set(4.2, 6.4, 3.2);
 scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+fill.position.set(-3.5, 2.2, 6.5);
+scene.add(fill);
+
 const rim = new THREE.DirectionalLight(PAL.sky.getHex(), 0.55);
 rim.position.set(-6.0, 2.6, -3.8);
 scene.add(rim);
@@ -196,6 +209,7 @@ const center = new THREE.Group();
 scene.add(center);
 
 let modelLoaded = false;
+
 function addFallbackModel(){
   if (modelLoaded) return;
   modelLoaded = true;
@@ -239,6 +253,7 @@ function loadGLTFAny(urls){
         const scale = 9.6 / Math.max(0.0001, maxAxis);
         model.scale.setScalar(scale);
 
+        // center it
         const box2 = new THREE.Box3().setFromObject(model);
         const centerPoint = new THREE.Vector3();
         box2.getCenter(centerPoint);
@@ -273,6 +288,9 @@ function makeFallbackCoverTexture(){
   g.addColorStop(0.50, "#6786A7");
   g.addColorStop(1, "#464C52");
   ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle="rgba(232,238,242,0.25)";
+  ctx.font="700 52px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  ctx.fillText("MISSING COVER", 54, 96);
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace=THREE.SRGBColorSpace;
   tex.anisotropy=8;
@@ -325,9 +343,12 @@ function makeCoverMaterial(){
       void main(){
         vUv = uv;
         vec3 p = position;
+
+        // subtle curvature
         float x = p.x;
         p.z -= (x*x) * uCurve;
 
+        // hover "flag" wobble
         float amp = uHover * uFlagAmp;
         float w1 = sin((uv.y*8.0 + uv.x*2.5) + uTime*uFlagSpeed);
         float w2 = sin((uv.y*5.0 - uv.x*3.0) + uTime*(uFlagSpeed*0.8));
@@ -372,7 +393,7 @@ function loadTextureAny(urls, onOk, onFail){
   const loader = new THREE.TextureLoader(manager);
   const tryAt = (i) => {
     if (i >= urls.length){
-      onFail && onFail();
+      onFail && onFail(urls);
       return;
     }
     loader.load(
@@ -392,10 +413,22 @@ scene.add(tileGroup);
 const clickableMeshes = [];
 const tileItems = [];
 
+// content offset so the BOTTOM EDGE sits on the helix line (your big request)
+const TILE_BASE_OFFSET_Y = T.tileBaseOnHelix ? (T.tileH * 0.5) : 0.0;
+
 (function createTiles(){
   for (let i=0;i<CHAPTERS.length;i++){
     const ch = CHAPTERS[i];
 
+    // Root group sits ON the helix spiral line (base line)
+    const root = new THREE.Group();
+
+    // Content group is lifted so its bottom edge touches the root origin
+    const content = new THREE.Group();
+    content.position.y = TILE_BASE_OFFSET_Y;
+    root.add(content);
+
+    // cover
     const coverGeo = new THREE.PlaneGeometry(T.tileW, T.tileH, 30, 1);
     const coverMat = makeCoverMaterial();
 
@@ -404,33 +437,40 @@ const tileItems = [];
       (tex)=>{
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
+        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         coverMat.uniforms.uTex.value = tex;
         const img = tex.image;
         if (img && img.width && img.height){
           coverMat.uniforms.uTexAspect.value = img.width / img.height;
         }
       },
-      ()=>console.warn("Cover missing/failed:", ch.coverKey)
+      (attempted)=>console.warn("Cover missing/failed:", ch.coverKey, "attempted:", attempted)
     );
 
     const cover = new THREE.Mesh(coverGeo, coverMat);
     cover.userData.chapter = ch;
 
+    // title overlay
     const titleTex = makeTitleTexture(ch.label);
     const title = new THREE.Mesh(
       new THREE.PlaneGeometry(3.35, 0.78),
-      new THREE.MeshBasicMaterial({ map:titleTex, transparent:true, depthWrite:false, opacity:0.0, side:THREE.DoubleSide })
+      new THREE.MeshBasicMaterial({
+        map:titleTex,
+        transparent:true,
+        depthWrite:false,
+        opacity:0.0,
+        side:THREE.DoubleSide
+      })
     );
     title.position.set(T.titleOffset.x, T.titleOffset.y, T.titleOffset.z);
 
-    const g = new THREE.Group();
-    g.add(cover);
-    g.add(title);
-    tileGroup.add(g);
+    content.add(cover);
+    content.add(title);
+    tileGroup.add(root);
 
     clickableMeshes.push(cover);
 
-    const item = { group:g, cover, title, chapter:ch, index:i, hover:0, hoverTarget:0, qPrev:new THREE.Quaternion() };
+    const item = { group:root, cover, title, chapter:ch, index:i, hover:0, hoverTarget:0, qPrev:new THREE.Quaternion() };
     cover.userData.item = item;
     tileItems.push(item);
   }
@@ -542,14 +582,6 @@ canvas.addEventListener("pointerup",(e)=>{
   try{ canvas.releasePointerCapture(e.pointerId); }catch{}
 });
 
-function nearestChapter(v){
-  let best=CHAPTERS[0], bestD=Infinity;
-  for(const ch of CHAPTERS){
-    const d=Math.abs(ch.progress-v);
-    if(d<bestD){ bestD=d; best=ch; }
-  }
-  return best;
-}
 function progressToIndex(v){
   const min=Math.min(...CHAPTERS.map(c=>c.progress));
   const max=Math.max(...CHAPTERS.map(c=>c.progress));
@@ -581,7 +613,7 @@ const qFlipZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),
 function applyFlip(q){
   if (T.flipAxis === "X") q.multiply(qFlipX);
   else if (T.flipAxis === "Y") q.multiply(qFlipY);
-  else q.multiply(qFlipZ);
+  else q.multiply(qFlipZ); // default Z (your earlier "upright fix")
 }
 
 /* ---------------- Loop ---------------- */
@@ -604,21 +636,25 @@ function tick(){
 
   // helix
   const centerIdx = progressToIndex(timeline.value);
+
+  // slope of y vs theta (per radian)
   const dy_dtheta = -(T.helixPitch / Math.max(1e-6, T.helixAngleStep));
 
   for (const item of tileItems){
     const { group, cover, title, index, qPrev } = item;
-    const rel = index - centerIdx;
 
+    const rel = index - centerIdx;
     const theta = T.helixThetaOffset + rel * T.helixAngleStep;
 
+    // radius + slight "front pull" near the center
     const frontBoost = (1.0 - Math.min(1.0, Math.abs(rel))) * T.helixFrontPull;
     const r = T.helixRadius + Math.abs(rel)*T.helixRadiusGrow + frontBoost;
 
+    // helix position (THIS point is the base line of the tile)
     const yPos = T.helixYOffset - rel*T.helixPitch + Math.sin(time*0.9 + index*0.6)*0.06;
     group.position.set(Math.cos(theta)*r, yPos, Math.sin(theta)*r);
 
-    // fade
+    // visibility / fade
     const dAbs = Math.abs(rel);
     const vis = 1.0 - smoothstep(T.visibleRange - T.fadeSoftness, T.visibleRange + T.fadeSoftness, dAbs);
     const vis01 = clamp01(vis);
@@ -632,7 +668,10 @@ function tick(){
     mat.uniforms.uTime.value = time;
     mat.uniforms.uHover.value = item.hover;
 
-    // ribbon basis (stable)
+    // Build a stable basis aligned to the helix:
+    // - zAxis faces outward (radial)
+    // - xAxis follows helix tangent (includes vertical slope)
+    // - yAxis is computed and kept consistent with world up
     radial.set(Math.cos(theta), 0, Math.sin(theta)).normalize();
     zAxis.copy(radial);
 
@@ -640,21 +679,27 @@ function tick(){
     xAxis.copy(tangent);
 
     yAxis.crossVectors(zAxis, xAxis).normalize();
+
+    // stop sudden upside-down flips
     if (yAxis.dot(UP) < 0){
       xAxis.multiplyScalar(-1);
       yAxis.multiplyScalar(-1);
     }
+
+    // re-orthonormalize (keep it clean)
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     basis.makeBasis(xAxis, yAxis, zAxis);
     qTmp.setFromRotationMatrix(basis);
 
-    // ✅ upright fix (choose axis via T.flipAxis)
+    // ✅ your upright fix
     applyFlip(qTmp);
 
+    // continuity to avoid snapping
     keepQuatContinuous(qTmp, qPrev);
     group.quaternion.copy(qTmp);
 
+    // title fade + hover brighten
     title.material.opacity = clamp01(vis01 * (0.22 + 0.78 * item.hover));
   }
 
