@@ -1,34 +1,34 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
-import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
 const CFG = {
   ...SCENE_CONFIG,
 
-  cameraFov: 50,
-  cameraRadius: 3.2,
+  cameraFov: 47,
+  cameraRadius: 4.1,
   cameraTurns: 1.08,
 
-  ribbonRadius: 1.28,
-  helixAngleStep: 1.08,
-  helixRise: 0.34,
+  flagRadius: 2.05,
+  helixAngleStep: 1.34,
+  helixRise: 0.62,
 
-  ribbonWidth: 1.02,
-  ribbonHeight: 0.62,
+  flagWidth: 0.82,
+  flagHeight: 0.50,
 
   scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00042,
   touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0018,
 
-  lookY: 0.26,
-  modelLift: 0.34,
-  modelTargetHeight: 3.05,
+  lookY: 0.08,
+  modelLift: -0.28,
+  modelTargetHeight: 2.9,
 
-  nearStraightenStart: 2.1,
-  nearStraightenEnd: 0.92,
+  nearStraightenStart: 2.45,
+  nearStraightenEnd: 1.2,
 
-  fogDensity: 0.015,
-  fogSpriteOpacity: 0.08
+  fogDensity: 0.012,
+  fogSpriteOpacity: 0.06
 };
 
 const canvas = document.getElementById("webgl");
@@ -42,8 +42,8 @@ const muteButton = document.getElementById("muteButton");
 const ambientAudio = document.getElementById("ambientAudio");
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x071018);
-scene.fog = new THREE.FogExp2(0x071018, CFG.fogDensity);
+scene.background = new THREE.Color(0x0a1118);
+scene.fog = new THREE.FogExp2(0x0a1118, CFG.fogDensity);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -53,10 +53,10 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x071018, 1);
+renderer.setClearColor(0x0a1118, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.08;
 
 const camera = new THREE.PerspectiveCamera(
   CFG.cameraFov,
@@ -79,7 +79,7 @@ let hasEntered = false;
 let soundEnabled = true;
 let currentProgress = 0.02;
 let targetProgress = 0.02;
-let hoveredItem = null;
+let hoveredEntry = null;
 let dragActive = false;
 let lastTouchY = 0;
 
@@ -87,17 +87,17 @@ const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
 
 const working = {
-  vectorA: new THREE.Vector3(),
-  vectorB: new THREE.Vector3(),
-  vectorC: new THREE.Vector3(),
-  quatA: new THREE.Quaternion(),
-  quatB: new THREE.Quaternion(),
-  quatC: new THREE.Quaternion(),
-  matrixA: new THREE.Matrix4(),
-  eulerA: new THREE.Euler()
+  vA: new THREE.Vector3(),
+  vB: new THREE.Vector3(),
+  vC: new THREE.Vector3(),
+  qA: new THREE.Quaternion(),
+  qB: new THREE.Quaternion(),
+  qC: new THREE.Quaternion(),
+  mA: new THREE.Matrix4(),
+  eA: new THREE.Euler()
 };
 
-const ribbonObjects = [];
+const flagEntries = [];
 const fogSprites = [];
 
 let centralModel = null;
@@ -127,8 +127,8 @@ manager.onError = (url) => {
 };
 
 const textureLoader = new THREE.TextureLoader(manager);
-const fbxLoader = new FBXLoader(manager);
 const gltfLoader = new GLTFLoader(manager);
+const fbxLoader = new FBXLoader(manager);
 
 initScene();
 attachEvents();
@@ -138,37 +138,36 @@ function initScene() {
   createBackground(textureLoader);
   createFog(textureLoader);
   createGroundGlow();
-  createRibbons(textureLoader);
+  createFlags(textureLoader);
   loadCenterModel();
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xe4f4ff, 0x061019, 1.22);
+  const hemi = new THREE.HemisphereLight(0xe8f5ff, 0x061018, 1.18);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xf8fbff, 2.15);
-  key.position.set(5.5, 7.5, 6.2);
+  const key = new THREE.DirectionalLight(0xffffff, 1.9);
+  key.position.set(5.2, 7.0, 6.0);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x95d4ff, 1.8);
-  rim.position.set(-6.2, 4.2, -5.8);
+  const rim = new THREE.DirectionalLight(0x97d5ff, 1.55);
+  rim.position.set(-5.8, 4.0, -5.2);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0xa7dcff, 1.25, 14, 2);
-  fill.position.set(0, 1.6, 1.0);
+  const fill = new THREE.PointLight(0x98d8ff, 0.9, 12, 2);
+  fill.position.set(0, 1.4, 1.0);
   scene.add(fill);
 }
 
 function createBackground(loader) {
   const backgroundPath = ASSETS.background || ASSETS.sky;
   const bgTexture = loader.load(backgroundPath);
-
   bgTexture.colorSpace = THREE.SRGBColorSpace;
   bgTexture.wrapS = THREE.RepeatWrapping;
   bgTexture.wrapT = THREE.ClampToEdgeWrapping;
-  bgTexture.repeat.set(1.08, 1);
+  bgTexture.repeat.set(1.06, 1);
 
-  const sphereGeo = new THREE.SphereGeometry(85, 64, 64);
+  const sphereGeo = new THREE.SphereGeometry(90, 56, 56);
   const sphereMat = new THREE.MeshBasicMaterial({
     map: bgTexture,
     side: THREE.BackSide,
@@ -184,19 +183,19 @@ function createBackground(loader) {
   const rearTex = loader.load(backgroundPath);
   rearTex.colorSpace = THREE.SRGBColorSpace;
 
-  const planeGeo = new THREE.PlaneGeometry(42, 24, 1, 1);
-  const planeMat = new THREE.MeshBasicMaterial({
+  const rearGeo = new THREE.PlaneGeometry(34, 19, 1, 1);
+  const rearMat = new THREE.MeshBasicMaterial({
     map: rearTex,
     transparent: true,
-    opacity: 0.62,
+    opacity: 0.42,
     depthWrite: false,
     depthTest: false,
     fog: false,
     toneMapped: false
   });
 
-  rearBackdrop = new THREE.Mesh(planeGeo, planeMat);
-  rearBackdrop.position.set(0, 1.4, -10);
+  rearBackdrop = new THREE.Mesh(rearGeo, rearMat);
+  rearBackdrop.position.set(0, 1.0, -10);
   scene.add(rearBackdrop);
 }
 
@@ -204,10 +203,10 @@ function createFog(loader) {
   const fogTexture = loader.load(ASSETS.fog);
   fogTexture.colorSpace = THREE.SRGBColorSpace;
 
-  for (let i = 0; i < 34; i += 1) {
+  for (let i = 0; i < 28; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
-      color: 0x9fd5ee,
+      color: 0xa7d7ef,
       transparent: true,
       opacity: CFG.fogSpriteOpacity,
       depthWrite: false,
@@ -217,17 +216,17 @@ function createFog(loader) {
 
     const sprite = new THREE.Sprite(material);
 
-    const baseAngle = (i / 34) * Math.PI * 2;
-    const baseRadius = 2.0 + Math.random() * 3.4;
-    const baseY = THREE.MathUtils.lerp(-1.3, 2.8, Math.random());
-    const scale = 2.4 + Math.random() * 3.0;
+    const baseAngle = (i / 28) * Math.PI * 2;
+    const baseRadius = 2.3 + Math.random() * 3.4;
+    const baseY = THREE.MathUtils.lerp(-1.1, 2.3, Math.random());
+    const scale = 2.0 + Math.random() * 2.5;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
       baseY,
       Math.sin(baseAngle) * baseRadius
     );
-    sprite.scale.set(scale, scale * (0.58 + Math.random() * 0.3), 1);
+    sprite.scale.set(scale, scale * (0.58 + Math.random() * 0.26), 1);
 
     sprite.userData = {
       baseAngle,
@@ -235,9 +234,9 @@ function createFog(loader) {
       baseY,
       scale,
       phase: Math.random() * Math.PI * 2,
-      orbitSpeed: 0.03 + Math.random() * 0.06,
-      driftSpeed: 0.08 + Math.random() * 0.16,
-      driftAmount: 0.15 + Math.random() * 0.5
+      orbitSpeed: 0.025 + Math.random() * 0.05,
+      driftSpeed: 0.08 + Math.random() * 0.12,
+      driftAmount: 0.12 + Math.random() * 0.35
     };
 
     scene.add(sprite);
@@ -247,22 +246,22 @@ function createFog(loader) {
 
 function createGroundGlow() {
   const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(2.35, 64),
+    new THREE.CircleGeometry(2.1, 56),
     new THREE.MeshBasicMaterial({
-      color: 0x62b4e8,
+      color: 0x56aee5,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.1,
       depthWrite: false,
-      fog: false,
-      toneMapped: false
+      toneMapped: false,
+      fog: false
     })
   );
   glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -1.55;
+  glow.position.y = -1.35;
   scene.add(glow);
 }
 
-function createRibbonMaterial(texture) {
+function createFlagMaterial(texture) {
   return new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
@@ -277,25 +276,25 @@ function createRibbonMaterial(texture) {
       uniform float uHover;
 
       varying vec2 vUv;
-      varying float vWave;
+      varying float vRipple;
 
       void main() {
         vUv = uv;
 
         vec3 pos = position;
 
-        float idleRipple =
-          sin(uv.y * 8.0 + uTime * 1.6 + uv.x * 4.0) * 0.008 +
-          sin(uv.x * 6.0 + uTime * 1.1) * 0.004;
+        float idleWave =
+          sin(uv.y * 7.0 + uTime * 1.4 + uv.x * 3.0) * 0.004 +
+          sin(uv.y * 13.0 + uTime * 0.9) * 0.003;
 
-        float hoverRipple =
-          sin(uv.y * 16.0 + uTime * 7.0 + uv.x * 8.0) * 0.035 * uHover +
-          sin(uv.x * 10.0 + uTime * 5.0) * 0.018 * uHover;
+        float hoverWave =
+          sin(uv.y * 18.0 + uTime * 8.0 + uv.x * 9.0) * 0.028 * uHover +
+          sin(uv.y * 11.0 + uTime * 5.0) * 0.012 * uHover;
 
-        pos.z += idleRipple + hoverRipple;
-        pos.x += sin(uv.y * 8.0 + uTime * 3.0) * 0.01 * uHover;
+        pos.z += idleWave + hoverWave;
+        pos.x += sin(uv.y * 8.0 + uTime * 4.0) * 0.008 * uHover;
 
-        vWave = hoverRipple;
+        vRipple = hoverWave;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
@@ -307,72 +306,48 @@ function createRibbonMaterial(texture) {
       uniform float uOpacity;
 
       varying vec2 vUv;
-      varying float vWave;
+      varying float vRipple;
 
       void main() {
         vec4 tex = texture2D(uMap, vUv);
 
+        if (tex.a < 0.02) discard;
+
         float gray = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
         vec3 bw = vec3(gray);
 
-        float revealFront = uHover * 1.35 - 0.2;
-        float waveEdge = revealFront + sin(vUv.y * 18.0 + uTime * 6.0) * 0.08;
-        float reveal = smoothstep(waveEdge - 0.18, waveEdge + 0.18, vUv.x);
+        float travel = uHover * 1.35;
+        float rippleEdge = travel + sin(vUv.y * 18.0 + uTime * 6.0) * 0.08;
+        float reveal = smoothstep(rippleEdge - 0.18, rippleEdge + 0.18, vUv.x);
 
-        vec3 finalColor = mix(bw, tex.rgb, reveal);
+        vec3 colorOut = mix(bw, tex.rgb, reveal);
 
-        float border =
-          step(0.015, vUv.x) *
-          step(0.015, vUv.y) *
-          step(vUv.x, 0.985) *
-          step(vUv.y, 0.985);
-
-        finalColor = mix(finalColor * 0.1, finalColor, border);
-
-        float alpha = tex.a * uOpacity;
-        if (alpha < 0.01) discard;
-
-        gl_FragColor = vec4(finalColor, alpha);
+        gl_FragColor = vec4(colorOut, tex.a * uOpacity);
       }
     `
   });
 }
 
-function createRibbons(loader) {
-  const ribbonWidth = CFG.ribbonWidth;
-  const ribbonHeight = CFG.ribbonHeight;
-
+function createFlags(loader) {
   ORBIT_ITEMS.forEach((item) => {
     const group = new THREE.Group();
     group.userData.item = item;
     orbitRoot.add(group);
 
-    const texture = loader.load(item.cover);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const tex = loader.load(item.cover);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    const backPlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(ribbonWidth * 1.03, ribbonHeight * 1.03, 1, 1),
-      new THREE.MeshBasicMaterial({
-        color: 0x030507,
-        transparent: true,
-        opacity: 0.82,
-        side: THREE.DoubleSide
-      })
+    const mat = createFlagMaterial(tex);
+
+    const flag = new THREE.Mesh(
+      new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 36, 18),
+      mat
     );
-    backPlate.position.z = -0.012;
-    group.add(backPlate);
-
-    const ribbonMaterial = createRibbonMaterial(texture);
-
-    const ribbon = new THREE.Mesh(
-      new THREE.PlaneGeometry(ribbonWidth, ribbonHeight, 40, 18),
-      ribbonMaterial
-    );
-    group.add(ribbon);
+    group.add(flag);
 
     const labelAnchor = new THREE.Object3D();
-    labelAnchor.position.set(-ribbonWidth * 0.72, -ribbonHeight * 0.58, 0.03);
+    labelAnchor.position.set(-CFG.flagWidth * 0.62, -CFG.flagHeight * 0.78, 0.02);
     group.add(labelAnchor);
 
     const labelNode = document.createElement("div");
@@ -386,12 +361,11 @@ function createRibbons(loader) {
     labelNode.style.opacity = "0";
     labelsRoot?.appendChild(labelNode);
 
-    ribbonObjects.push({
+    flagEntries.push({
       item,
       group,
-      ribbon,
-      ribbonMaterial,
-      backPlate,
+      flag,
+      material: mat,
       labelAnchor,
       labelNode,
       hoverValue: 0,
@@ -401,16 +375,16 @@ function createRibbons(loader) {
 }
 
 function loadCenterModel() {
-  const gltfPath =
-    ASSETS.modelGLTF ||
-    ASSETS.modelGltf ||
+  const glbPath =
     ASSETS.modelGLB ||
     ASSETS.modelGlb ||
+    ASSETS.modelGLTF ||
+    ASSETS.modelGltf ||
     null;
 
-  if (gltfPath) {
+  if (glbPath) {
     gltfLoader.load(
-      gltfPath,
+      glbPath,
       (gltf) => {
         setupLoadedModel(gltf.scene);
       },
@@ -448,7 +422,7 @@ function setupLoadedModel(modelRoot) {
 
     if (!child.material) {
       child.material = new THREE.MeshStandardMaterial({
-        color: 0xe6eef5,
+        color: 0xe7eef5,
         roughness: 0.72,
         metalness: 0.04
       });
@@ -494,32 +468,32 @@ function centerAndScaleModel(model) {
   model.position.z -= center.z * scale;
 
   model.position.y += CFG.modelLift;
-  model.rotation.y = Math.PI * 0.05;
+  model.rotation.y = Math.PI * 0.045;
 }
 
 function createFallbackModel() {
   const fallback = new THREE.Group();
 
   const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.5, 1.35, 8, 16),
+    new THREE.CapsuleGeometry(0.44, 1.2, 8, 16),
     new THREE.MeshStandardMaterial({
-      color: 0xdde7f1,
+      color: 0xdde7f0,
       roughness: 0.72,
       metalness: 0.04
     })
   );
-  body.position.y = -0.1;
+  body.position.y = -0.05;
   fallback.add(body);
 
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 20, 20),
+    new THREE.SphereGeometry(0.36, 20, 20),
     new THREE.MeshStandardMaterial({
       color: 0xebf2f8,
       roughness: 0.72,
       metalness: 0.04
     })
   );
-  head.position.y = 1.08;
+  head.position.y = 0.96;
   fallback.add(head);
 
   fallback.position.y = CFG.modelLift;
@@ -548,8 +522,8 @@ function attachEvents() {
 
   window.addEventListener("click", () => {
     if (!hasEntered) return;
-    if (hoveredItem) {
-      window.location.href = hoveredItem.item.href;
+    if (hoveredEntry) {
+      window.location.href = hoveredEntry.item.href;
     }
   });
 
@@ -628,10 +602,10 @@ function animate() {
   requestAnimationFrame(animate);
 
   const elapsed = clock.getElapsedTime();
-  currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.09);
+  currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
 
   updateCamera(elapsed);
-  updateRibbons(elapsed);
+  updateFlags(elapsed);
   updateLabels();
   updateIntersections();
   updateFog(elapsed);
@@ -641,55 +615,54 @@ function animate() {
 
 function updateCamera(elapsed) {
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
-  const radius = CFG.cameraRadius;
 
   camera.position.set(
-    Math.cos(orbitTheta) * radius,
-    CFG.lookY + Math.sin(elapsed * 0.55) * 0.05,
-    Math.sin(orbitTheta) * radius
+    Math.cos(orbitTheta) * CFG.cameraRadius,
+    CFG.lookY + Math.sin(elapsed * 0.5) * 0.04,
+    Math.sin(orbitTheta) * CFG.cameraRadius
   );
 
   camera.lookAt(0, CFG.lookY, 0);
 
   if (skySphere) {
-    skySphere.rotation.y = -orbitTheta * 0.18;
-    skySphere.rotation.x = Math.sin(elapsed * 0.14) * 0.02;
+    skySphere.rotation.y = -orbitTheta * 0.16;
+    skySphere.rotation.x = Math.sin(elapsed * 0.12) * 0.018;
   }
 
   if (rearBackdrop) {
-    working.vectorA.copy(camera.position).setY(0).normalize();
-    rearBackdrop.position.copy(working.vectorA).multiplyScalar(-9.5);
-    rearBackdrop.position.y = 1.35;
+    working.vA.copy(camera.position).setY(0).normalize();
+    rearBackdrop.position.copy(working.vA).multiplyScalar(-9.0);
+    rearBackdrop.position.y = 0.9;
     rearBackdrop.lookAt(camera.position);
   }
 }
 
-function updateRibbons(elapsed) {
-  const total = ribbonObjects.length;
+function updateFlags(elapsed) {
+  const total = flagEntries.length;
   const frontIndex = currentProgress * (total - 1);
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
 
-  ribbonObjects.forEach((entry, index) => {
+  flagEntries.forEach((entry, index) => {
     const relative = index - frontIndex;
 
     const theta = orbitTheta + relative * CFG.helixAngleStep;
     const y =
       CFG.lookY +
       relative * CFG.helixRise +
-      Math.sin(elapsed * 0.9 + index * 1.2) * 0.025;
+      Math.sin(elapsed * 0.8 + index * 1.3) * 0.02;
 
     entry.group.position.set(
-      Math.cos(theta) * CFG.ribbonRadius,
+      Math.cos(theta) * CFG.flagRadius,
       y,
-      Math.sin(theta) * CFG.ribbonRadius
+      Math.sin(theta) * CFG.flagRadius
     );
 
-    working.matrixA.lookAt(entry.group.position, ORBIT_CENTER, UP);
-    working.quatA.setFromRotationMatrix(working.matrixA);
+    working.mA.lookAt(entry.group.position, ORBIT_CENTER, UP);
+    working.qA.setFromRotationMatrix(working.mA);
 
-    working.eulerA.set(-0.12, 0.04, -0.08);
-    working.quatC.setFromEuler(working.eulerA);
-    working.quatA.multiply(working.quatC);
+    working.eA.set(-0.09, 0.02, -0.05);
+    working.qC.setFromEuler(working.eA);
+    working.qA.multiply(working.qC);
 
     const cameraDistance = entry.group.position.distanceTo(camera.position);
     const straighten = smoothstep(
@@ -698,40 +671,35 @@ function updateRibbons(elapsed) {
       cameraDistance
     );
 
-    working.matrixA.lookAt(entry.group.position, camera.position, UP);
-    working.quatB.setFromRotationMatrix(working.matrixA);
-    working.quatB.multiply(CAMERA_FACE_FIX);
+    working.mA.lookAt(entry.group.position, camera.position, UP);
+    working.qB.setFromRotationMatrix(working.mA);
+    working.qB.multiply(CAMERA_FACE_FIX);
 
-    entry.group.quaternion.slerpQuaternions(
-      working.quatA,
-      working.quatB,
-      straighten
-    );
+    entry.group.quaternion.slerpQuaternions(working.qA, working.qB, straighten);
 
     const opacityDistance = THREE.MathUtils.clamp(
-      1 - (cameraDistance - 0.7) / 2.2,
-      0.12,
+      1 - (cameraDistance - 0.95) / 2.6,
+      0.14,
       1
     );
     const opacityRange = THREE.MathUtils.clamp(
-      1 - Math.abs(relative) / (total * 0.52),
-      0.18,
+      1 - Math.abs(relative) / (total * 0.48),
+      0.16,
       1
     );
     const opacity = Math.min(opacityDistance, opacityRange);
 
-    entry.hoverTarget = hoveredItem === entry ? 1 : 0;
+    entry.hoverTarget = hoveredEntry === entry ? 1 : 0;
     entry.hoverValue = THREE.MathUtils.lerp(entry.hoverValue, entry.hoverTarget, 0.12);
 
-    entry.ribbonMaterial.uniforms.uTime.value = elapsed;
-    entry.ribbonMaterial.uniforms.uHover.value = entry.hoverValue;
-    entry.ribbonMaterial.uniforms.uOpacity.value = opacity;
+    entry.material.uniforms.uTime.value = elapsed;
+    entry.material.uniforms.uHover.value = entry.hoverValue;
+    entry.material.uniforms.uOpacity.value = opacity;
 
-    entry.backPlate.material.opacity = opacity * 0.72;
     entry.group.visible = opacity > 0.03;
 
     if (entry.labelNode) {
-      entry.labelNode.style.opacity = `${opacity * (0.75 + entry.hoverValue * 0.25)}`;
+      entry.labelNode.style.opacity = `${opacity * (0.82 + entry.hoverValue * 0.18)}`;
     }
   });
 }
@@ -740,13 +708,13 @@ function updateLabels() {
   const width = window.innerWidth;
   const height = window.innerHeight;
 
-  ribbonObjects.forEach((entry) => {
-    working.vectorB.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
-    working.vectorB.project(camera);
+  flagEntries.forEach((entry) => {
+    working.vB.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
+    working.vB.project(camera);
 
     const visible =
-      working.vectorB.z < 1 &&
-      working.vectorB.z > -1 &&
+      working.vB.z < 1 &&
+      working.vB.z > -1 &&
       entry.group.visible;
 
     if (!visible) {
@@ -754,8 +722,8 @@ function updateLabels() {
       return;
     }
 
-    const x = (working.vectorB.x * 0.5 + 0.5) * width;
-    const y = (-working.vectorB.y * 0.5 + 0.5) * height;
+    const x = (working.vB.x * 0.5 + 0.5) * width;
+    const y = (-working.vB.y * 0.5 + 0.5) * height;
 
     if (entry.labelNode) {
       entry.labelNode.style.transform = `translate(calc(${x}px - 100%), calc(${y}px - 50%))`;
@@ -768,19 +736,18 @@ function updateIntersections() {
 
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(
-    ribbonObjects.map((entry) => entry.ribbon),
+    flagEntries.map((entry) => entry.flag),
     false
   );
 
-  hoveredItem = null;
+  hoveredEntry = null;
 
   if (hits.length > 0) {
     const hit = hits[0];
-    hoveredItem =
-      ribbonObjects.find((entry) => entry.ribbon === hit.object) || null;
+    hoveredEntry = flagEntries.find((entry) => entry.flag === hit.object) || null;
   }
 
-  renderer.domElement.style.cursor = hoveredItem ? "pointer" : "grab";
+  renderer.domElement.style.cursor = hoveredEntry ? "pointer" : "grab";
 }
 
 function updateFog(elapsed) {
@@ -790,7 +757,7 @@ function updateFog(elapsed) {
     const orbitAngle =
       data.baseAngle +
       elapsed * data.orbitSpeed +
-      Math.sin(elapsed * 0.16 + data.phase) * 0.18;
+      Math.sin(elapsed * 0.16 + data.phase) * 0.15;
 
     const radius =
       data.baseRadius +
@@ -798,7 +765,7 @@ function updateFog(elapsed) {
 
     const y =
       data.baseY +
-      Math.sin(elapsed * (data.driftSpeed * 1.75) + index) * 0.18;
+      Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.14;
 
     sprite.position.set(
       Math.cos(orbitAngle) * radius,
@@ -807,14 +774,14 @@ function updateFog(elapsed) {
     );
 
     const pulse =
-      0.94 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.08;
+      0.95 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.06;
 
     sprite.scale.set(data.scale * pulse, data.scale * 0.62 * pulse, 1);
-    sprite.material.rotation += 0.00055 + index * 0.000008;
+    sprite.material.rotation += 0.00045 + index * 0.000006;
   });
 
   if (centralModel) {
-    centralModel.rotation.y += 0.001;
+    centralModel.rotation.y += 0.0009;
   }
 }
 

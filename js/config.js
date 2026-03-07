@@ -58,10 +58,15 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  model: "./assets/models/me_on_hill.fbx",
+  background: "./assets/backgrounds/background.jpg",
   sky: "./assets/backgrounds/sky_sphere.jpg",
-  ambientAudio: "./assets/audio/ambient.mp3",
-  fog: "./assets/textures/fog.png"
+  fog: "./assets/textures/fog.png",
+
+  // best option for textured model:
+  modelGLB: "./assets/models/me_on_hill.glb",
+
+  // fallback only:
+  model: "./assets/models/me_on_hill.fbx"
 };
 
 export const SCENE_CONFIG = {
