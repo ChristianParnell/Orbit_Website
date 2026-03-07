@@ -1,0 +1,81 @@
+export const ORBIT_ITEMS = [
+  {
+    id: "about",
+    title: "About",
+    subtitle: "Background · Design · Direction",
+    href: "./pages/about.html",
+    cover: "./assets/covers/about.JPG",
+    theme: "Who I am"
+  },
+  {
+    id: "gallery",
+    title: "Gallery",
+    subtitle: "Videos · Frames · Selected work",
+    href: "./pages/gallery.html",
+    cover: "./assets/covers/gallery.png",
+    theme: "Moving image"
+  },
+  {
+    id: "achievements",
+    title: "Achievements",
+    subtitle: "Highlights · Study · Experience",
+    href: "./pages/achievements.html",
+    cover: "./assets/covers/achievements.jpg",
+    theme: "Milestones"
+  },
+  {
+    id: "fab",
+    title: "FAB",
+    subtitle: "Assets · Downloads · Publishing",
+    href: "./pages/fab.html",
+    cover: "./assets/covers/fab.png",
+    theme: "Digital assets"
+  },
+  {
+    id: "sketchfab",
+    title: "Sketchfab",
+    subtitle: "3D models · Presentation",
+    href: "./pages/sketchfab.html",
+    cover: "./assets/covers/sketchfab.png",
+    theme: "3D work"
+  },
+  {
+    id: "twenty-two-minutes",
+    title: "22 Minutes",
+    subtitle: "Game project · World · Pitch",
+    href: "./pages/twenty-two-minutes.html",
+    cover: "./assets/covers/steam_22minutes.png",
+    theme: "Game development"
+  },
+  {
+    id: "contact",
+    title: "Contact",
+    subtitle: "Reach out · Collaborate",
+    href: "./pages/contact.html",
+    cover: "./assets/covers/contact.jpg",
+    theme: "Let’s talk"
+  }
+];
+
+export const ASSETS = {
+  model: "./assets/models/me_on_hill.fbx",
+  sky: "./assets/backgrounds/sky_sphere.jpg",
+  ambientAudio: "./assets/audio/ambient.mp3",
+  fog: "./assets/textures/fog.png"
+};
+
+export const SCENE_CONFIG = {
+  folderCount: ORBIT_ITEMS.length,
+  cameraRadius: 5.25,
+  coverRadius: 6.85,
+  turns: 1.72,
+  cameraHeightTop: 2.3,
+  cameraHeightBottom: -1.9,
+  coverHeightTop: 2.2,
+  coverHeightBottom: -2.2,
+  scrollSpeed: 0.00068,
+  touchSpeed: 0.0012,
+  folderWidth: 1.85,
+  folderHeight: 1.15,
+  folderSpacingBias: 0.1
+};
