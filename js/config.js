@@ -62,12 +62,13 @@ export const ASSETS = {
   background: "./assets/backgrounds/sky_sphere.jpg",
   fog: "./assets/textures/fog.png",
 
-  // Blender glTF 2.0 export:
-  // if your file is actually .glb, change only this one line
-  modelGLTF: "./assets/models/me_on_hill.gltf",
+  // Best option: export Blender model as .glb with textures embedded,
+  // then put the file in assets/models and uncomment the line below.
+  modelGLB: "",
+  modelGLTF: "",
 
-  // optional FBX fallback; leave blank if you no longer use FBX
-  model: ""
+  // Current repo fallback:
+  modelFBX: "./assets/models/me_on_hill.fbx"
 };
 
 export const SCENE_CONFIG = {
