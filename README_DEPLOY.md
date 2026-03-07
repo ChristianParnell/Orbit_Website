@@ -87,3 +87,7 @@ Useful values:
 - add a custom loading animation
 - add drag-to-orbit desktop input
 - swap FBX for GLB later for faster loading if you want
+
+
+## Import map fix
+This package uses a browser import map in `index.html` so GitHub Pages can resolve `three` and `three/addons/` without a bundler. Keep the `<script type="importmap">` block intact.
