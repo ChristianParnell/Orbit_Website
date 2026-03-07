@@ -58,9 +58,15 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
+  // use the file that actually exists in the repo
   sky: "./assets/backgrounds/sky_sphere.jpg",
   background: "./assets/backgrounds/sky_sphere.jpg",
   fog: "./assets/textures/fog.png",
+
+  // if you export a real GLB later, put its path here, otherwise leave blank
+  modelGLB: "",
+
+  // current fallback model that exists in the repo
   model: "./assets/models/me_on_hill.fbx"
 };
 

@@ -1,4 +1,5 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
+import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
@@ -23,11 +24,19 @@ const CFG = {
   modelLift: -0.52,
   modelTargetHeight: 2.9,
 
-  nearStraightenStart: 2.55,
-  nearStraightenEnd: 1.22,
+  nearStraightenStart: 3.6,
+  nearStraightenEnd: 1.3,
+
+  farFadeStart: 4.5,
+  farFadeEnd: 6.8,
+
+  titleScaleNear: 1.0,
+  titleScaleFar: 0.54,
+  titleFadeStart: 3.0,
+  titleFadeEnd: 6.3,
 
   fogDensity: 0.012,
-  fogSpriteOpacity: 0.05
+  fogSpriteOpacity: 0.11
 };
 
 const canvas = document.getElementById("webgl");
@@ -55,7 +64,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x0a1118, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 1.1;
+renderer.sortObjects = true;
 
 const camera = new THREE.PerspectiveCamera(
   CFG.cameraFov,
@@ -125,7 +135,9 @@ manager.onError = (url) => {
 };
 
 const textureLoader = new THREE.TextureLoader(manager);
+const gltfLoader = new GLTFLoader(manager);
 const fbxLoader = new FBXLoader(manager);
+fbxLoader.setResourcePath("./assets/models/");
 
 initScene();
 attachEvents();
@@ -140,19 +152,19 @@ function initScene() {
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xe8f5ff, 0x061018, 1.18);
+  const hemi = new THREE.HemisphereLight(0xe8f5ff, 0x061018, 1.26);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 1.95);
-  key.position.set(5.2, 7.0, 6.0);
+  const key = new THREE.DirectionalLight(0xffffff, 2.25);
+  key.position.set(5.2, 7.2, 6.0);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x97d5ff, 1.55);
-  rim.position.set(-5.8, 4.0, -5.2);
+  const rim = new THREE.DirectionalLight(0x97d5ff, 1.75);
+  rim.position.set(-5.8, 4.2, -5.2);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0x98d8ff, 0.95, 12, 2);
-  fill.position.set(0, 1.4, 1.0);
+  const fill = new THREE.PointLight(0x98d8ff, 1.15, 14, 2);
+  fill.position.set(0, 1.55, 1.0);
   scene.add(fill);
 }
 
@@ -163,9 +175,9 @@ function createBackground(loader) {
   bgTexture.colorSpace = THREE.SRGBColorSpace;
   bgTexture.wrapS = THREE.RepeatWrapping;
   bgTexture.wrapT = THREE.ClampToEdgeWrapping;
-  bgTexture.repeat.set(1.05, 1);
+  bgTexture.repeat.set(1.0, 1.0);
 
-  const sphereGeo = new THREE.SphereGeometry(120, 56, 56);
+  const sphereGeo = new THREE.SphereGeometry(140, 72, 72);
   const sphereMat = new THREE.MeshBasicMaterial({
     map: bgTexture,
     side: THREE.BackSide,
@@ -176,7 +188,7 @@ function createBackground(loader) {
   });
 
   skySphere = new THREE.Mesh(sphereGeo, sphereMat);
-  skySphere.renderOrder = -20;
+  skySphere.renderOrder = -100;
   scene.add(skySphere);
 }
 
@@ -189,7 +201,7 @@ function createFog(loader) {
   fogTexture.minFilter = THREE.LinearMipmapLinearFilter;
   fogTexture.magFilter = THREE.LinearFilter;
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < 30; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
       alphaMap: fogTexture,
@@ -204,18 +216,19 @@ function createFog(loader) {
     material.alphaTest = 0.05;
 
     const sprite = new THREE.Sprite(material);
+    sprite.renderOrder = 4;
 
-    const baseAngle = (i / 24) * Math.PI * 2;
-    const baseRadius = 2.0 + Math.random() * 3.0;
-    const baseY = THREE.MathUtils.lerp(-1.0, 2.0, Math.random());
-    const scale = 1.8 + Math.random() * 2.2;
+    const baseAngle = (i / 30) * Math.PI * 2;
+    const baseRadius = 1.9 + Math.random() * 3.3;
+    const baseY = THREE.MathUtils.lerp(-1.2, 2.1, Math.random());
+    const scale = 2.2 + Math.random() * 3.3;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
       baseY,
       Math.sin(baseAngle) * baseRadius
     );
-    sprite.scale.set(scale, scale * (0.58 + Math.random() * 0.26), 1);
+    sprite.scale.set(scale, scale * (0.56 + Math.random() * 0.22), 1);
 
     sprite.userData = {
       baseAngle,
@@ -224,8 +237,8 @@ function createFog(loader) {
       scale,
       phase: Math.random() * Math.PI * 2,
       orbitSpeed: 0.02 + Math.random() * 0.04,
-      driftSpeed: 0.06 + Math.random() * 0.10,
-      driftAmount: 0.08 + Math.random() * 0.22
+      driftSpeed: 0.05 + Math.random() * 0.09,
+      driftAmount: 0.10 + Math.random() * 0.28
     };
 
     scene.add(sprite);
@@ -235,11 +248,11 @@ function createFog(loader) {
 
 function createGroundGlow() {
   const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(2.1, 56),
+    new THREE.CircleGeometry(2.15, 64),
     new THREE.MeshBasicMaterial({
       color: 0x56aee5,
       transparent: true,
-      opacity: 0.1,
+      opacity: 0.18,
       depthWrite: false,
       toneMapped: false,
       fog: false
@@ -247,6 +260,7 @@ function createGroundGlow() {
   );
   glow.rotation.x = -Math.PI / 2;
   glow.position.y = -1.35;
+  glow.renderOrder = 1;
   scene.add(glow);
 }
 
@@ -254,6 +268,7 @@ function createFlagMaterial(texture) {
   return new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
+    depthWrite: false,
     uniforms: {
       uMap: { value: texture },
       uReveal: { value: 0.0 },
@@ -327,6 +342,7 @@ function createFlags(loader) {
       new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 36, 18),
       mat
     );
+    flag.renderOrder = 10;
     group.add(flag);
 
     const labelAnchor = new THREE.Object3D();
@@ -342,6 +358,7 @@ function createFlags(loader) {
       </div>
     `;
     labelNode.style.opacity = "0";
+    labelNode.style.transformOrigin = "top left";
     labelsRoot?.appendChild(labelNode);
 
     flagEntries.push({
@@ -358,6 +375,25 @@ function createFlags(loader) {
 }
 
 function loadCenterModel() {
+  const maybeGlb = typeof ASSETS.modelGLB === "string" ? ASSETS.modelGLB.trim() : "";
+
+  if (maybeGlb) {
+    gltfLoader.load(
+      maybeGlb,
+      (gltf) => {
+        setupLoadedModel(gltf.scene);
+      },
+      undefined,
+      () => {
+        loadFBXFallback();
+      }
+    );
+  } else {
+    loadFBXFallback();
+  }
+}
+
+function loadFBXFallback() {
   fbxLoader.load(
     ASSETS.model,
     (fbx) => {
@@ -378,6 +414,7 @@ function setupLoadedModel(modelRoot) {
 
     child.castShadow = false;
     child.receiveShadow = false;
+    child.renderOrder = 6;
 
     if (!child.material) {
       child.material = new THREE.MeshStandardMaterial({
@@ -406,6 +443,8 @@ function prepareMaterial(material) {
   material.transparent = false;
   material.opacity = 1;
   material.alphaTest = 0;
+  material.depthWrite = true;
+  material.depthTest = true;
 
   if ("map" in material && material.map) {
     material.map.colorSpace = THREE.SRGBColorSpace;
@@ -414,6 +453,10 @@ function prepareMaterial(material) {
 
   if ("emissiveMap" in material && material.emissiveMap) {
     material.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+  }
+
+  if ("normalMap" in material && material.normalMap) {
+    material.normalMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
   }
 
   material.needsUpdate = true;
@@ -590,8 +633,8 @@ function updateCamera(elapsed) {
 
   if (skySphere) {
     skySphere.position.copy(camera.position);
-    skySphere.rotation.y = -orbitTheta * 0.16;
-    skySphere.rotation.x = Math.sin(elapsed * 0.12) * 0.018;
+    skySphere.rotation.y = -orbitTheta * 0.18;
+    skySphere.rotation.x = Math.sin(elapsed * 0.10) * 0.01;
   }
 }
 
@@ -632,22 +675,13 @@ function updateFlags() {
 
     entry.group.quaternion.slerpQuaternions(working.qA, working.qB, straighten);
 
-    const visibilityDistance = THREE.MathUtils.clamp(
-      1 - (cameraDistance - 0.95) / 2.4,
+    const farVisibility = 1.0 - smoothstep(CFG.farFadeStart, CFG.farFadeEnd, cameraDistance);
+    const indexVisibility = THREE.MathUtils.clamp(
+      1 - Math.abs(relative) / (total * 0.78),
       0,
       1
     );
-    const visibilityRange = THREE.MathUtils.clamp(
-      1 - Math.abs(relative) / (total * 0.48),
-      0,
-      1
-    );
-    const visibility = Math.min(visibilityDistance, visibilityRange);
-
-    const finalOpacity =
-      visibility > 0.35
-        ? 1.0
-        : THREE.MathUtils.clamp((visibility - 0.08) / 0.27, 0, 1);
+    const finalOpacity = THREE.MathUtils.clamp(Math.min(farVisibility, indexVisibility) * 1.35, 0, 1);
 
     entry.revealTarget = hoveredEntry === entry ? 1 : 0;
     entry.revealValue = THREE.MathUtils.lerp(
@@ -659,11 +693,7 @@ function updateFlags() {
     entry.material.uniforms.uReveal.value = entry.revealValue;
     entry.material.uniforms.uOpacity.value = finalOpacity;
 
-    entry.group.visible = finalOpacity > 0.03;
-
-    if (entry.labelNode) {
-      entry.labelNode.style.opacity = `${finalOpacity * (0.82 + entry.revealValue * 0.18)}`;
-    }
+    entry.group.visible = finalOpacity > 0.02;
   });
 }
 
@@ -675,10 +705,19 @@ function updateLabels() {
     working.vB.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
     working.vB.project(camera);
 
+    const distance = entry.group.position.distanceTo(camera.position);
+    const titleFade = 1.0 - smoothstep(CFG.titleFadeStart, CFG.titleFadeEnd, distance);
+    const titleScale = THREE.MathUtils.lerp(
+      CFG.titleScaleFar,
+      CFG.titleScaleNear,
+      titleFade
+    );
+
     const visible =
       working.vB.z < 1 &&
       working.vB.z > -1 &&
-      entry.group.visible;
+      entry.group.visible &&
+      titleFade > 0.02;
 
     if (!visible) {
       if (entry.labelNode) entry.labelNode.style.opacity = "0";
@@ -689,7 +728,9 @@ function updateLabels() {
     const y = (-working.vB.y * 0.5 + 0.5) * height;
 
     if (entry.labelNode) {
-      entry.labelNode.style.transform = `translate(calc(${x}px - 100%), calc(${y}px - 50%))`;
+      entry.labelNode.style.opacity = `${titleFade}`;
+      entry.labelNode.style.transform =
+        `translate(calc(${x}px - 100%), calc(${y}px - 50%)) scale(${titleScale})`;
     }
   });
 }
