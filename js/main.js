@@ -1,26 +1,29 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
+import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
 const CFG = {
   ...SCENE_CONFIG,
-  cameraRadius: SCENE_CONFIG.cameraRadius ?? 6.9,
-  coverRadius: SCENE_CONFIG.coverRadius ?? 4.55,
-  turns: SCENE_CONFIG.turns ?? 1.15,
-  folderWidth: SCENE_CONFIG.folderWidth ?? 1.7,
-  folderHeight: SCENE_CONFIG.folderHeight ?? 1.08,
-  scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00038,
-  touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0016,
 
-  helixAngleStep: SCENE_CONFIG.helixAngleStep ?? 0.95,
-  helixRise: SCENE_CONFIG.helixRise ?? 1.2,
-  helixFrontOffset: SCENE_CONFIG.helixFrontOffset ?? 0.0,
+  cameraRadius: 4.2,
+  folderRadius: 2.35,
+  helixAngleStep: 0.72,
+  helixRise: 0.92,
+  scrollSpeed: 0.00042,
+  touchSpeed: 0.0018,
 
-  modelY: SCENE_CONFIG.modelY ?? -0.45,
-  lookY: SCENE_CONFIG.lookY ?? 0.2,
+  folderWidth: SCENE_CONFIG.folderWidth ?? 1.65,
+  folderHeight: SCENE_CONFIG.folderHeight ?? 1.04,
 
-  cameraHeightBob: SCENE_CONFIG.cameraHeightBob ?? 0.06,
-  cameraOrbitTilt: SCENE_CONFIG.cameraOrbitTilt ?? 0.22
+  modelY: 0.15,
+  lookY: 0.35,
+
+  nearStraightenStart: 3.4,
+  nearStraightenEnd: 1.65,
+
+  fogDensity: 0.04,
+  skyOpacity: 0.98
 };
 
 const canvas = document.getElementById("webgl");
@@ -35,7 +38,7 @@ const ambientAudio = document.getElementById("ambientAudio");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x071018);
-scene.fog = new THREE.FogExp2(0x071018, 0.045);
+scene.fog = new THREE.FogExp2(0x071018, CFG.fogDensity);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -48,13 +51,12 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x071018, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.14;
+renderer.toneMappingExposure = 1.16;
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 220);
-camera.position.set(0, 1.25, CFG.cameraRadius);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 1.2, CFG.cameraRadius);
 
 const clock = new THREE.Clock();
-
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2(-10, -10);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -83,10 +85,11 @@ const working = {
 };
 
 const folderObjects = [];
-const particles = [];
+const fogSprites = [];
+
 let centralModel = null;
 let skySphere = null;
-let backPlate = null;
+let rearBackdrop = null;
 
 setupLighting();
 
@@ -112,81 +115,76 @@ manager.onError = (url) => {
 
 const textureLoader = new THREE.TextureLoader(manager);
 const fbxLoader = new FBXLoader(manager);
+const gltfLoader = new GLTFLoader(manager);
 
 initScene();
 attachEvents();
 animate();
 
 function initScene() {
-  createSky(textureLoader);
-  createBackPlate(textureLoader);
-  createAtmosphere(textureLoader);
+  createBackground(textureLoader);
+  createFog(textureLoader);
   createGroundGlow();
   createFolders(textureLoader);
   loadCenterModel();
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xdaf3ff, 0x041018, 1.25);
+  const hemi = new THREE.HemisphereLight(0xdff3ff, 0x041018, 1.28);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xf6fbff, 2.3);
-  key.position.set(6, 8, 6);
+  const key = new THREE.DirectionalLight(0xf7fbff, 2.3);
+  key.position.set(5.5, 8, 6.5);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x8ecfff, 1.8);
-  rim.position.set(-7, 4, -6);
+  const rim = new THREE.DirectionalLight(0x8fcfff, 1.8);
+  rim.position.set(-6.5, 3.8, -5.5);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0x9fdcff, 1.35, 22, 2);
-  fill.position.set(0, 1.7, 1.4);
+  const fill = new THREE.PointLight(0xa8ddff, 1.25, 16, 2);
+  fill.position.set(0, 1.8, 1.2);
   scene.add(fill);
 }
 
-function createSky(loader) {
-  const texture = loader.load(ASSETS.sky);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.repeat.set(1.2, 1);
+function createBackground(loader) {
+  const skyTexture = loader.load(ASSETS.sky);
+  skyTexture.colorSpace = THREE.SRGBColorSpace;
+  skyTexture.wrapS = THREE.RepeatWrapping;
+  skyTexture.wrapT = THREE.ClampToEdgeWrapping;
+  skyTexture.repeat.set(1.15, 1);
 
-  const geometry = new THREE.SphereGeometry(92, 56, 56);
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
+  const sphereGeo = new THREE.SphereGeometry(80, 56, 56);
+  const sphereMat = new THREE.MeshBasicMaterial({
+    map: skyTexture,
     side: THREE.BackSide,
     transparent: true,
-    opacity: 0.92
+    opacity: CFG.skyOpacity
   });
 
-  skySphere = new THREE.Mesh(geometry, material);
+  skySphere = new THREE.Mesh(sphereGeo, sphereMat);
   scene.add(skySphere);
-}
 
-function createBackPlate(loader) {
-  const texture = loader.load(ASSETS.sky);
-  texture.colorSpace = THREE.SRGBColorSpace;
-
-  const geometry = new THREE.PlaneGeometry(50, 28, 1, 1);
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
+  const plateGeo = new THREE.PlaneGeometry(36, 22, 1, 1);
+  const plateMat = new THREE.MeshBasicMaterial({
+    map: skyTexture,
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.4,
     depthWrite: false
   });
 
-  backPlate = new THREE.Mesh(geometry, material);
-  backPlate.position.set(0, 1.5, -15);
-  scene.add(backPlate);
+  rearBackdrop = new THREE.Mesh(plateGeo, plateMat);
+  rearBackdrop.position.set(0, 1.8, -10);
+  scene.add(rearBackdrop);
 }
 
-function createAtmosphere(loader) {
+function createFog(loader) {
   const fogTexture = loader.load(ASSETS.fog);
   fogTexture.colorSpace = THREE.SRGBColorSpace;
 
-  for (let i = 0; i < 34; i += 1) {
+  for (let i = 0; i < 38; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
-      color: 0xa5d7f1,
+      color: 0x9fd3ef,
       transparent: true,
       opacity: 0.05,
       depthWrite: false,
@@ -195,46 +193,46 @@ function createAtmosphere(loader) {
 
     const sprite = new THREE.Sprite(material);
 
-    const baseAngle = (i / 34) * Math.PI * 2;
-    const baseRadius = 4.5 + Math.random() * 4.6;
-    const baseY = THREE.MathUtils.lerp(-2.3, 3.6, Math.random());
-    const scale = 3.8 + Math.random() * 4.5;
+    const baseAngle = (i / 38) * Math.PI * 2;
+    const baseRadius = 2.4 + Math.random() * 4.8;
+    const baseY = THREE.MathUtils.lerp(-1.5, 3.2, Math.random());
+    const scale = 3.2 + Math.random() * 3.8;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
       baseY,
       Math.sin(baseAngle) * baseRadius
     );
-    sprite.scale.set(scale, scale * (0.52 + Math.random() * 0.42), 1);
+    sprite.scale.set(scale, scale * (0.55 + Math.random() * 0.35), 1);
 
     sprite.userData = {
       baseAngle,
       baseRadius,
       baseY,
       scale,
-      driftSpeed: 0.08 + Math.random() * 0.18,
-      orbitSpeed: 0.03 + Math.random() * 0.06,
-      driftAmount: 0.25 + Math.random() * 0.7,
-      phase: Math.random() * Math.PI * 2
+      phase: Math.random() * Math.PI * 2,
+      orbitSpeed: 0.025 + Math.random() * 0.06,
+      driftSpeed: 0.09 + Math.random() * 0.16,
+      driftAmount: 0.18 + Math.random() * 0.55
     };
 
     scene.add(sprite);
-    particles.push(sprite);
+    fogSprites.push(sprite);
   }
 }
 
 function createGroundGlow() {
-  const geometry = new THREE.CircleGeometry(3.5, 64);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x58aadf,
-    transparent: true,
-    opacity: 0.14,
-    depthWrite: false
-  });
-
-  const glow = new THREE.Mesh(geometry, material);
+  const glow = new THREE.Mesh(
+    new THREE.CircleGeometry(2.75, 56),
+    new THREE.MeshBasicMaterial({
+      color: 0x5caee4,
+      transparent: true,
+      opacity: 0.13,
+      depthWrite: false
+    })
+  );
   glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -2.2;
+  glow.position.y = -1.9;
   scene.add(glow);
 }
 
@@ -317,8 +315,6 @@ function createFolders(loader) {
       group,
       base,
       cover,
-      tab,
-      spine,
       labelAnchor,
       labelNode
     });
@@ -326,49 +322,29 @@ function createFolders(loader) {
 }
 
 function loadCenterModel() {
+  const gltfPath = ASSETS.modelGLTF || ASSETS.modelGlb || ASSETS.modelGLB || null;
+
+  if (gltfPath) {
+    gltfLoader.load(
+      gltfPath,
+      (gltf) => {
+        setupLoadedModel(gltf.scene);
+      },
+      undefined,
+      () => {
+        loadFBXFallback();
+      }
+    );
+  } else {
+    loadFBXFallback();
+  }
+}
+
+function loadFBXFallback() {
   fbxLoader.load(
     ASSETS.model,
     (fbx) => {
-      centralModel = fbx;
-
-      centralModel.traverse((child) => {
-        if (child.isMesh) {
-          child.castShadow = false;
-          child.receiveShadow = false;
-
-          if (!child.material) {
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0xe6eef5,
-              roughness: 0.72,
-              metalness: 0.04
-            });
-          } else if (Array.isArray(child.material)) {
-            child.material.forEach((material) => {
-              material.side = THREE.DoubleSide;
-            });
-          } else {
-            child.material.side = THREE.DoubleSide;
-          }
-        }
-      });
-
-      const box = new THREE.Box3().setFromObject(centralModel);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-
-      const targetHeight = 3.6;
-      const scale = size.y > 0 ? targetHeight / size.y : 1;
-
-      centralModel.scale.setScalar(scale);
-
-      centralModel.position.x -= center.x * scale;
-      centralModel.position.y -= center.y * scale;
-      centralModel.position.z -= center.z * scale;
-
-      centralModel.position.y += CFG.modelY;
-      centralModel.rotation.y = Math.PI * 0.08;
-
-      orbitRoot.add(centralModel);
+      setupLoadedModel(fbx);
     },
     undefined,
     () => {
@@ -377,18 +353,73 @@ function loadCenterModel() {
   );
 }
 
+function setupLoadedModel(modelRoot) {
+  centralModel = modelRoot;
+
+  centralModel.traverse((child) => {
+    if (!child.isMesh) return;
+
+    child.castShadow = false;
+    child.receiveShadow = false;
+
+    if (child.material) {
+      if (Array.isArray(child.material)) {
+        child.material.forEach((mat) => prepareMaterial(mat));
+      } else {
+        prepareMaterial(child.material);
+      }
+    } else {
+      child.material = new THREE.MeshStandardMaterial({
+        color: 0xe6eef5,
+        roughness: 0.72,
+        metalness: 0.04
+      });
+    }
+  });
+
+  centerAndScaleModel(centralModel);
+  orbitRoot.add(centralModel);
+}
+
+function prepareMaterial(material) {
+  material.side = THREE.DoubleSide;
+
+  if ("map" in material && material.map) {
+    material.map.colorSpace = THREE.SRGBColorSpace;
+    material.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    material.needsUpdate = true;
+  }
+}
+
+function centerAndScaleModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+
+  const targetHeight = 3.2;
+  const scale = size.y > 0 ? targetHeight / size.y : 1;
+  model.scale.setScalar(scale);
+
+  model.position.x -= center.x * scale;
+  model.position.y -= center.y * scale;
+  model.position.z -= center.z * scale;
+
+  model.position.y += CFG.modelY;
+  model.rotation.y = Math.PI * 0.08;
+}
+
 function createFallbackModel() {
   const fallback = new THREE.Group();
 
   const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.5, 1.4, 8, 16),
+    new THREE.CapsuleGeometry(0.5, 1.35, 8, 16),
     new THREE.MeshStandardMaterial({
       color: 0xdde7f1,
       roughness: 0.72,
       metalness: 0.04
     })
   );
-  body.position.y = -0.6;
+  body.position.y = -0.3;
   fallback.add(body);
 
   const head = new THREE.Mesh(
@@ -399,20 +430,8 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  head.position.y = 0.8;
+  head.position.y = 1.05;
   fallback.add(head);
-
-  const shoulder = new THREE.Mesh(
-    new THREE.TorusGeometry(0.56, 0.05, 12, 32),
-    new THREE.MeshStandardMaterial({
-      color: 0xa8cfee,
-      roughness: 0.55,
-      metalness: 0.04
-    })
-  );
-  shoulder.rotation.x = Math.PI / 2;
-  shoulder.position.y = 0.15;
-  fallback.add(shoulder);
 
   fallback.position.y = CFG.modelY;
   centralModel = fallback;
@@ -422,15 +441,11 @@ function createFallbackModel() {
 function attachEvents() {
   window.addEventListener("resize", onResize);
 
-  window.addEventListener(
-    "wheel",
-    (event) => {
-      if (!hasEntered) return;
-      targetProgress += event.deltaY * CFG.scrollSpeed;
-      targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-    },
-    { passive: true }
-  );
+  window.addEventListener("wheel", (event) => {
+    if (!hasEntered) return;
+    targetProgress += event.deltaY * CFG.scrollSpeed;
+    targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+  }, { passive: true });
 
   window.addEventListener("pointermove", (event) => {
     const bounds = renderer.domElement.getBoundingClientRect();
@@ -445,41 +460,23 @@ function attachEvents() {
     }
   });
 
-  window.addEventListener(
-    "touchstart",
-    (event) => {
-      if (!hasEntered) return;
-      dragActive = true;
-      lastTouchY = event.touches[0].clientY;
-    },
-    { passive: true }
-  );
+  window.addEventListener("touchstart", (event) => {
+    if (!hasEntered) return;
+    dragActive = true;
+    lastTouchY = event.touches[0].clientY;
+  }, { passive: true });
 
-  window.addEventListener(
-    "touchmove",
-    (event) => {
-      if (!hasEntered || !dragActive) return;
-      const currentY = event.touches[0].clientY;
-      const delta = lastTouchY - currentY;
-      lastTouchY = currentY;
-      targetProgress += delta * CFG.touchSpeed;
-      targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-    },
-    { passive: true }
-  );
+  window.addEventListener("touchmove", (event) => {
+    if (!hasEntered || !dragActive) return;
+    const currentY = event.touches[0].clientY;
+    const delta = lastTouchY - currentY;
+    lastTouchY = currentY;
+    targetProgress += delta * CFG.touchSpeed;
+    targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+  }, { passive: true });
 
   window.addEventListener("touchend", () => {
     dragActive = false;
-  });
-
-  window.addEventListener("keydown", (event) => {
-    if (!hasEntered) return;
-
-    if (event.key === "ArrowDown" || event.key === "PageDown") {
-      targetProgress = THREE.MathUtils.clamp(targetProgress + 0.04, 0, 1);
-    } else if (event.key === "ArrowUp" || event.key === "PageUp") {
-      targetProgress = THREE.MathUtils.clamp(targetProgress - 0.04, 0, 1);
-    }
   });
 
   enterButton?.addEventListener("click", async () => {
@@ -493,9 +490,7 @@ function attachEvents() {
     try {
       ambientAudio.volume = 0.55;
       ambientAudio.currentTime = 0;
-      if (soundEnabled) {
-        await ambientAudio.play();
-      }
+      if (soundEnabled) await ambientAudio.play();
     } catch (error) {
       console.warn("Audio did not start automatically.", error);
     }
@@ -530,24 +525,24 @@ function animate() {
   requestAnimationFrame(animate);
 
   const elapsed = clock.getElapsedTime();
-  currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.08);
+  currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.09);
 
   updateCamera(elapsed);
-  updateFolderTransforms(elapsed);
-  updateLabelPositions();
-  updatePointerIntersections();
-  updateAtmosphere(elapsed);
+  updateFolders(elapsed);
+  updateLabels();
+  updateIntersections();
+  updateFog(elapsed);
 
   renderer.render(scene, camera);
 }
 
 function updateCamera(elapsed) {
-  const orbitTheta = currentProgress * Math.PI * 2 * CFG.turns;
+  const orbitTheta = currentProgress * Math.PI * 2 * 1.15;
   const radius = CFG.cameraRadius;
 
   camera.position.set(
     Math.cos(orbitTheta) * radius,
-    CFG.lookY + Math.sin(elapsed * 0.5) * CFG.cameraHeightBob + CFG.cameraOrbitTilt,
+    CFG.lookY + Math.sin(elapsed * 0.55) * 0.05,
     Math.sin(orbitTheta) * radius
   );
 
@@ -555,77 +550,70 @@ function updateCamera(elapsed) {
 
   if (skySphere) {
     skySphere.rotation.y = -orbitTheta * 0.22;
-    skySphere.rotation.x = Math.sin(elapsed * 0.12) * 0.03;
+    skySphere.rotation.x = Math.sin(elapsed * 0.14) * 0.03;
   }
 
-  if (backPlate) {
-    backPlate.lookAt(camera.position);
-    backPlate.position.x = Math.cos(orbitTheta + Math.PI) * 14;
-    backPlate.position.z = Math.sin(orbitTheta + Math.PI) * 14;
-    backPlate.position.y = 1.6;
+  if (rearBackdrop) {
+    rearBackdrop.position.set(
+      Math.cos(orbitTheta + Math.PI) * 9,
+      1.8,
+      Math.sin(orbitTheta + Math.PI) * 9
+    );
+    rearBackdrop.lookAt(camera.position);
   }
 }
 
-function updateFolderTransforms(elapsed) {
-  const total = ORBIT_ITEMS.length;
-  const orbitTheta = currentProgress * Math.PI * 2 * CFG.turns;
+function updateFolders(elapsed) {
+  const total = folderObjects.length;
   const frontIndex = currentProgress * (total - 1);
-  const frontTheta = orbitTheta + CFG.helixFrontOffset;
-  const folderRadius = CFG.coverRadius;
+  const orbitTheta = currentProgress * Math.PI * 2 * 1.15;
 
   folderObjects.forEach((entry, index) => {
-    const relativeIndex = index - frontIndex;
-    const theta = frontTheta + relativeIndex * CFG.helixAngleStep;
-    const y = CFG.lookY + relativeIndex * CFG.helixRise + Math.sin(elapsed * 0.8 + index * 1.2) * 0.05;
+    const relative = index - frontIndex;
+
+    const theta = orbitTheta + relative * CFG.helixAngleStep;
+    const y = CFG.lookY + relative * CFG.helixRise + Math.sin(elapsed * 0.8 + index * 1.2) * 0.04;
 
     entry.group.position.set(
-      Math.cos(theta) * folderRadius,
+      Math.cos(theta) * CFG.folderRadius,
       y,
-      Math.sin(theta) * folderRadius
+      Math.sin(theta) * CFG.folderRadius
     );
 
     const outDir = working.vectorA
       .set(entry.group.position.x, 0, entry.group.position.z)
       .normalize();
 
-    const baseTarget = working.vectorB.copy(entry.group.position).addScaledVector(outDir, 2);
-
-    working.matrixA.lookAt(entry.group.position, baseTarget, UP);
+    const outwardTarget = working.vectorB.copy(entry.group.position).addScaledVector(outDir, 2);
+    working.matrixA.lookAt(entry.group.position, outwardTarget, UP);
     working.quatA.setFromRotationMatrix(working.matrixA);
 
-    working.eulerA.set(-0.22, 0.12, -0.09);
-    const tiltQuat = new THREE.Quaternion().setFromEuler(working.eulerA);
-    working.quatA.multiply(tiltQuat);
+    working.eulerA.set(-0.28, 0.08, -0.11);
+    working.quatA.multiply(new THREE.Quaternion().setFromEuler(working.eulerA));
 
     const cameraDistance = entry.group.position.distanceTo(camera.position);
-    const straighten = smoothstep(4.6, 2.1, cameraDistance);
+    const straighten = smoothstep(CFG.nearStraightenStart, CFG.nearStraightenEnd, cameraDistance);
 
     working.matrixA.lookAt(entry.group.position, camera.position, UP);
     working.quatB.setFromRotationMatrix(working.matrixA);
 
     entry.group.quaternion.slerpQuaternions(working.quatA, working.quatB, straighten);
 
-    const swayQuat = new THREE.Quaternion().setFromAxisAngle(
-      working.vectorD.set(0, 0, 1),
-      Math.sin(elapsed * 0.9 + index * 0.55) * 0.045 * (1 - straighten)
-    );
-    entry.group.quaternion.multiply(swayQuat);
-
-    const opacityByDistance = THREE.MathUtils.clamp(1 - (cameraDistance - 2.0) / 5.4, 0.08, 1);
-    const opacityByHeight = THREE.MathUtils.clamp(1 - Math.abs(relativeIndex) / (total * 0.62), 0.14, 1);
-    const opacity = Math.min(opacityByDistance, opacityByHeight);
+    const opacityDistance = THREE.MathUtils.clamp(1 - (cameraDistance - 1.5) / 4.4, 0.1, 1);
+    const opacityRange = THREE.MathUtils.clamp(1 - Math.abs(relative) / (total * 0.58), 0.14, 1);
+    const opacity = Math.min(opacityDistance, opacityRange);
 
     entry.base.material.opacity = opacity * 0.96;
     entry.cover.material.opacity = opacity;
-    entry.group.visible = opacity > 0.03;
+    entry.group.visible = opacity > 0.025;
 
     if (entry.labelNode) {
-      entry.labelNode.style.opacity = `${opacity * 0.98}`;
+      entry.labelNode.style.opacity = `${opacity}`;
     }
   });
 }
 
-function updateLabelPositions() {
+function updateLabels() {
   const width = window.innerWidth;
   const height = window.innerHeight;
 
@@ -649,17 +637,13 @@ function updateLabelPositions() {
   });
 }
 
-function updatePointerIntersections() {
+function updateIntersections() {
   if (!hasEntered) return;
 
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(
-    folderObjects.map((entry) => entry.cover),
-    false
-  );
+  const hits = raycaster.intersectObjects(folderObjects.map((entry) => entry.cover), false);
 
   hoveredItem = null;
-
   if (hits.length > 0) {
     const hit = hits[0];
     hoveredItem = folderObjects.find((entry) => entry.cover === hit.object) || null;
@@ -668,13 +652,13 @@ function updatePointerIntersections() {
   renderer.domElement.style.cursor = hoveredItem ? "pointer" : "grab";
 }
 
-function updateAtmosphere(elapsed) {
-  particles.forEach((sprite, index) => {
+function updateFog(elapsed) {
+  fogSprites.forEach((sprite, index) => {
     const data = sprite.userData;
 
-    const orbitAngle = data.baseAngle + elapsed * data.orbitSpeed + Math.sin(elapsed * 0.17 + data.phase) * 0.2;
+    const orbitAngle = data.baseAngle + elapsed * data.orbitSpeed + Math.sin(elapsed * 0.16 + data.phase) * 0.15;
     const radius = data.baseRadius + Math.sin(elapsed * data.driftSpeed + data.phase) * data.driftAmount;
-    const y = data.baseY + Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.24;
+    const y = data.baseY + Math.sin(elapsed * (data.driftSpeed * 1.8) + index) * 0.2;
 
     sprite.position.set(
       Math.cos(orbitAngle) * radius,
@@ -682,13 +666,13 @@ function updateAtmosphere(elapsed) {
       Math.sin(orbitAngle) * radius
     );
 
-    const pulse = 0.92 + Math.sin(elapsed * (data.driftSpeed * 2.0) + data.phase) * 0.08;
-    sprite.scale.set(data.scale * pulse, data.scale * 0.64 * pulse, 1);
+    const pulse = 0.94 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.08;
+    sprite.scale.set(data.scale * pulse, data.scale * 0.62 * pulse, 1);
     sprite.material.rotation += 0.00055 + index * 0.000008;
   });
 
   if (centralModel) {
-    centralModel.rotation.y += 0.0011;
+    centralModel.rotation.y += 0.001;
   }
 }
 
