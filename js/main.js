@@ -6,24 +6,29 @@ import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 const CFG = {
   ...SCENE_CONFIG,
 
-  cameraRadius: 4.2,
-  folderRadius: 2.35,
-  helixAngleStep: 0.72,
-  helixRise: 0.92,
-  scrollSpeed: 0.00042,
-  touchSpeed: 0.0018,
+  cameraFov: 50,
+  cameraRadius: 3.35,
+  cameraTurns: 1.1,
 
-  folderWidth: SCENE_CONFIG.folderWidth ?? 1.65,
-  folderHeight: SCENE_CONFIG.folderHeight ?? 1.04,
+  folderRadius: 1.58,
+  helixAngleStep: 1.02,
+  helixRise: 0.48,
 
-  modelY: 0.15,
-  lookY: 0.35,
+  folderWidth: SCENE_CONFIG.folderWidth ?? 1.55,
+  folderHeight: SCENE_CONFIG.folderHeight ?? 0.98,
 
-  nearStraightenStart: 3.4,
-  nearStraightenEnd: 1.65,
+  scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00042,
+  touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0018,
 
-  fogDensity: 0.04,
-  skyOpacity: 0.98
+  lookY: 0.62,
+  modelLift: 0.95,
+  modelTargetHeight: 3.45,
+
+  nearStraightenStart: 2.5,
+  nearStraightenEnd: 1.1,
+
+  fogDensity: 0.016,
+  fogSpriteOpacity: 0.08
 };
 
 const canvas = document.getElementById("webgl");
@@ -51,15 +56,23 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x071018, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.16;
+renderer.toneMappingExposure = 1.12;
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(0, 1.2, CFG.cameraRadius);
+const camera = new THREE.PerspectiveCamera(
+  CFG.cameraFov,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  220
+);
+camera.position.set(0, CFG.lookY, CFG.cameraRadius);
 
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2(-10, -10);
+
 const UP = new THREE.Vector3(0, 1, 0);
+const ORBIT_CENTER = new THREE.Vector3(0, CFG.lookY, 0);
+const CAMERA_FACE_FIX = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 
 let isReady = false;
 let hasEntered = false;
@@ -80,6 +93,7 @@ const working = {
   vectorD: new THREE.Vector3(),
   quatA: new THREE.Quaternion(),
   quatB: new THREE.Quaternion(),
+  quatC: new THREE.Quaternion(),
   matrixA: new THREE.Matrix4(),
   eulerA: new THREE.Euler()
 };
@@ -130,50 +144,60 @@ function initScene() {
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xdff3ff, 0x041018, 1.28);
+  const hemi = new THREE.HemisphereLight(0xe4f4ff, 0x061019, 1.32);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xf7fbff, 2.3);
-  key.position.set(5.5, 8, 6.5);
+  const key = new THREE.DirectionalLight(0xf8fbff, 2.45);
+  key.position.set(5.5, 7.5, 6.2);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x8fcfff, 1.8);
-  rim.position.set(-6.5, 3.8, -5.5);
+  const rim = new THREE.DirectionalLight(0x95d4ff, 2.0);
+  rim.position.set(-6.2, 4.2, -5.8);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0xa8ddff, 1.25, 16, 2);
-  fill.position.set(0, 1.8, 1.2);
+  const fill = new THREE.PointLight(0xa7dcff, 1.4, 14, 2);
+  fill.position.set(0, 1.8, 1.0);
   scene.add(fill);
 }
 
 function createBackground(loader) {
-  const skyTexture = loader.load(ASSETS.sky);
-  skyTexture.colorSpace = THREE.SRGBColorSpace;
-  skyTexture.wrapS = THREE.RepeatWrapping;
-  skyTexture.wrapT = THREE.ClampToEdgeWrapping;
-  skyTexture.repeat.set(1.15, 1);
+  const backgroundPath = ASSETS.background || ASSETS.sky;
+  const bgTexture = loader.load(backgroundPath);
 
-  const sphereGeo = new THREE.SphereGeometry(80, 56, 56);
+  bgTexture.colorSpace = THREE.SRGBColorSpace;
+  bgTexture.wrapS = THREE.RepeatWrapping;
+  bgTexture.wrapT = THREE.ClampToEdgeWrapping;
+  bgTexture.repeat.set(1.08, 1);
+
+  const sphereGeo = new THREE.SphereGeometry(85, 64, 64);
   const sphereMat = new THREE.MeshBasicMaterial({
-    map: skyTexture,
+    map: bgTexture,
     side: THREE.BackSide,
     transparent: true,
-    opacity: CFG.skyOpacity
+    opacity: 1,
+    fog: false,
+    toneMapped: false
   });
 
   skySphere = new THREE.Mesh(sphereGeo, sphereMat);
   scene.add(skySphere);
 
-  const plateGeo = new THREE.PlaneGeometry(36, 22, 1, 1);
-  const plateMat = new THREE.MeshBasicMaterial({
-    map: skyTexture,
+  const rearTex = loader.load(backgroundPath);
+  rearTex.colorSpace = THREE.SRGBColorSpace;
+
+  const planeGeo = new THREE.PlaneGeometry(42, 24, 1, 1);
+  const planeMat = new THREE.MeshBasicMaterial({
+    map: rearTex,
     transparent: true,
-    opacity: 0.4,
-    depthWrite: false
+    opacity: 0.65,
+    depthWrite: false,
+    depthTest: false,
+    fog: false,
+    toneMapped: false
   });
 
-  rearBackdrop = new THREE.Mesh(plateGeo, plateMat);
-  rearBackdrop.position.set(0, 1.8, -10);
+  rearBackdrop = new THREE.Mesh(planeGeo, planeMat);
+  rearBackdrop.position.set(0, 1.6, -10);
   scene.add(rearBackdrop);
 }
 
@@ -181,29 +205,30 @@ function createFog(loader) {
   const fogTexture = loader.load(ASSETS.fog);
   fogTexture.colorSpace = THREE.SRGBColorSpace;
 
-  for (let i = 0; i < 38; i += 1) {
+  for (let i = 0; i < 34; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
-      color: 0x9fd3ef,
+      color: 0x9fd5ee,
       transparent: true,
-      opacity: 0.05,
+      opacity: CFG.fogSpriteOpacity,
       depthWrite: false,
-      depthTest: false
+      depthTest: false,
+      fog: false
     });
 
     const sprite = new THREE.Sprite(material);
 
-    const baseAngle = (i / 38) * Math.PI * 2;
-    const baseRadius = 2.4 + Math.random() * 4.8;
-    const baseY = THREE.MathUtils.lerp(-1.5, 3.2, Math.random());
-    const scale = 3.2 + Math.random() * 3.8;
+    const baseAngle = (i / 34) * Math.PI * 2;
+    const baseRadius = 2.2 + Math.random() * 3.8;
+    const baseY = THREE.MathUtils.lerp(-1.2, 3.2, Math.random());
+    const scale = 2.8 + Math.random() * 3.6;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
       baseY,
       Math.sin(baseAngle) * baseRadius
     );
-    sprite.scale.set(scale, scale * (0.55 + Math.random() * 0.35), 1);
+    sprite.scale.set(scale, scale * (0.58 + Math.random() * 0.3), 1);
 
     sprite.userData = {
       baseAngle,
@@ -211,9 +236,9 @@ function createFog(loader) {
       baseY,
       scale,
       phase: Math.random() * Math.PI * 2,
-      orbitSpeed: 0.025 + Math.random() * 0.06,
-      driftSpeed: 0.09 + Math.random() * 0.16,
-      driftAmount: 0.18 + Math.random() * 0.55
+      orbitSpeed: 0.03 + Math.random() * 0.06,
+      driftSpeed: 0.08 + Math.random() * 0.16,
+      driftAmount: 0.15 + Math.random() * 0.5
     };
 
     scene.add(sprite);
@@ -223,16 +248,18 @@ function createFog(loader) {
 
 function createGroundGlow() {
   const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(2.75, 56),
+    new THREE.CircleGeometry(2.5, 64),
     new THREE.MeshBasicMaterial({
-      color: 0x5caee4,
+      color: 0x62b4e8,
       transparent: true,
-      opacity: 0.13,
-      depthWrite: false
+      opacity: 0.16,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false
     })
   );
   glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -1.9;
+  glow.position.y = -1.55;
   scene.add(glow);
 }
 
@@ -249,10 +276,11 @@ function createFolders(loader) {
       new THREE.BoxGeometry(folderWidth, folderHeight, 0.11),
       new THREE.MeshStandardMaterial({
         color: 0xdbe9f7,
-        roughness: 0.66,
+        roughness: 0.64,
         metalness: 0.06,
         transparent: true,
-        opacity: 1
+        opacity: 1,
+        side: THREE.DoubleSide
       })
     );
     group.add(base);
@@ -266,7 +294,9 @@ function createFolders(loader) {
       new THREE.MeshBasicMaterial({
         map: coverTexture,
         transparent: true,
-        opacity: 1
+        opacity: 1,
+        side: THREE.DoubleSide,
+        toneMapped: false
       })
     );
     cover.position.z = 0.061;
@@ -276,8 +306,9 @@ function createFolders(loader) {
       new THREE.BoxGeometry(folderWidth * 0.28, 0.16, 0.09),
       new THREE.MeshStandardMaterial({
         color: 0xf4f8fc,
-        roughness: 0.52,
-        metalness: 0.06
+        roughness: 0.5,
+        metalness: 0.06,
+        side: THREE.DoubleSide
       })
     );
     tab.position.set(-folderWidth * 0.18, folderHeight * 0.52, 0);
@@ -287,8 +318,9 @@ function createFolders(loader) {
       new THREE.BoxGeometry(0.08, folderHeight * 0.9, 0.12),
       new THREE.MeshStandardMaterial({
         color: 0xb6d5ef,
-        roughness: 0.48,
-        metalness: 0.05
+        roughness: 0.46,
+        metalness: 0.05,
+        side: THREE.DoubleSide
       })
     );
     spine.position.x = -folderWidth * 0.5 + 0.04;
@@ -315,6 +347,8 @@ function createFolders(loader) {
       group,
       base,
       cover,
+      tab,
+      spine,
       labelAnchor,
       labelNode
     });
@@ -322,7 +356,12 @@ function createFolders(loader) {
 }
 
 function loadCenterModel() {
-  const gltfPath = ASSETS.modelGLTF || ASSETS.modelGlb || ASSETS.modelGLB || null;
+  const gltfPath =
+    ASSETS.modelGLTF ||
+    ASSETS.modelGltf ||
+    ASSETS.modelGLB ||
+    ASSETS.modelGlb ||
+    null;
 
   if (gltfPath) {
     gltfLoader.load(
@@ -362,18 +401,19 @@ function setupLoadedModel(modelRoot) {
     child.castShadow = false;
     child.receiveShadow = false;
 
-    if (child.material) {
-      if (Array.isArray(child.material)) {
-        child.material.forEach((mat) => prepareMaterial(mat));
-      } else {
-        prepareMaterial(child.material);
-      }
-    } else {
+    if (!child.material) {
       child.material = new THREE.MeshStandardMaterial({
         color: 0xe6eef5,
         roughness: 0.72,
         metalness: 0.04
       });
+      return;
+    }
+
+    if (Array.isArray(child.material)) {
+      child.material.forEach(prepareMaterial);
+    } else {
+      prepareMaterial(child.material);
     }
   });
 
@@ -387,8 +427,13 @@ function prepareMaterial(material) {
   if ("map" in material && material.map) {
     material.map.colorSpace = THREE.SRGBColorSpace;
     material.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    material.needsUpdate = true;
   }
+
+  if ("emissiveMap" in material && material.emissiveMap) {
+    material.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+  }
+
+  material.needsUpdate = true;
 }
 
 function centerAndScaleModel(model) {
@@ -396,16 +441,15 @@ function centerAndScaleModel(model) {
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
 
-  const targetHeight = 3.2;
-  const scale = size.y > 0 ? targetHeight / size.y : 1;
+  const scale = size.y > 0 ? CFG.modelTargetHeight / size.y : 1;
   model.scale.setScalar(scale);
 
   model.position.x -= center.x * scale;
   model.position.y -= center.y * scale;
   model.position.z -= center.z * scale;
 
-  model.position.y += CFG.modelY;
-  model.rotation.y = Math.PI * 0.08;
+  model.position.y += CFG.modelLift;
+  model.rotation.y = Math.PI * 0.06;
 }
 
 function createFallbackModel() {
@@ -419,7 +463,7 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  body.position.y = -0.3;
+  body.position.y = 0.0;
   fallback.add(body);
 
   const head = new THREE.Mesh(
@@ -430,10 +474,10 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  head.position.y = 1.05;
+  head.position.y = 1.25;
   fallback.add(head);
 
-  fallback.position.y = CFG.modelY;
+  fallback.position.y = CFG.modelLift;
   centralModel = fallback;
   orbitRoot.add(centralModel);
 }
@@ -441,11 +485,15 @@ function createFallbackModel() {
 function attachEvents() {
   window.addEventListener("resize", onResize);
 
-  window.addEventListener("wheel", (event) => {
-    if (!hasEntered) return;
-    targetProgress += event.deltaY * CFG.scrollSpeed;
-    targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-  }, { passive: true });
+  window.addEventListener(
+    "wheel",
+    (event) => {
+      if (!hasEntered) return;
+      targetProgress += event.deltaY * CFG.scrollSpeed;
+      targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+    },
+    { passive: true }
+  );
 
   window.addEventListener("pointermove", (event) => {
     const bounds = renderer.domElement.getBoundingClientRect();
@@ -460,20 +508,28 @@ function attachEvents() {
     }
   });
 
-  window.addEventListener("touchstart", (event) => {
-    if (!hasEntered) return;
-    dragActive = true;
-    lastTouchY = event.touches[0].clientY;
-  }, { passive: true });
+  window.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!hasEntered) return;
+      dragActive = true;
+      lastTouchY = event.touches[0].clientY;
+    },
+    { passive: true }
+  );
 
-  window.addEventListener("touchmove", (event) => {
-    if (!hasEntered || !dragActive) return;
-    const currentY = event.touches[0].clientY;
-    const delta = lastTouchY - currentY;
-    lastTouchY = currentY;
-    targetProgress += delta * CFG.touchSpeed;
-    targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-  }, { passive: true });
+  window.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!hasEntered || !dragActive) return;
+      const currentY = event.touches[0].clientY;
+      const delta = lastTouchY - currentY;
+      lastTouchY = currentY;
+      targetProgress += delta * CFG.touchSpeed;
+      targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+    },
+    { passive: true }
+  );
 
   window.addEventListener("touchend", () => {
     dragActive = false;
@@ -490,7 +546,9 @@ function attachEvents() {
     try {
       ambientAudio.volume = 0.55;
       ambientAudio.currentTime = 0;
-      if (soundEnabled) await ambientAudio.play();
+      if (soundEnabled) {
+        await ambientAudio.play();
+      }
     } catch (error) {
       console.warn("Audio did not start automatically.", error);
     }
@@ -537,7 +595,7 @@ function animate() {
 }
 
 function updateCamera(elapsed) {
-  const orbitTheta = currentProgress * Math.PI * 2 * 1.15;
+  const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
   const radius = CFG.cameraRadius;
 
   camera.position.set(
@@ -549,16 +607,14 @@ function updateCamera(elapsed) {
   camera.lookAt(0, CFG.lookY, 0);
 
   if (skySphere) {
-    skySphere.rotation.y = -orbitTheta * 0.22;
-    skySphere.rotation.x = Math.sin(elapsed * 0.14) * 0.03;
+    skySphere.rotation.y = -orbitTheta * 0.18;
+    skySphere.rotation.x = Math.sin(elapsed * 0.14) * 0.025;
   }
 
   if (rearBackdrop) {
-    rearBackdrop.position.set(
-      Math.cos(orbitTheta + Math.PI) * 9,
-      1.8,
-      Math.sin(orbitTheta + Math.PI) * 9
-    );
+    working.vectorA.copy(camera.position).setY(0).normalize();
+    rearBackdrop.position.copy(working.vectorA).multiplyScalar(-9.5);
+    rearBackdrop.position.y = 1.6;
     rearBackdrop.lookAt(camera.position);
   }
 }
@@ -566,13 +622,16 @@ function updateCamera(elapsed) {
 function updateFolders(elapsed) {
   const total = folderObjects.length;
   const frontIndex = currentProgress * (total - 1);
-  const orbitTheta = currentProgress * Math.PI * 2 * 1.15;
+  const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
 
   folderObjects.forEach((entry, index) => {
     const relative = index - frontIndex;
 
     const theta = orbitTheta + relative * CFG.helixAngleStep;
-    const y = CFG.lookY + relative * CFG.helixRise + Math.sin(elapsed * 0.8 + index * 1.2) * 0.04;
+    const y =
+      CFG.lookY +
+      relative * CFG.helixRise +
+      Math.sin(elapsed * 0.9 + index * 1.2) * 0.035;
 
     entry.group.position.set(
       Math.cos(theta) * CFG.folderRadius,
@@ -580,32 +639,45 @@ function updateFolders(elapsed) {
       Math.sin(theta) * CFG.folderRadius
     );
 
-    const outDir = working.vectorA
-      .set(entry.group.position.x, 0, entry.group.position.z)
-      .normalize();
-
-    const outwardTarget = working.vectorB.copy(entry.group.position).addScaledVector(outDir, 2);
-    working.matrixA.lookAt(entry.group.position, outwardTarget, UP);
+    working.matrixA.lookAt(entry.group.position, ORBIT_CENTER, UP);
     working.quatA.setFromRotationMatrix(working.matrixA);
 
-    working.eulerA.set(-0.28, 0.08, -0.11);
-    working.quatA.multiply(new THREE.Quaternion().setFromEuler(working.eulerA));
+    working.eulerA.set(-0.24, 0.06, -0.12);
+    working.quatC.setFromEuler(working.eulerA);
+    working.quatA.multiply(working.quatC);
 
     const cameraDistance = entry.group.position.distanceTo(camera.position);
-    const straighten = smoothstep(CFG.nearStraightenStart, CFG.nearStraightenEnd, cameraDistance);
+    const straighten = smoothstep(
+      CFG.nearStraightenStart,
+      CFG.nearStraightenEnd,
+      cameraDistance
+    );
 
     working.matrixA.lookAt(entry.group.position, camera.position, UP);
     working.quatB.setFromRotationMatrix(working.matrixA);
+    working.quatB.multiply(CAMERA_FACE_FIX);
 
-    entry.group.quaternion.slerpQuaternions(working.quatA, working.quatB, straighten);
+    entry.group.quaternion.slerpQuaternions(
+      working.quatA,
+      working.quatB,
+      straighten
+    );
 
-    const opacityDistance = THREE.MathUtils.clamp(1 - (cameraDistance - 1.5) / 4.4, 0.1, 1);
-    const opacityRange = THREE.MathUtils.clamp(1 - Math.abs(relative) / (total * 0.58), 0.14, 1);
+    const opacityDistance = THREE.MathUtils.clamp(
+      1 - (cameraDistance - 0.9) / 2.7,
+      0.12,
+      1
+    );
+    const opacityRange = THREE.MathUtils.clamp(
+      1 - Math.abs(relative) / (total * 0.52),
+      0.16,
+      1
+    );
     const opacity = Math.min(opacityDistance, opacityRange);
 
     entry.base.material.opacity = opacity * 0.96;
     entry.cover.material.opacity = opacity;
-    entry.group.visible = opacity > 0.025;
+    entry.group.visible = opacity > 0.03;
 
     if (entry.labelNode) {
       entry.labelNode.style.opacity = `${opacity}`;
@@ -621,7 +693,10 @@ function updateLabels() {
     working.vectorC.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
     working.vectorC.project(camera);
 
-    const visible = working.vectorC.z < 1 && working.vectorC.z > -1 && entry.group.visible;
+    const visible =
+      working.vectorC.z < 1 &&
+      working.vectorC.z > -1 &&
+      entry.group.visible;
 
     if (!visible) {
       if (entry.labelNode) entry.labelNode.style.opacity = "0";
@@ -641,12 +716,17 @@ function updateIntersections() {
   if (!hasEntered) return;
 
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(folderObjects.map((entry) => entry.cover), false);
+  const hits = raycaster.intersectObjects(
+    folderObjects.map((entry) => entry.cover),
+    false
+  );
 
   hoveredItem = null;
+
   if (hits.length > 0) {
     const hit = hits[0];
-    hoveredItem = folderObjects.find((entry) => entry.cover === hit.object) || null;
+    hoveredItem =
+      folderObjects.find((entry) => entry.cover === hit.object) || null;
   }
 
   renderer.domElement.style.cursor = hoveredItem ? "pointer" : "grab";
@@ -656,9 +736,18 @@ function updateFog(elapsed) {
   fogSprites.forEach((sprite, index) => {
     const data = sprite.userData;
 
-    const orbitAngle = data.baseAngle + elapsed * data.orbitSpeed + Math.sin(elapsed * 0.16 + data.phase) * 0.15;
-    const radius = data.baseRadius + Math.sin(elapsed * data.driftSpeed + data.phase) * data.driftAmount;
-    const y = data.baseY + Math.sin(elapsed * (data.driftSpeed * 1.8) + index) * 0.2;
+    const orbitAngle =
+      data.baseAngle +
+      elapsed * data.orbitSpeed +
+      Math.sin(elapsed * 0.16 + data.phase) * 0.18;
+
+    const radius =
+      data.baseRadius +
+      Math.sin(elapsed * data.driftSpeed + data.phase) * data.driftAmount;
+
+    const y =
+      data.baseY +
+      Math.sin(elapsed * (data.driftSpeed * 1.75) + index) * 0.18;
 
     sprite.position.set(
       Math.cos(orbitAngle) * radius,
@@ -666,7 +755,9 @@ function updateFog(elapsed) {
       Math.sin(orbitAngle) * radius
     );
 
-    const pulse = 0.94 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.08;
+    const pulse =
+      0.94 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.08;
+
     sprite.scale.set(data.scale * pulse, data.scale * 0.62 * pulse, 1);
     sprite.material.rotation += 0.00055 + index * 0.000008;
   });
