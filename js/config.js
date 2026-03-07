@@ -58,18 +58,16 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
+  // use the file that actually exists in your repo now
   background: "./assets/backgrounds/sky_sphere.jpg",
   sky: "./assets/backgrounds/sky_sphere.jpg",
   fog: "./assets/textures/fog.png",
 
-  // only use GLB later if you actually upload one
-  // modelGLB: "./assets/models/me_on_hill.glb",
-
+  // do NOT point to a GLB until you actually upload one
   model: "./assets/models/me_on_hill.fbx"
 };
 
 export const SCENE_CONFIG = {
-  folderCount: ORBIT_ITEMS.length,
   scrollSpeed: 0.00042,
   touchSpeed: 0.0018
 };

@@ -1,5 +1,4 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
-import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
@@ -127,7 +126,6 @@ manager.onError = (url) => {
 };
 
 const textureLoader = new THREE.TextureLoader(manager);
-const gltfLoader = new GLTFLoader(manager);
 const fbxLoader = new FBXLoader(manager);
 
 initScene();
@@ -381,30 +379,6 @@ function createFlags(loader) {
 }
 
 function loadCenterModel() {
-  const glbPath =
-    ASSETS.modelGLB ||
-    ASSETS.modelGlb ||
-    ASSETS.modelGLTF ||
-    ASSETS.modelGltf ||
-    null;
-
-  if (glbPath) {
-    gltfLoader.load(
-      glbPath,
-      (gltf) => {
-        setupLoadedModel(gltf.scene);
-      },
-      undefined,
-      () => {
-        loadFBXFallback();
-      }
-    );
-  } else {
-    loadFBXFallback();
-  }
-}
-
-function loadFBXFallback() {
   fbxLoader.load(
     ASSETS.model,
     (fbx) => {
