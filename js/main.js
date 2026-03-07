@@ -1,6 +1,27 @@
-import * as THREE from "three";
-import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import * as THREE from "https://esm.sh/three@0.160.0";
+import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
+
+const CFG = {
+  ...SCENE_CONFIG,
+  cameraRadius: SCENE_CONFIG.cameraRadius ?? 6.9,
+  coverRadius: SCENE_CONFIG.coverRadius ?? 4.55,
+  turns: SCENE_CONFIG.turns ?? 1.15,
+  folderWidth: SCENE_CONFIG.folderWidth ?? 1.7,
+  folderHeight: SCENE_CONFIG.folderHeight ?? 1.08,
+  scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00038,
+  touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0016,
+
+  helixAngleStep: SCENE_CONFIG.helixAngleStep ?? 0.95,
+  helixRise: SCENE_CONFIG.helixRise ?? 1.2,
+  helixFrontOffset: SCENE_CONFIG.helixFrontOffset ?? 0.0,
+
+  modelY: SCENE_CONFIG.modelY ?? -0.45,
+  lookY: SCENE_CONFIG.lookY ?? 0.2,
+
+  cameraHeightBob: SCENE_CONFIG.cameraHeightBob ?? 0.06,
+  cameraOrbitTilt: SCENE_CONFIG.cameraOrbitTilt ?? 0.22
+};
 
 const canvas = document.getElementById("webgl");
 const loaderOverlay = document.getElementById("loader");
@@ -13,27 +34,30 @@ const muteButton = document.getElementById("muteButton");
 const ambientAudio = document.getElementById("ambientAudio");
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x071018, 0.055);
+scene.background = new THREE.Color(0x071018);
+scene.fog = new THREE.FogExp2(0x071018, 0.045);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,
-  alpha: true,
+  alpha: false,
   powerPreference: "high-performance"
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x071018, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.14;
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(0, 1.2, SCENE_CONFIG.cameraRadius);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 220);
+camera.position.set(0, 1.25, CFG.cameraRadius);
 
 const clock = new THREE.Clock();
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2(-10, -10);
+const UP = new THREE.Vector3(0, 1, 0);
 
 let isReady = false;
 let hasEntered = false;
@@ -59,24 +83,28 @@ const working = {
 };
 
 const folderObjects = [];
-const labelEntries = new Map();
-
-const lighting = setupLighting();
 const particles = [];
 let centralModel = null;
 let skySphere = null;
+let backPlate = null;
+
+setupLighting();
 
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_, loaded, total) => {
   const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-  progressFill.style.width = `${pct}%`;
-  progressText.textContent = `Loading assets… ${pct}%`;
+  if (progressFill) progressFill.style.width = `${pct}%`;
+  if (progressText) progressText.textContent = `Loading assets… ${pct}%`;
 };
 manager.onLoad = () => {
   isReady = true;
-  enterButton.disabled = false;
-  enterButton.textContent = "Enter site";
-  progressText.textContent = "Assets loaded. Enter the portfolio.";
+  if (enterButton) {
+    enterButton.disabled = false;
+    enterButton.textContent = "Enter site";
+  }
+  if (progressText) {
+    progressText.textContent = "Assets loaded. Enter the portfolio.";
+  }
 };
 manager.onError = (url) => {
   console.warn("Asset failed to load:", url);
@@ -91,6 +119,7 @@ animate();
 
 function initScene() {
   createSky(textureLoader);
+  createBackPlate(textureLoader);
   createAtmosphere(textureLoader);
   createGroundGlow();
   createFolders(textureLoader);
@@ -98,22 +127,20 @@ function initScene() {
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xcfefff, 0x051019, 1.15);
+  const hemi = new THREE.HemisphereLight(0xdaf3ff, 0x041018, 1.25);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xf3f9ff, 2.2);
-  key.position.set(5, 8, 6);
+  const key = new THREE.DirectionalLight(0xf6fbff, 2.3);
+  key.position.set(6, 8, 6);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x8dc8ff, 1.5);
-  rim.position.set(-6, 3, -5);
+  const rim = new THREE.DirectionalLight(0x8ecfff, 1.8);
+  rim.position.set(-7, 4, -6);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0x9fd8ff, 1.25, 18, 2);
-  fill.position.set(0, 1.4, 0);
+  const fill = new THREE.PointLight(0x9fdcff, 1.35, 22, 2);
+  fill.position.set(0, 1.7, 1.4);
   scene.add(fill);
-
-  return { hemi, key, rim, fill };
 }
 
 function createSky(loader) {
@@ -121,66 +148,99 @@ function createSky(loader) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.repeat.set(1.2, 1);
 
-  const geometry = new THREE.SphereGeometry(80, 48, 48);
+  const geometry = new THREE.SphereGeometry(92, 56, 56);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     side: THREE.BackSide,
     transparent: true,
-    opacity: 0.82
+    opacity: 0.92
   });
 
   skySphere = new THREE.Mesh(geometry, material);
   scene.add(skySphere);
 }
 
+function createBackPlate(loader) {
+  const texture = loader.load(ASSETS.sky);
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  const geometry = new THREE.PlaneGeometry(50, 28, 1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false
+  });
+
+  backPlate = new THREE.Mesh(geometry, material);
+  backPlate.position.set(0, 1.5, -15);
+  scene.add(backPlate);
+}
+
 function createAtmosphere(loader) {
   const fogTexture = loader.load(ASSETS.fog);
   fogTexture.colorSpace = THREE.SRGBColorSpace;
 
-  for (let i = 0; i < 26; i += 1) {
+  for (let i = 0; i < 34; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
-      color: 0x8bbfe5,
+      color: 0xa5d7f1,
       transparent: true,
-      opacity: 0.065,
+      opacity: 0.05,
       depthWrite: false,
       depthTest: false
     });
 
     const sprite = new THREE.Sprite(material);
-    const angle = (i / 26) * Math.PI * 2.0;
-    const radius = 7.5 + Math.sin(i * 2.1) * 1.25;
+
+    const baseAngle = (i / 34) * Math.PI * 2;
+    const baseRadius = 4.5 + Math.random() * 4.6;
+    const baseY = THREE.MathUtils.lerp(-2.3, 3.6, Math.random());
+    const scale = 3.8 + Math.random() * 4.5;
+
     sprite.position.set(
-      Math.cos(angle) * radius,
-      THREE.MathUtils.lerp(-2.6, 3.2, i / 25),
-      Math.sin(angle) * radius
+      Math.cos(baseAngle) * baseRadius,
+      baseY,
+      Math.sin(baseAngle) * baseRadius
     );
-    const scale = 5.6 + (i % 4) * 0.65;
-    sprite.scale.set(scale, scale * 0.72, 1);
+    sprite.scale.set(scale, scale * (0.52 + Math.random() * 0.42), 1);
+
+    sprite.userData = {
+      baseAngle,
+      baseRadius,
+      baseY,
+      scale,
+      driftSpeed: 0.08 + Math.random() * 0.18,
+      orbitSpeed: 0.03 + Math.random() * 0.06,
+      driftAmount: 0.25 + Math.random() * 0.7,
+      phase: Math.random() * Math.PI * 2
+    };
+
     scene.add(sprite);
     particles.push(sprite);
   }
 }
 
 function createGroundGlow() {
-  const geometry = new THREE.CircleGeometry(3.1, 48);
+  const geometry = new THREE.CircleGeometry(3.5, 64);
   const material = new THREE.MeshBasicMaterial({
-    color: 0x4aa1d9,
+    color: 0x58aadf,
     transparent: true,
-    opacity: 0.1,
+    opacity: 0.14,
     depthWrite: false
   });
 
   const glow = new THREE.Mesh(geometry, material);
   glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -2.55;
+  glow.position.y = -2.2;
   scene.add(glow);
 }
 
 function createFolders(loader) {
-  const folderWidth = SCENE_CONFIG.folderWidth;
-  const folderHeight = SCENE_CONFIG.folderHeight;
+  const folderWidth = CFG.folderWidth;
+  const folderHeight = CFG.folderHeight;
 
   ORBIT_ITEMS.forEach((item, index) => {
     const group = new THREE.Group();
@@ -201,7 +261,7 @@ function createFolders(loader) {
 
     const coverTexture = loader.load(item.cover);
     coverTexture.colorSpace = THREE.SRGBColorSpace;
-    coverTexture.anisotropy = 8;
+    coverTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
     const cover = new THREE.Mesh(
       new THREE.PlaneGeometry(folderWidth * 0.92, folderHeight * 0.88),
@@ -249,7 +309,7 @@ function createFolders(loader) {
       </div>
     `;
     labelNode.style.opacity = "0";
-    labelsRoot.appendChild(labelNode);
+    labelsRoot?.appendChild(labelNode);
 
     folderObjects.push({
       index,
@@ -260,11 +320,8 @@ function createFolders(loader) {
       tab,
       spine,
       labelAnchor,
-      labelNode,
-      phaseOffset: index / ORBIT_ITEMS.length
+      labelNode
     });
-
-    labelEntries.set(item.id, labelNode);
   });
 }
 
@@ -273,10 +330,12 @@ function loadCenterModel() {
     ASSETS.model,
     (fbx) => {
       centralModel = fbx;
+
       centralModel.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = false;
           child.receiveShadow = false;
+
           if (!child.material) {
             child.material = new THREE.MeshStandardMaterial({
               color: 0xe6eef5,
@@ -296,12 +355,19 @@ function loadCenterModel() {
       const box = new THREE.Box3().setFromObject(centralModel);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
-      const targetHeight = 3.55;
+
+      const targetHeight = 3.6;
       const scale = size.y > 0 ? targetHeight / size.y : 1;
+
       centralModel.scale.setScalar(scale);
-      centralModel.position.sub(center.multiplyScalar(scale));
-      centralModel.position.y = -2.35;
+
+      centralModel.position.x -= center.x * scale;
+      centralModel.position.y -= center.y * scale;
+      centralModel.position.z -= center.z * scale;
+
+      centralModel.position.y += CFG.modelY;
       centralModel.rotation.y = Math.PI * 0.08;
+
       orbitRoot.add(centralModel);
     },
     undefined,
@@ -322,7 +388,7 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  body.position.y = -1.35;
+  body.position.y = -0.6;
   fallback.add(body);
 
   const head = new THREE.Mesh(
@@ -333,7 +399,7 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  head.position.y = 0.05;
+  head.position.y = 0.8;
   fallback.add(head);
 
   const shoulder = new THREE.Mesh(
@@ -345,9 +411,10 @@ function createFallbackModel() {
     })
   );
   shoulder.rotation.x = Math.PI / 2;
-  shoulder.position.y = -0.55;
+  shoulder.position.y = 0.15;
   fallback.add(shoulder);
 
+  fallback.position.y = CFG.modelY;
   centralModel = fallback;
   orbitRoot.add(centralModel);
 }
@@ -359,7 +426,7 @@ function attachEvents() {
     "wheel",
     (event) => {
       if (!hasEntered) return;
-      targetProgress += event.deltaY * SCENE_CONFIG.scrollSpeed;
+      targetProgress += event.deltaY * CFG.scrollSpeed;
       targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
     },
     { passive: true }
@@ -378,20 +445,28 @@ function attachEvents() {
     }
   });
 
-  window.addEventListener("touchstart", (event) => {
-    if (!hasEntered) return;
-    dragActive = true;
-    lastTouchY = event.touches[0].clientY;
-  }, { passive: true });
+  window.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!hasEntered) return;
+      dragActive = true;
+      lastTouchY = event.touches[0].clientY;
+    },
+    { passive: true }
+  );
 
-  window.addEventListener("touchmove", (event) => {
-    if (!hasEntered || !dragActive) return;
-    const currentY = event.touches[0].clientY;
-    const delta = lastTouchY - currentY;
-    lastTouchY = currentY;
-    targetProgress += delta * SCENE_CONFIG.touchSpeed;
-    targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-  }, { passive: true });
+  window.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!hasEntered || !dragActive) return;
+      const currentY = event.touches[0].clientY;
+      const delta = lastTouchY - currentY;
+      lastTouchY = currentY;
+      targetProgress += delta * CFG.touchSpeed;
+      targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+    },
+    { passive: true }
+  );
 
   window.addEventListener("touchend", () => {
     dragActive = false;
@@ -399,20 +474,21 @@ function attachEvents() {
 
   window.addEventListener("keydown", (event) => {
     if (!hasEntered) return;
+
     if (event.key === "ArrowDown" || event.key === "PageDown") {
-      targetProgress = THREE.MathUtils.clamp(targetProgress + 0.035, 0, 1);
+      targetProgress = THREE.MathUtils.clamp(targetProgress + 0.04, 0, 1);
     } else if (event.key === "ArrowUp" || event.key === "PageUp") {
-      targetProgress = THREE.MathUtils.clamp(targetProgress - 0.035, 0, 1);
+      targetProgress = THREE.MathUtils.clamp(targetProgress - 0.04, 0, 1);
     }
   });
 
-  enterButton.addEventListener("click", async () => {
+  enterButton?.addEventListener("click", async () => {
     if (!isReady) return;
 
     hasEntered = true;
     document.body.classList.add("is-entered");
-    loaderOverlay.setAttribute("aria-hidden", "true");
-    focusHint.style.opacity = "1";
+    loaderOverlay?.setAttribute("aria-hidden", "true");
+    if (focusHint) focusHint.style.opacity = "1";
 
     try {
       ambientAudio.volume = 0.55;
@@ -425,7 +501,7 @@ function attachEvents() {
     }
   });
 
-  muteButton.addEventListener("click", async () => {
+  muteButton?.addEventListener("click", async () => {
     soundEnabled = !soundEnabled;
     muteButton.textContent = soundEnabled ? "Sound On" : "Sound Off";
 
@@ -454,7 +530,7 @@ function animate() {
   requestAnimationFrame(animate);
 
   const elapsed = clock.getElapsedTime();
-  currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.065);
+  currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.08);
 
   updateCamera(elapsed);
   updateFolderTransforms(elapsed);
@@ -466,71 +542,86 @@ function animate() {
 }
 
 function updateCamera(elapsed) {
-  const t = currentProgress;
-  const theta = t * Math.PI * 2 * SCENE_CONFIG.turns;
-  const radius = SCENE_CONFIG.cameraRadius;
-  const y = THREE.MathUtils.lerp(SCENE_CONFIG.cameraHeightTop, SCENE_CONFIG.cameraHeightBottom, t);
+  const orbitTheta = currentProgress * Math.PI * 2 * CFG.turns;
+  const radius = CFG.cameraRadius;
 
   camera.position.set(
-    Math.cos(theta) * radius,
-    y + Math.sin(elapsed * 0.4) * 0.05,
-    Math.sin(theta) * radius
+    Math.cos(orbitTheta) * radius,
+    CFG.lookY + Math.sin(elapsed * 0.5) * CFG.cameraHeightBob + CFG.cameraOrbitTilt,
+    Math.sin(orbitTheta) * radius
   );
 
-  const lookY = THREE.MathUtils.lerp(0.4, -0.5, t) + Math.sin(elapsed * 0.7) * 0.02;
-  camera.lookAt(0, lookY, 0);
+  camera.lookAt(0, CFG.lookY, 0);
 
   if (skySphere) {
-    skySphere.rotation.y = -theta * 0.28;
-    skySphere.rotation.x = Math.sin(theta * 0.55) * 0.04;
+    skySphere.rotation.y = -orbitTheta * 0.22;
+    skySphere.rotation.x = Math.sin(elapsed * 0.12) * 0.03;
+  }
+
+  if (backPlate) {
+    backPlate.lookAt(camera.position);
+    backPlate.position.x = Math.cos(orbitTheta + Math.PI) * 14;
+    backPlate.position.z = Math.sin(orbitTheta + Math.PI) * 14;
+    backPlate.position.y = 1.6;
   }
 }
 
 function updateFolderTransforms(elapsed) {
   const total = ORBIT_ITEMS.length;
-  const turns = SCENE_CONFIG.turns;
-  const folderRadius = SCENE_CONFIG.coverRadius;
+  const orbitTheta = currentProgress * Math.PI * 2 * CFG.turns;
+  const frontIndex = currentProgress * (total - 1);
+  const frontTheta = orbitTheta + CFG.helixFrontOffset;
+  const folderRadius = CFG.coverRadius;
 
   folderObjects.forEach((entry, index) => {
-    const normalized = total === 1 ? 0 : index / (total - 1);
-    const theta = normalized * Math.PI * 2 * turns + Math.PI * 0.18;
-    const y = THREE.MathUtils.lerp(SCENE_CONFIG.coverHeightTop, SCENE_CONFIG.coverHeightBottom, normalized);
-    const wobble = Math.sin(elapsed * 0.6 + index * 1.3) * 0.03;
+    const relativeIndex = index - frontIndex;
+    const theta = frontTheta + relativeIndex * CFG.helixAngleStep;
+    const y = CFG.lookY + relativeIndex * CFG.helixRise + Math.sin(elapsed * 0.8 + index * 1.2) * 0.05;
 
     entry.group.position.set(
       Math.cos(theta) * folderRadius,
-      y + wobble,
+      y,
       Math.sin(theta) * folderRadius
     );
 
-    const outDir = working.vectorA.set(entry.group.position.x, 0, entry.group.position.z).normalize();
-    const baseTarget = working.vectorB.copy(entry.group.position).add(outDir.clone().multiplyScalar(2));
-    working.matrixA.lookAt(entry.group.position, baseTarget, new THREE.Vector3(0, 1, 0));
+    const outDir = working.vectorA
+      .set(entry.group.position.x, 0, entry.group.position.z)
+      .normalize();
+
+    const baseTarget = working.vectorB.copy(entry.group.position).addScaledVector(outDir, 2);
+
+    working.matrixA.lookAt(entry.group.position, baseTarget, UP);
     working.quatA.setFromRotationMatrix(working.matrixA);
 
-    working.eulerA.set(-0.18, 0.16, -0.08);
+    working.eulerA.set(-0.22, 0.12, -0.09);
     const tiltQuat = new THREE.Quaternion().setFromEuler(working.eulerA);
     working.quatA.multiply(tiltQuat);
 
     const cameraDistance = entry.group.position.distanceTo(camera.position);
-    const straighten = smoothstep(5.8, 2.7, cameraDistance);
+    const straighten = smoothstep(4.6, 2.1, cameraDistance);
 
-    working.matrixA.lookAt(entry.group.position, camera.position, new THREE.Vector3(0, 1, 0));
+    working.matrixA.lookAt(entry.group.position, camera.position, UP);
     working.quatB.setFromRotationMatrix(working.matrixA);
 
     entry.group.quaternion.slerpQuaternions(working.quatA, working.quatB, straighten);
+
     const swayQuat = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 0, 1),
-      Math.sin(elapsed * 0.85 + index * 0.5) * 0.06 * (1 - straighten)
+      working.vectorD.set(0, 0, 1),
+      Math.sin(elapsed * 0.9 + index * 0.55) * 0.045 * (1 - straighten)
     );
     entry.group.quaternion.multiply(swayQuat);
 
-    const opacity = THREE.MathUtils.clamp(1 - (cameraDistance - 2.2) / 5.8, 0.12, 1);
-    entry.base.material.opacity = opacity * 0.95;
-    entry.cover.material.opacity = opacity;
-    entry.group.visible = opacity > 0.04;
+    const opacityByDistance = THREE.MathUtils.clamp(1 - (cameraDistance - 2.0) / 5.4, 0.08, 1);
+    const opacityByHeight = THREE.MathUtils.clamp(1 - Math.abs(relativeIndex) / (total * 0.62), 0.14, 1);
+    const opacity = Math.min(opacityByDistance, opacityByHeight);
 
-    entry.labelNode.style.opacity = `${opacity * 0.98}`;
+    entry.base.material.opacity = opacity * 0.96;
+    entry.cover.material.opacity = opacity;
+    entry.group.visible = opacity > 0.03;
+
+    if (entry.labelNode) {
+      entry.labelNode.style.opacity = `${opacity * 0.98}`;
+    }
   });
 }
 
@@ -542,20 +633,19 @@ function updateLabelPositions() {
     working.vectorC.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
     working.vectorC.project(camera);
 
-    const visible =
-      working.vectorC.z < 1 &&
-      working.vectorC.z > -1 &&
-      entry.group.visible;
+    const visible = working.vectorC.z < 1 && working.vectorC.z > -1 && entry.group.visible;
 
     if (!visible) {
-      entry.labelNode.style.opacity = "0";
+      if (entry.labelNode) entry.labelNode.style.opacity = "0";
       return;
     }
 
     const x = (working.vectorC.x * 0.5 + 0.5) * width;
     const y = (-working.vectorC.y * 0.5 + 0.5) * height;
 
-    entry.labelNode.style.transform = `translate(calc(${x}px - 100%), calc(${y}px - 50%))`;
+    if (entry.labelNode) {
+      entry.labelNode.style.transform = `translate(calc(${x}px - 100%), calc(${y}px - 50%))`;
+    }
   });
 }
 
@@ -563,7 +653,11 @@ function updatePointerIntersections() {
   if (!hasEntered) return;
 
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(folderObjects.map((entry) => entry.cover), false);
+  const hits = raycaster.intersectObjects(
+    folderObjects.map((entry) => entry.cover),
+    false
+  );
+
   hoveredItem = null;
 
   if (hits.length > 0) {
@@ -576,12 +670,25 @@ function updatePointerIntersections() {
 
 function updateAtmosphere(elapsed) {
   particles.forEach((sprite, index) => {
-    sprite.position.y += Math.sin(elapsed * 0.16 + index * 0.7) * 0.0012;
-    sprite.material.rotation += 0.0007 + index * 0.00001;
+    const data = sprite.userData;
+
+    const orbitAngle = data.baseAngle + elapsed * data.orbitSpeed + Math.sin(elapsed * 0.17 + data.phase) * 0.2;
+    const radius = data.baseRadius + Math.sin(elapsed * data.driftSpeed + data.phase) * data.driftAmount;
+    const y = data.baseY + Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.24;
+
+    sprite.position.set(
+      Math.cos(orbitAngle) * radius,
+      y,
+      Math.sin(orbitAngle) * radius
+    );
+
+    const pulse = 0.92 + Math.sin(elapsed * (data.driftSpeed * 2.0) + data.phase) * 0.08;
+    sprite.scale.set(data.scale * pulse, data.scale * 0.64 * pulse, 1);
+    sprite.material.rotation += 0.00055 + index * 0.000008;
   });
 
   if (centralModel) {
-    centralModel.rotation.y += 0.0012;
+    centralModel.rotation.y += 0.0011;
   }
 }
 
