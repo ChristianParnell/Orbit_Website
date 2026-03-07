@@ -1,6 +1,6 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-//import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
+import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
 const CFG = {
@@ -27,16 +27,16 @@ const CFG = {
   nearStraightenStart: 3.6,
   nearStraightenEnd: 1.3,
 
-  farFadeStart: 4.5,
-  farFadeEnd: 6.8,
+  farFadeStart: 5.8,
+  farFadeEnd: 9.2,
 
   titleScaleNear: 1.0,
-  titleScaleFar: 0.54,
-  titleFadeStart: 3.0,
-  titleFadeEnd: 6.3,
+  titleScaleFar: 0.42,
+  titleFadeStart: 3.4,
+  titleFadeEnd: 7.8,
 
   fogDensity: 0.012,
-  fogSpriteOpacity: 0.11
+  fogSpriteOpacity: 0.12
 };
 
 const canvas = document.getElementById("webgl");
@@ -64,7 +64,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x0a1118, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.12;
 renderer.sortObjects = true;
 
 const camera = new THREE.PerspectiveCamera(
@@ -137,6 +137,7 @@ manager.onError = (url) => {
 const textureLoader = new THREE.TextureLoader(manager);
 const gltfLoader = new GLTFLoader(manager);
 const fbxLoader = new FBXLoader(manager);
+gltfLoader.setResourcePath("./assets/models/");
 fbxLoader.setResourcePath("./assets/models/");
 
 initScene();
@@ -375,27 +376,63 @@ function createFlags(loader) {
 }
 
 function loadCenterModel() {
+  const maybeGltf = typeof ASSETS.modelGLTF === "string" ? ASSETS.modelGLTF.trim() : "";
   const maybeGlb = typeof ASSETS.modelGLB === "string" ? ASSETS.modelGLB.trim() : "";
+  const maybeFbx = typeof ASSETS.model === "string" ? ASSETS.model.trim() : "";
 
-  if (maybeGlb) {
+  if (maybeGltf) {
     gltfLoader.load(
-      maybeGlb,
+      maybeGltf,
       (gltf) => {
         setupLoadedModel(gltf.scene);
       },
       undefined,
       () => {
-        loadFBXFallback();
+        if (maybeGlb) {
+          loadGlbFallback(maybeGlb, maybeFbx);
+        } else if (maybeFbx) {
+          loadFBXFallback(maybeFbx);
+        } else {
+          createFallbackModel();
+        }
       }
     );
-  } else {
-    loadFBXFallback();
+    return;
   }
+
+  if (maybeGlb) {
+    loadGlbFallback(maybeGlb, maybeFbx);
+    return;
+  }
+
+  if (maybeFbx) {
+    loadFBXFallback(maybeFbx);
+    return;
+  }
+
+  createFallbackModel();
 }
 
-function loadFBXFallback() {
+function loadGlbFallback(glbPath, fbxPath) {
+  gltfLoader.load(
+    glbPath,
+    (gltf) => {
+      setupLoadedModel(gltf.scene);
+    },
+    undefined,
+    () => {
+      if (fbxPath) {
+        loadFBXFallback(fbxPath);
+      } else {
+        createFallbackModel();
+      }
+    }
+  );
+}
+
+function loadFBXFallback(fbxPath) {
   fbxLoader.load(
-    ASSETS.model,
+    fbxPath,
     (fbx) => {
       setupLoadedModel(fbx);
     },
@@ -681,7 +718,9 @@ function updateFlags() {
       0,
       1
     );
-    const finalOpacity = THREE.MathUtils.clamp(Math.min(farVisibility, indexVisibility) * 1.35, 0, 1);
+
+    const visibility = Math.min(farVisibility, indexVisibility);
+    const finalOpacity = THREE.MathUtils.clamp(Math.pow(visibility, 0.65), 0, 1);
 
     entry.revealTarget = hoveredEntry === entry ? 1 : 0;
     entry.revealValue = THREE.MathUtils.lerp(

@@ -58,16 +58,16 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  // use the file that actually exists in the repo
   sky: "./assets/backgrounds/sky_sphere.jpg",
   background: "./assets/backgrounds/sky_sphere.jpg",
   fog: "./assets/textures/fog.png",
 
-  // if you export a real GLB later, put its path here, otherwise leave blank
-  modelGLB: "",
+  // Blender glTF 2.0 export:
+  // if your file is actually .glb, change only this one line
+  modelGLTF: "./assets/models/me_on_hill.gltf",
 
-  // current fallback model that exists in the repo
-  model: "./assets/models/me_on_hill.fbx"
+  // optional FBX fallback; leave blank if you no longer use FBX
+  model: ""
 };
 
 export const SCENE_CONFIG = {
