@@ -1,0 +1,9 @@
+Replace the FIRST import line(s) in your root /main.js with these exact lines:
+
+import * as THREE from "https://esm.sh/three@0.160.0";
+import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+
+Do NOT leave any import from "three" or "three/addons/..." in the deployed main.js for a plain GitHub Pages site unless you also have an import map in index.html before the module script.
+
+Also make sure index.html loads the script as a module, e.g.:
+<script type="module" src="./main.js?v=7"></script>
