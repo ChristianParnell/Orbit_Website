@@ -7,25 +7,25 @@ const CFG = {
   ...SCENE_CONFIG,
 
   cameraFov: 47,
-  cameraRadius: 4.1,
+  cameraRadius: 4.15,
   cameraTurns: 1.08,
 
-  flagRadius: 2.05,
-  helixAngleStep: 1.34,
-  helixRise: 0.62,
+  flagRadius: 2.12,
+  helixAngleStep: 1.52,
+  helixRise: 0.72,
 
-  flagWidth: 0.82,
-  flagHeight: 0.50,
+  flagWidth: 0.78,
+  flagHeight: 0.46,
 
   scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00042,
   touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0018,
 
-  lookY: 0.08,
-  modelLift: -0.28,
+  lookY: 0.02,
+  modelLift: -0.52,
   modelTargetHeight: 2.9,
 
-  nearStraightenStart: 2.45,
-  nearStraightenEnd: 1.2,
+  nearStraightenStart: 2.55,
+  nearStraightenEnd: 1.22,
 
   fogDensity: 0.012,
   fogSpriteOpacity: 0.06
@@ -146,7 +146,7 @@ function setupLighting() {
   const hemi = new THREE.HemisphereLight(0xe8f5ff, 0x061018, 1.18);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 1.9);
+  const key = new THREE.DirectionalLight(0xffffff, 1.95);
   key.position.set(5.2, 7.0, 6.0);
   scene.add(key);
 
@@ -154,7 +154,7 @@ function setupLighting() {
   rim.position.set(-5.8, 4.0, -5.2);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0x98d8ff, 0.9, 12, 2);
+  const fill = new THREE.PointLight(0x98d8ff, 0.95, 12, 2);
   fill.position.set(0, 1.4, 1.0);
   scene.add(fill);
 }
@@ -165,29 +165,32 @@ function createBackground(loader) {
   bgTexture.colorSpace = THREE.SRGBColorSpace;
   bgTexture.wrapS = THREE.RepeatWrapping;
   bgTexture.wrapT = THREE.ClampToEdgeWrapping;
-  bgTexture.repeat.set(1.06, 1);
+  bgTexture.repeat.set(1.05, 1);
 
-  const sphereGeo = new THREE.SphereGeometry(90, 56, 56);
+  const sphereGeo = new THREE.SphereGeometry(120, 56, 56);
   const sphereMat = new THREE.MeshBasicMaterial({
     map: bgTexture,
     side: THREE.BackSide,
     transparent: true,
     opacity: 1,
     fog: false,
-    toneMapped: false
+    toneMapped: false,
+    depthWrite: false
   });
 
   skySphere = new THREE.Mesh(sphereGeo, sphereMat);
+  skySphere.renderOrder = -20;
   scene.add(skySphere);
 
   const rearTex = loader.load(backgroundPath);
   rearTex.colorSpace = THREE.SRGBColorSpace;
 
-  const rearGeo = new THREE.PlaneGeometry(34, 19, 1, 1);
+  const rearGeo = new THREE.PlaneGeometry(42, 24, 1, 1);
   const rearMat = new THREE.MeshBasicMaterial({
     map: rearTex,
+    side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.86,
     depthWrite: false,
     depthTest: false,
     fog: false,
@@ -195,7 +198,7 @@ function createBackground(loader) {
   });
 
   rearBackdrop = new THREE.Mesh(rearGeo, rearMat);
-  rearBackdrop.position.set(0, 1.0, -10);
+  rearBackdrop.renderOrder = -10;
   scene.add(rearBackdrop);
 }
 
@@ -267,62 +270,51 @@ function createFlagMaterial(texture) {
     side: THREE.DoubleSide,
     uniforms: {
       uMap: { value: texture },
-      uTime: { value: 0 },
-      uHover: { value: 0 },
-      uOpacity: { value: 1 }
+      uReveal: { value: 0.0 },
+      uOpacity: { value: 1.0 }
     },
     vertexShader: `
-      uniform float uTime;
-      uniform float uHover;
-
+      uniform float uReveal;
       varying vec2 vUv;
-      varying float vRipple;
 
       void main() {
         vUv = uv;
 
         vec3 pos = position;
 
-        float idleWave =
-          sin(uv.y * 7.0 + uTime * 1.4 + uv.x * 3.0) * 0.004 +
-          sin(uv.y * 13.0 + uTime * 0.9) * 0.003;
+        float front = mix(-0.20, 1.20, uReveal);
+        float band = exp(-pow((uv.x - front) * 16.0, 2.0));
 
-        float hoverWave =
-          sin(uv.y * 18.0 + uTime * 8.0 + uv.x * 9.0) * 0.028 * uHover +
-          sin(uv.y * 11.0 + uTime * 5.0) * 0.012 * uHover;
+        float ripple =
+          sin(uv.y * 22.0 + front * 20.0) * 0.035 * band +
+          sin(uv.y * 11.0 + front * 13.0) * 0.015 * band;
 
-        pos.z += idleWave + hoverWave;
-        pos.x += sin(uv.y * 8.0 + uTime * 4.0) * 0.008 * uHover;
-
-        vRipple = hoverWave;
+        pos.z += ripple;
+        pos.x += band * 0.018 * sin(uv.y * 10.0 + front * 18.0);
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
     `,
     fragmentShader: `
       uniform sampler2D uMap;
-      uniform float uTime;
-      uniform float uHover;
+      uniform float uReveal;
       uniform float uOpacity;
 
       varying vec2 vUv;
-      varying float vRipple;
 
       void main() {
         vec4 tex = texture2D(uMap, vUv);
-
         if (tex.a < 0.02) discard;
 
         float gray = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
         vec3 bw = vec3(gray);
 
-        float travel = uHover * 1.35;
-        float rippleEdge = travel + sin(vUv.y * 18.0 + uTime * 6.0) * 0.08;
-        float reveal = smoothstep(rippleEdge - 0.18, rippleEdge + 0.18, vUv.x);
+        float front = mix(-0.20, 1.20, uReveal);
+        float colorMask = 1.0 - smoothstep(front - 0.12, front + 0.12, vUv.x);
 
-        vec3 colorOut = mix(bw, tex.rgb, reveal);
+        vec3 finalColor = mix(bw, tex.rgb, colorMask);
 
-        gl_FragColor = vec4(colorOut, tex.a * uOpacity);
+        gl_FragColor = vec4(finalColor, tex.a * uOpacity);
       }
     `
   });
@@ -368,8 +360,8 @@ function createFlags(loader) {
       material: mat,
       labelAnchor,
       labelNode,
-      hoverValue: 0,
-      hoverTarget: 0
+      revealValue: 0,
+      revealTarget: 0
     });
   });
 }
@@ -605,7 +597,7 @@ function animate() {
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
 
   updateCamera(elapsed);
-  updateFlags(elapsed);
+  updateFlags();
   updateLabels();
   updateIntersections();
   updateFog(elapsed);
@@ -625,19 +617,20 @@ function updateCamera(elapsed) {
   camera.lookAt(0, CFG.lookY, 0);
 
   if (skySphere) {
+    skySphere.position.copy(camera.position);
     skySphere.rotation.y = -orbitTheta * 0.16;
     skySphere.rotation.x = Math.sin(elapsed * 0.12) * 0.018;
   }
 
   if (rearBackdrop) {
     working.vA.copy(camera.position).setY(0).normalize();
-    rearBackdrop.position.copy(working.vA).multiplyScalar(-9.0);
-    rearBackdrop.position.y = 0.9;
+    rearBackdrop.position.copy(working.vA).multiplyScalar(-11.0);
+    rearBackdrop.position.y = 0.85;
     rearBackdrop.lookAt(camera.position);
   }
 }
 
-function updateFlags(elapsed) {
+function updateFlags() {
   const total = flagEntries.length;
   const frontIndex = currentProgress * (total - 1);
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
@@ -646,10 +639,7 @@ function updateFlags(elapsed) {
     const relative = index - frontIndex;
 
     const theta = orbitTheta + relative * CFG.helixAngleStep;
-    const y =
-      CFG.lookY +
-      relative * CFG.helixRise +
-      Math.sin(elapsed * 0.8 + index * 1.3) * 0.02;
+    const y = CFG.lookY + relative * CFG.helixRise;
 
     entry.group.position.set(
       Math.cos(theta) * CFG.flagRadius,
@@ -689,17 +679,16 @@ function updateFlags(elapsed) {
     );
     const opacity = Math.min(opacityDistance, opacityRange);
 
-    entry.hoverTarget = hoveredEntry === entry ? 1 : 0;
-    entry.hoverValue = THREE.MathUtils.lerp(entry.hoverValue, entry.hoverTarget, 0.12);
+    entry.revealTarget = hoveredEntry === entry ? 1 : 0;
+    entry.revealValue = THREE.MathUtils.lerp(entry.revealValue, entry.revealTarget, 0.11);
 
-    entry.material.uniforms.uTime.value = elapsed;
-    entry.material.uniforms.uHover.value = entry.hoverValue;
+    entry.material.uniforms.uReveal.value = entry.revealValue;
     entry.material.uniforms.uOpacity.value = opacity;
 
     entry.group.visible = opacity > 0.03;
 
     if (entry.labelNode) {
-      entry.labelNode.style.opacity = `${opacity * (0.82 + entry.hoverValue * 0.18)}`;
+      entry.labelNode.style.opacity = `${opacity * (0.82 + entry.revealValue * 0.18)}`;
     }
   });
 }

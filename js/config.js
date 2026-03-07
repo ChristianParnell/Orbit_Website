@@ -58,12 +58,12 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  model: "./assets/models/me_on_hill.fbx",
+  background: "./assets/backgrounds/background.jpg",
   sky: "./assets/backgrounds/sky_sphere.jpg",
-  ambientAudio: "./assets/audio/ambient.mp3",
-  fog: "./assets/textures/fog.png"
+  fog: "./assets/textures/fog.png",
+  modelGLB: "./assets/models/me_on_hill.glb",
+  model: "./assets/models/me_on_hill.fbx"
 };
-
 export const SCENE_CONFIG = {
   folderCount: ORBIT_ITEMS.length,
   cameraRadius: 5.25,
