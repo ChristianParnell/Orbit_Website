@@ -1,5 +1,5 @@
-import * as THREE from "three";
-import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import * as THREE from "https://esm.sh/three@0.160.0";
+import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
 const canvas = document.getElementById("webgl");
@@ -46,6 +46,8 @@ let lastTouchY = 0;
 
 const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
+
+const UP = new THREE.Vector3(0, 1, 0);
 
 const working = {
   vectorA: new THREE.Vector3(),
@@ -277,6 +279,7 @@ function loadCenterModel() {
         if (child.isMesh) {
           child.castShadow = false;
           child.receiveShadow = false;
+
           if (!child.material) {
             child.material = new THREE.MeshStandardMaterial({
               color: 0xe6eef5,
@@ -296,12 +299,15 @@ function loadCenterModel() {
       const box = new THREE.Box3().setFromObject(centralModel);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
+
       const targetHeight = 3.55;
       const scale = size.y > 0 ? targetHeight / size.y : 1;
+
       centralModel.scale.setScalar(scale);
       centralModel.position.sub(center.multiplyScalar(scale));
       centralModel.position.y = -2.35;
       centralModel.rotation.y = Math.PI * 0.08;
+
       orbitRoot.add(centralModel);
     },
     undefined,
@@ -378,20 +384,28 @@ function attachEvents() {
     }
   });
 
-  window.addEventListener("touchstart", (event) => {
-    if (!hasEntered) return;
-    dragActive = true;
-    lastTouchY = event.touches[0].clientY;
-  }, { passive: true });
+  window.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!hasEntered) return;
+      dragActive = true;
+      lastTouchY = event.touches[0].clientY;
+    },
+    { passive: true }
+  );
 
-  window.addEventListener("touchmove", (event) => {
-    if (!hasEntered || !dragActive) return;
-    const currentY = event.touches[0].clientY;
-    const delta = lastTouchY - currentY;
-    lastTouchY = currentY;
-    targetProgress += delta * SCENE_CONFIG.touchSpeed;
-    targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-  }, { passive: true });
+  window.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!hasEntered || !dragActive) return;
+      const currentY = event.touches[0].clientY;
+      const delta = lastTouchY - currentY;
+      lastTouchY = currentY;
+      targetProgress += delta * SCENE_CONFIG.touchSpeed;
+      targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+    },
+    { passive: true }
+  );
 
   window.addEventListener("touchend", () => {
     dragActive = false;
@@ -399,6 +413,7 @@ function attachEvents() {
 
   window.addEventListener("keydown", (event) => {
     if (!hasEntered) return;
+
     if (event.key === "ArrowDown" || event.key === "PageDown") {
       targetProgress = THREE.MathUtils.clamp(targetProgress + 0.035, 0, 1);
     } else if (event.key === "ArrowUp" || event.key === "PageUp") {
@@ -469,7 +484,11 @@ function updateCamera(elapsed) {
   const t = currentProgress;
   const theta = t * Math.PI * 2 * SCENE_CONFIG.turns;
   const radius = SCENE_CONFIG.cameraRadius;
-  const y = THREE.MathUtils.lerp(SCENE_CONFIG.cameraHeightTop, SCENE_CONFIG.cameraHeightBottom, t);
+  const y = THREE.MathUtils.lerp(
+    SCENE_CONFIG.cameraHeightTop,
+    SCENE_CONFIG.cameraHeightBottom,
+    t
+  );
 
   camera.position.set(
     Math.cos(theta) * radius,
@@ -494,7 +513,11 @@ function updateFolderTransforms(elapsed) {
   folderObjects.forEach((entry, index) => {
     const normalized = total === 1 ? 0 : index / (total - 1);
     const theta = normalized * Math.PI * 2 * turns + Math.PI * 0.18;
-    const y = THREE.MathUtils.lerp(SCENE_CONFIG.coverHeightTop, SCENE_CONFIG.coverHeightBottom, normalized);
+    const y = THREE.MathUtils.lerp(
+      SCENE_CONFIG.coverHeightTop,
+      SCENE_CONFIG.coverHeightBottom,
+      normalized
+    );
     const wobble = Math.sin(elapsed * 0.6 + index * 1.3) * 0.03;
 
     entry.group.position.set(
@@ -503,9 +526,13 @@ function updateFolderTransforms(elapsed) {
       Math.sin(theta) * folderRadius
     );
 
-    const outDir = working.vectorA.set(entry.group.position.x, 0, entry.group.position.z).normalize();
-    const baseTarget = working.vectorB.copy(entry.group.position).add(outDir.clone().multiplyScalar(2));
-    working.matrixA.lookAt(entry.group.position, baseTarget, new THREE.Vector3(0, 1, 0));
+    const outDir = working.vectorA
+      .set(entry.group.position.x, 0, entry.group.position.z)
+      .normalize();
+
+    const baseTarget = working.vectorB.copy(entry.group.position).addScaledVector(outDir, 2);
+
+    working.matrixA.lookAt(entry.group.position, baseTarget, UP);
     working.quatA.setFromRotationMatrix(working.matrixA);
 
     working.eulerA.set(-0.18, 0.16, -0.08);
@@ -515,12 +542,13 @@ function updateFolderTransforms(elapsed) {
     const cameraDistance = entry.group.position.distanceTo(camera.position);
     const straighten = smoothstep(5.8, 2.7, cameraDistance);
 
-    working.matrixA.lookAt(entry.group.position, camera.position, new THREE.Vector3(0, 1, 0));
+    working.matrixA.lookAt(entry.group.position, camera.position, UP);
     working.quatB.setFromRotationMatrix(working.matrixA);
 
     entry.group.quaternion.slerpQuaternions(working.quatA, working.quatB, straighten);
+
     const swayQuat = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 0, 1),
+      working.vectorD.set(0, 0, 1),
       Math.sin(elapsed * 0.85 + index * 0.5) * 0.06 * (1 - straighten)
     );
     entry.group.quaternion.multiply(swayQuat);
@@ -542,10 +570,7 @@ function updateLabelPositions() {
     working.vectorC.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
     working.vectorC.project(camera);
 
-    const visible =
-      working.vectorC.z < 1 &&
-      working.vectorC.z > -1 &&
-      entry.group.visible;
+    const visible = working.vectorC.z < 1 && working.vectorC.z > -1 && entry.group.visible;
 
     if (!visible) {
       entry.labelNode.style.opacity = "0";
@@ -563,7 +588,11 @@ function updatePointerIntersections() {
   if (!hasEntered) return;
 
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(folderObjects.map((entry) => entry.cover), false);
+  const hits = raycaster.intersectObjects(
+    folderObjects.map((entry) => entry.cover),
+    false
+  );
+
   hoveredItem = null;
 
   if (hits.length > 0) {
