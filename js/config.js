@@ -58,24 +58,18 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  background: "./assets/backgrounds/background.jpg",
+  background: "./assets/backgrounds/sky_sphere.jpg",
   sky: "./assets/backgrounds/sky_sphere.jpg",
   fog: "./assets/textures/fog.png",
-  modelGLB: "./assets/models/me_on_hill.glb",
+
+  // only use GLB later if you actually upload one
+  // modelGLB: "./assets/models/me_on_hill.glb",
+
   model: "./assets/models/me_on_hill.fbx"
 };
+
 export const SCENE_CONFIG = {
   folderCount: ORBIT_ITEMS.length,
-  cameraRadius: 5.25,
-  coverRadius: 6.85,
-  turns: 1.72,
-  cameraHeightTop: 2.3,
-  cameraHeightBottom: -1.9,
-  coverHeightTop: 2.2,
-  coverHeightBottom: -2.2,
-  scrollSpeed: 0.00068,
-  touchSpeed: 0.0012,
-  folderWidth: 1.85,
-  folderHeight: 1.15,
-  folderSpacingBias: 0.1
+  scrollSpeed: 0.00042,
+  touchSpeed: 0.0018
 };

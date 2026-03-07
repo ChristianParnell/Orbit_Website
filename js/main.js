@@ -162,6 +162,7 @@ function setupLighting() {
 function createBackground(loader) {
   const backgroundPath = ASSETS.background || ASSETS.sky;
   const bgTexture = loader.load(backgroundPath);
+
   bgTexture.colorSpace = THREE.SRGBColorSpace;
   bgTexture.wrapS = THREE.RepeatWrapping;
   bgTexture.wrapT = THREE.ClampToEdgeWrapping;
@@ -204,18 +205,26 @@ function createBackground(loader) {
 
 function createFog(loader) {
   const fogTexture = loader.load(ASSETS.fog);
+
   fogTexture.colorSpace = THREE.SRGBColorSpace;
+  fogTexture.wrapS = THREE.ClampToEdgeWrapping;
+  fogTexture.wrapT = THREE.ClampToEdgeWrapping;
+  fogTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  fogTexture.magFilter = THREE.LinearFilter;
 
   for (let i = 0; i < 28; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
-      color: 0xa7d7ef,
+      alphaMap: fogTexture,
+      color: 0xffffff,
       transparent: true,
       opacity: CFG.fogSpriteOpacity,
       depthWrite: false,
       depthTest: false,
       fog: false
     });
+
+    material.alphaTest = 0.03;
 
     const sprite = new THREE.Sprite(material);
 
@@ -282,15 +291,15 @@ function createFlagMaterial(texture) {
 
         vec3 pos = position;
 
-        float front = mix(-0.20, 1.20, uReveal);
-        float band = exp(-pow((uv.x - front) * 16.0, 2.0));
+        float edge = mix(-0.20, 1.20, uReveal);
+        float band = exp(-pow((uv.x - edge) * 14.0, 2.0));
 
         float ripple =
-          sin(uv.y * 22.0 + front * 20.0) * 0.035 * band +
-          sin(uv.y * 11.0 + front * 13.0) * 0.015 * band;
+          sin(uv.y * 22.0 + edge * 18.0) * 0.030 * band +
+          sin(uv.y * 11.0 + edge * 10.0) * 0.012 * band;
 
         pos.z += ripple;
-        pos.x += band * 0.018 * sin(uv.y * 10.0 + front * 18.0);
+        pos.x += sin(uv.y * 9.0 + edge * 12.0) * 0.012 * band;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
@@ -309,10 +318,15 @@ function createFlagMaterial(texture) {
         float gray = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
         vec3 bw = vec3(gray);
 
-        float front = mix(-0.20, 1.20, uReveal);
-        float colorMask = 1.0 - smoothstep(front - 0.12, front + 0.12, vUv.x);
+        float edge = mix(-0.20, 1.20, uReveal);
+        float waveOffset = sin(vUv.y * 22.0 + edge * 18.0) * 0.035;
+        float revealMask = 1.0 - smoothstep(
+          edge - 0.14 + waveOffset,
+          edge + 0.14 + waveOffset,
+          vUv.x
+        );
 
-        vec3 finalColor = mix(bw, tex.rgb, colorMask);
+        vec3 finalColor = mix(bw, tex.rgb, revealMask);
 
         gl_FragColor = vec4(finalColor, tex.a * uOpacity);
       }
@@ -680,7 +694,11 @@ function updateFlags() {
     const opacity = Math.min(opacityDistance, opacityRange);
 
     entry.revealTarget = hoveredEntry === entry ? 1 : 0;
-    entry.revealValue = THREE.MathUtils.lerp(entry.revealValue, entry.revealTarget, 0.11);
+    entry.revealValue = THREE.MathUtils.lerp(
+      entry.revealValue,
+      entry.revealTarget,
+      0.11
+    );
 
     entry.material.uniforms.uReveal.value = entry.revealValue;
     entry.material.uniforms.uOpacity.value = opacity;
