@@ -1,6 +1,6 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
+//import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 
 const CFG = {
