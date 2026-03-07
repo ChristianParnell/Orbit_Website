@@ -7,27 +7,27 @@ const CFG = {
   ...SCENE_CONFIG,
 
   cameraFov: 50,
-  cameraRadius: 3.35,
-  cameraTurns: 1.1,
+  cameraRadius: 3.2,
+  cameraTurns: 1.08,
 
-  folderRadius: 1.58,
-  helixAngleStep: 1.02,
-  helixRise: 0.48,
+  ribbonRadius: 1.28,
+  helixAngleStep: 1.08,
+  helixRise: 0.34,
 
-  folderWidth: SCENE_CONFIG.folderWidth ?? 1.55,
-  folderHeight: SCENE_CONFIG.folderHeight ?? 0.98,
+  ribbonWidth: 1.02,
+  ribbonHeight: 0.62,
 
   scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00042,
   touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0018,
 
-  lookY: 0.62,
-  modelLift: 0.95,
-  modelTargetHeight: 3.45,
+  lookY: 0.26,
+  modelLift: 0.34,
+  modelTargetHeight: 3.05,
 
-  nearStraightenStart: 2.5,
-  nearStraightenEnd: 1.1,
+  nearStraightenStart: 2.1,
+  nearStraightenEnd: 0.92,
 
-  fogDensity: 0.016,
+  fogDensity: 0.015,
   fogSpriteOpacity: 0.08
 };
 
@@ -90,7 +90,6 @@ const working = {
   vectorA: new THREE.Vector3(),
   vectorB: new THREE.Vector3(),
   vectorC: new THREE.Vector3(),
-  vectorD: new THREE.Vector3(),
   quatA: new THREE.Quaternion(),
   quatB: new THREE.Quaternion(),
   quatC: new THREE.Quaternion(),
@@ -98,7 +97,7 @@ const working = {
   eulerA: new THREE.Euler()
 };
 
-const folderObjects = [];
+const ribbonObjects = [];
 const fogSprites = [];
 
 let centralModel = null;
@@ -139,24 +138,24 @@ function initScene() {
   createBackground(textureLoader);
   createFog(textureLoader);
   createGroundGlow();
-  createFolders(textureLoader);
+  createRibbons(textureLoader);
   loadCenterModel();
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xe4f4ff, 0x061019, 1.32);
+  const hemi = new THREE.HemisphereLight(0xe4f4ff, 0x061019, 1.22);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xf8fbff, 2.45);
+  const key = new THREE.DirectionalLight(0xf8fbff, 2.15);
   key.position.set(5.5, 7.5, 6.2);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x95d4ff, 2.0);
+  const rim = new THREE.DirectionalLight(0x95d4ff, 1.8);
   rim.position.set(-6.2, 4.2, -5.8);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0xa7dcff, 1.4, 14, 2);
-  fill.position.set(0, 1.8, 1.0);
+  const fill = new THREE.PointLight(0xa7dcff, 1.25, 14, 2);
+  fill.position.set(0, 1.6, 1.0);
   scene.add(fill);
 }
 
@@ -189,7 +188,7 @@ function createBackground(loader) {
   const planeMat = new THREE.MeshBasicMaterial({
     map: rearTex,
     transparent: true,
-    opacity: 0.65,
+    opacity: 0.62,
     depthWrite: false,
     depthTest: false,
     fog: false,
@@ -197,7 +196,7 @@ function createBackground(loader) {
   });
 
   rearBackdrop = new THREE.Mesh(planeGeo, planeMat);
-  rearBackdrop.position.set(0, 1.6, -10);
+  rearBackdrop.position.set(0, 1.4, -10);
   scene.add(rearBackdrop);
 }
 
@@ -219,9 +218,9 @@ function createFog(loader) {
     const sprite = new THREE.Sprite(material);
 
     const baseAngle = (i / 34) * Math.PI * 2;
-    const baseRadius = 2.2 + Math.random() * 3.8;
-    const baseY = THREE.MathUtils.lerp(-1.2, 3.2, Math.random());
-    const scale = 2.8 + Math.random() * 3.6;
+    const baseRadius = 2.0 + Math.random() * 3.4;
+    const baseY = THREE.MathUtils.lerp(-1.3, 2.8, Math.random());
+    const scale = 2.4 + Math.random() * 3.0;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
@@ -248,11 +247,11 @@ function createFog(loader) {
 
 function createGroundGlow() {
   const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(2.5, 64),
+    new THREE.CircleGeometry(2.35, 64),
     new THREE.MeshBasicMaterial({
       color: 0x62b4e8,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.12,
       depthWrite: false,
       fog: false,
       toneMapped: false
@@ -263,71 +262,117 @@ function createGroundGlow() {
   scene.add(glow);
 }
 
-function createFolders(loader) {
-  const folderWidth = CFG.folderWidth;
-  const folderHeight = CFG.folderHeight;
+function createRibbonMaterial(texture) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uMap: { value: texture },
+      uTime: { value: 0 },
+      uHover: { value: 0 },
+      uOpacity: { value: 1 }
+    },
+    vertexShader: `
+      uniform float uTime;
+      uniform float uHover;
 
-  ORBIT_ITEMS.forEach((item, index) => {
+      varying vec2 vUv;
+      varying float vWave;
+
+      void main() {
+        vUv = uv;
+
+        vec3 pos = position;
+
+        float idleRipple =
+          sin(uv.y * 8.0 + uTime * 1.6 + uv.x * 4.0) * 0.008 +
+          sin(uv.x * 6.0 + uTime * 1.1) * 0.004;
+
+        float hoverRipple =
+          sin(uv.y * 16.0 + uTime * 7.0 + uv.x * 8.0) * 0.035 * uHover +
+          sin(uv.x * 10.0 + uTime * 5.0) * 0.018 * uHover;
+
+        pos.z += idleRipple + hoverRipple;
+        pos.x += sin(uv.y * 8.0 + uTime * 3.0) * 0.01 * uHover;
+
+        vWave = hoverRipple;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uMap;
+      uniform float uTime;
+      uniform float uHover;
+      uniform float uOpacity;
+
+      varying vec2 vUv;
+      varying float vWave;
+
+      void main() {
+        vec4 tex = texture2D(uMap, vUv);
+
+        float gray = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+        vec3 bw = vec3(gray);
+
+        float revealFront = uHover * 1.35 - 0.2;
+        float waveEdge = revealFront + sin(vUv.y * 18.0 + uTime * 6.0) * 0.08;
+        float reveal = smoothstep(waveEdge - 0.18, waveEdge + 0.18, vUv.x);
+
+        vec3 finalColor = mix(bw, tex.rgb, reveal);
+
+        float border =
+          step(0.015, vUv.x) *
+          step(0.015, vUv.y) *
+          step(vUv.x, 0.985) *
+          step(vUv.y, 0.985);
+
+        finalColor = mix(finalColor * 0.1, finalColor, border);
+
+        float alpha = tex.a * uOpacity;
+        if (alpha < 0.01) discard;
+
+        gl_FragColor = vec4(finalColor, alpha);
+      }
+    `
+  });
+}
+
+function createRibbons(loader) {
+  const ribbonWidth = CFG.ribbonWidth;
+  const ribbonHeight = CFG.ribbonHeight;
+
+  ORBIT_ITEMS.forEach((item) => {
     const group = new THREE.Group();
     group.userData.item = item;
     orbitRoot.add(group);
 
-    const base = new THREE.Mesh(
-      new THREE.BoxGeometry(folderWidth, folderHeight, 0.11),
-      new THREE.MeshStandardMaterial({
-        color: 0xdbe9f7,
-        roughness: 0.64,
-        metalness: 0.06,
-        transparent: true,
-        opacity: 1,
-        side: THREE.DoubleSide
-      })
-    );
-    group.add(base);
+    const texture = loader.load(item.cover);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    const coverTexture = loader.load(item.cover);
-    coverTexture.colorSpace = THREE.SRGBColorSpace;
-    coverTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-
-    const cover = new THREE.Mesh(
-      new THREE.PlaneGeometry(folderWidth * 0.92, folderHeight * 0.88),
+    const backPlate = new THREE.Mesh(
+      new THREE.PlaneGeometry(ribbonWidth * 1.03, ribbonHeight * 1.03, 1, 1),
       new THREE.MeshBasicMaterial({
-        map: coverTexture,
+        color: 0x030507,
         transparent: true,
-        opacity: 1,
-        side: THREE.DoubleSide,
-        toneMapped: false
-      })
-    );
-    cover.position.z = 0.061;
-    group.add(cover);
-
-    const tab = new THREE.Mesh(
-      new THREE.BoxGeometry(folderWidth * 0.28, 0.16, 0.09),
-      new THREE.MeshStandardMaterial({
-        color: 0xf4f8fc,
-        roughness: 0.5,
-        metalness: 0.06,
+        opacity: 0.82,
         side: THREE.DoubleSide
       })
     );
-    tab.position.set(-folderWidth * 0.18, folderHeight * 0.52, 0);
-    group.add(tab);
+    backPlate.position.z = -0.012;
+    group.add(backPlate);
 
-    const spine = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, folderHeight * 0.9, 0.12),
-      new THREE.MeshStandardMaterial({
-        color: 0xb6d5ef,
-        roughness: 0.46,
-        metalness: 0.05,
-        side: THREE.DoubleSide
-      })
+    const ribbonMaterial = createRibbonMaterial(texture);
+
+    const ribbon = new THREE.Mesh(
+      new THREE.PlaneGeometry(ribbonWidth, ribbonHeight, 40, 18),
+      ribbonMaterial
     );
-    spine.position.x = -folderWidth * 0.5 + 0.04;
-    group.add(spine);
+    group.add(ribbon);
 
     const labelAnchor = new THREE.Object3D();
-    labelAnchor.position.set(-folderWidth * 0.66, 0.12, 0.12);
+    labelAnchor.position.set(-ribbonWidth * 0.72, -ribbonHeight * 0.58, 0.03);
     group.add(labelAnchor);
 
     const labelNode = document.createElement("div");
@@ -341,16 +386,16 @@ function createFolders(loader) {
     labelNode.style.opacity = "0";
     labelsRoot?.appendChild(labelNode);
 
-    folderObjects.push({
-      index,
+    ribbonObjects.push({
       item,
       group,
-      base,
-      cover,
-      tab,
-      spine,
+      ribbon,
+      ribbonMaterial,
+      backPlate,
       labelAnchor,
-      labelNode
+      labelNode,
+      hoverValue: 0,
+      hoverTarget: 0
     });
   });
 }
@@ -449,7 +494,7 @@ function centerAndScaleModel(model) {
   model.position.z -= center.z * scale;
 
   model.position.y += CFG.modelLift;
-  model.rotation.y = Math.PI * 0.06;
+  model.rotation.y = Math.PI * 0.05;
 }
 
 function createFallbackModel() {
@@ -463,7 +508,7 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  body.position.y = 0.0;
+  body.position.y = -0.1;
   fallback.add(body);
 
   const head = new THREE.Mesh(
@@ -474,7 +519,7 @@ function createFallbackModel() {
       metalness: 0.04
     })
   );
-  head.position.y = 1.25;
+  head.position.y = 1.08;
   fallback.add(head);
 
   fallback.position.y = CFG.modelLift;
@@ -586,7 +631,7 @@ function animate() {
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.09);
 
   updateCamera(elapsed);
-  updateFolders(elapsed);
+  updateRibbons(elapsed);
   updateLabels();
   updateIntersections();
   updateFog(elapsed);
@@ -608,41 +653,41 @@ function updateCamera(elapsed) {
 
   if (skySphere) {
     skySphere.rotation.y = -orbitTheta * 0.18;
-    skySphere.rotation.x = Math.sin(elapsed * 0.14) * 0.025;
+    skySphere.rotation.x = Math.sin(elapsed * 0.14) * 0.02;
   }
 
   if (rearBackdrop) {
     working.vectorA.copy(camera.position).setY(0).normalize();
     rearBackdrop.position.copy(working.vectorA).multiplyScalar(-9.5);
-    rearBackdrop.position.y = 1.6;
+    rearBackdrop.position.y = 1.35;
     rearBackdrop.lookAt(camera.position);
   }
 }
 
-function updateFolders(elapsed) {
-  const total = folderObjects.length;
+function updateRibbons(elapsed) {
+  const total = ribbonObjects.length;
   const frontIndex = currentProgress * (total - 1);
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
 
-  folderObjects.forEach((entry, index) => {
+  ribbonObjects.forEach((entry, index) => {
     const relative = index - frontIndex;
 
     const theta = orbitTheta + relative * CFG.helixAngleStep;
     const y =
       CFG.lookY +
       relative * CFG.helixRise +
-      Math.sin(elapsed * 0.9 + index * 1.2) * 0.035;
+      Math.sin(elapsed * 0.9 + index * 1.2) * 0.025;
 
     entry.group.position.set(
-      Math.cos(theta) * CFG.folderRadius,
+      Math.cos(theta) * CFG.ribbonRadius,
       y,
-      Math.sin(theta) * CFG.folderRadius
+      Math.sin(theta) * CFG.ribbonRadius
     );
 
     working.matrixA.lookAt(entry.group.position, ORBIT_CENTER, UP);
     working.quatA.setFromRotationMatrix(working.matrixA);
 
-    working.eulerA.set(-0.24, 0.06, -0.12);
+    working.eulerA.set(-0.12, 0.04, -0.08);
     working.quatC.setFromEuler(working.eulerA);
     working.quatA.multiply(working.quatC);
 
@@ -664,23 +709,29 @@ function updateFolders(elapsed) {
     );
 
     const opacityDistance = THREE.MathUtils.clamp(
-      1 - (cameraDistance - 0.9) / 2.7,
+      1 - (cameraDistance - 0.7) / 2.2,
       0.12,
       1
     );
     const opacityRange = THREE.MathUtils.clamp(
       1 - Math.abs(relative) / (total * 0.52),
-      0.16,
+      0.18,
       1
     );
     const opacity = Math.min(opacityDistance, opacityRange);
 
-    entry.base.material.opacity = opacity * 0.96;
-    entry.cover.material.opacity = opacity;
+    entry.hoverTarget = hoveredItem === entry ? 1 : 0;
+    entry.hoverValue = THREE.MathUtils.lerp(entry.hoverValue, entry.hoverTarget, 0.12);
+
+    entry.ribbonMaterial.uniforms.uTime.value = elapsed;
+    entry.ribbonMaterial.uniforms.uHover.value = entry.hoverValue;
+    entry.ribbonMaterial.uniforms.uOpacity.value = opacity;
+
+    entry.backPlate.material.opacity = opacity * 0.72;
     entry.group.visible = opacity > 0.03;
 
     if (entry.labelNode) {
-      entry.labelNode.style.opacity = `${opacity}`;
+      entry.labelNode.style.opacity = `${opacity * (0.75 + entry.hoverValue * 0.25)}`;
     }
   });
 }
@@ -689,13 +740,13 @@ function updateLabels() {
   const width = window.innerWidth;
   const height = window.innerHeight;
 
-  folderObjects.forEach((entry) => {
-    working.vectorC.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
-    working.vectorC.project(camera);
+  ribbonObjects.forEach((entry) => {
+    working.vectorB.setFromMatrixPosition(entry.labelAnchor.matrixWorld);
+    working.vectorB.project(camera);
 
     const visible =
-      working.vectorC.z < 1 &&
-      working.vectorC.z > -1 &&
+      working.vectorB.z < 1 &&
+      working.vectorB.z > -1 &&
       entry.group.visible;
 
     if (!visible) {
@@ -703,8 +754,8 @@ function updateLabels() {
       return;
     }
 
-    const x = (working.vectorC.x * 0.5 + 0.5) * width;
-    const y = (-working.vectorC.y * 0.5 + 0.5) * height;
+    const x = (working.vectorB.x * 0.5 + 0.5) * width;
+    const y = (-working.vectorB.y * 0.5 + 0.5) * height;
 
     if (entry.labelNode) {
       entry.labelNode.style.transform = `translate(calc(${x}px - 100%), calc(${y}px - 50%))`;
@@ -717,7 +768,7 @@ function updateIntersections() {
 
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(
-    folderObjects.map((entry) => entry.cover),
+    ribbonObjects.map((entry) => entry.ribbon),
     false
   );
 
@@ -726,7 +777,7 @@ function updateIntersections() {
   if (hits.length > 0) {
     const hit = hits[0];
     hoveredItem =
-      folderObjects.find((entry) => entry.cover === hit.object) || null;
+      ribbonObjects.find((entry) => entry.ribbon === hit.object) || null;
   }
 
   renderer.domElement.style.cursor = hoveredItem ? "pointer" : "grab";

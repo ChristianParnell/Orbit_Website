@@ -2,7 +2,7 @@ export const ORBIT_ITEMS = [
   {
     id: "about",
     title: "About",
-    subtitle: "Background · Design · Direction",
+    subtitle: "A little about me",
     href: "./pages/about.html",
     cover: "./assets/covers/about.JPG",
     theme: "Who I am"
@@ -10,7 +10,7 @@ export const ORBIT_ITEMS = [
   {
     id: "gallery",
     title: "Gallery",
-    subtitle: "Videos · Frames · Selected work",
+    subtitle: "Animations & Projects",
     href: "./pages/gallery.html",
     cover: "./assets/covers/gallery.png",
     theme: "Moving image"
@@ -18,7 +18,7 @@ export const ORBIT_ITEMS = [
   {
     id: "achievements",
     title: "Achievements",
-    subtitle: "Highlights · Study · Experience",
+    subtitle: "Highlights & Milestones",
     href: "./pages/achievements.html",
     cover: "./assets/covers/achievements.jpg",
     theme: "Milestones"
@@ -26,7 +26,7 @@ export const ORBIT_ITEMS = [
   {
     id: "fab",
     title: "FAB",
-    subtitle: "Assets · Downloads · Publishing",
+    subtitle: "Online Asset Store",
     href: "./pages/fab.html",
     cover: "./assets/covers/fab.png",
     theme: "Digital assets"
@@ -34,7 +34,7 @@ export const ORBIT_ITEMS = [
   {
     id: "sketchfab",
     title: "Sketchfab",
-    subtitle: "3D models · Presentation",
+    subtitle: "3D Model Asset store",
     href: "./pages/sketchfab.html",
     cover: "./assets/covers/sketchfab.png",
     theme: "3D work"
@@ -42,7 +42,7 @@ export const ORBIT_ITEMS = [
   {
     id: "twenty-two-minutes",
     title: "22 Minutes",
-    subtitle: "Game project · World · Pitch",
+    subtitle: "Published on Steam",
     href: "./pages/twenty-two-minutes.html",
     cover: "./assets/covers/steam_22minutes.png",
     theme: "Game development"
