@@ -27,7 +27,7 @@ const CFG = {
   nearStraightenEnd: 1.22,
 
   fogDensity: 0.012,
-  fogSpriteOpacity: 0.06
+  fogSpriteOpacity: 0.05
 };
 
 const canvas = document.getElementById("webgl");
@@ -101,7 +101,6 @@ const fogSprites = [];
 
 let centralModel = null;
 let skySphere = null;
-let rearBackdrop = null;
 
 setupLighting();
 
@@ -158,7 +157,7 @@ function setupLighting() {
 }
 
 function createBackground(loader) {
-  const backgroundPath = ASSETS.background || ASSETS.sky;
+  const backgroundPath = ASSETS.sky || ASSETS.background;
   const bgTexture = loader.load(backgroundPath);
 
   bgTexture.colorSpace = THREE.SRGBColorSpace;
@@ -170,8 +169,7 @@ function createBackground(loader) {
   const sphereMat = new THREE.MeshBasicMaterial({
     map: bgTexture,
     side: THREE.BackSide,
-    transparent: true,
-    opacity: 1,
+    transparent: false,
     fog: false,
     toneMapped: false,
     depthWrite: false
@@ -180,25 +178,6 @@ function createBackground(loader) {
   skySphere = new THREE.Mesh(sphereGeo, sphereMat);
   skySphere.renderOrder = -20;
   scene.add(skySphere);
-
-  const rearTex = loader.load(backgroundPath);
-  rearTex.colorSpace = THREE.SRGBColorSpace;
-
-  const rearGeo = new THREE.PlaneGeometry(42, 24, 1, 1);
-  const rearMat = new THREE.MeshBasicMaterial({
-    map: rearTex,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.86,
-    depthWrite: false,
-    depthTest: false,
-    fog: false,
-    toneMapped: false
-  });
-
-  rearBackdrop = new THREE.Mesh(rearGeo, rearMat);
-  rearBackdrop.renderOrder = -10;
-  scene.add(rearBackdrop);
 }
 
 function createFog(loader) {
@@ -210,7 +189,7 @@ function createFog(loader) {
   fogTexture.minFilter = THREE.LinearMipmapLinearFilter;
   fogTexture.magFilter = THREE.LinearFilter;
 
-  for (let i = 0; i < 28; i += 1) {
+  for (let i = 0; i < 24; i += 1) {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
       alphaMap: fogTexture,
@@ -218,18 +197,18 @@ function createFog(loader) {
       transparent: true,
       opacity: CFG.fogSpriteOpacity,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       fog: false
     });
 
-    material.alphaTest = 0.03;
+    material.alphaTest = 0.05;
 
     const sprite = new THREE.Sprite(material);
 
-    const baseAngle = (i / 28) * Math.PI * 2;
-    const baseRadius = 2.3 + Math.random() * 3.4;
-    const baseY = THREE.MathUtils.lerp(-1.1, 2.3, Math.random());
-    const scale = 2.0 + Math.random() * 2.5;
+    const baseAngle = (i / 24) * Math.PI * 2;
+    const baseRadius = 2.0 + Math.random() * 3.0;
+    const baseY = THREE.MathUtils.lerp(-1.0, 2.0, Math.random());
+    const scale = 1.8 + Math.random() * 2.2;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
@@ -244,9 +223,9 @@ function createFog(loader) {
       baseY,
       scale,
       phase: Math.random() * Math.PI * 2,
-      orbitSpeed: 0.025 + Math.random() * 0.05,
-      driftSpeed: 0.08 + Math.random() * 0.12,
-      driftAmount: 0.12 + Math.random() * 0.35
+      orbitSpeed: 0.02 + Math.random() * 0.04,
+      driftSpeed: 0.06 + Math.random() * 0.10,
+      driftAmount: 0.08 + Math.random() * 0.22
     };
 
     scene.add(sprite);
@@ -406,6 +385,8 @@ function setupLoadedModel(modelRoot) {
         roughness: 0.72,
         metalness: 0.04
       });
+      child.material.transparent = false;
+      child.material.opacity = 1;
       return;
     }
 
@@ -422,6 +403,9 @@ function setupLoadedModel(modelRoot) {
 
 function prepareMaterial(material) {
   material.side = THREE.DoubleSide;
+  material.transparent = false;
+  material.opacity = 1;
+  material.alphaTest = 0;
 
   if ("map" in material && material.map) {
     material.map.colorSpace = THREE.SRGBColorSpace;
@@ -609,13 +593,6 @@ function updateCamera(elapsed) {
     skySphere.rotation.y = -orbitTheta * 0.16;
     skySphere.rotation.x = Math.sin(elapsed * 0.12) * 0.018;
   }
-
-  if (rearBackdrop) {
-    working.vA.copy(camera.position).setY(0).normalize();
-    rearBackdrop.position.copy(working.vA).multiplyScalar(-11.0);
-    rearBackdrop.position.y = 0.85;
-    rearBackdrop.lookAt(camera.position);
-  }
 }
 
 function updateFlags() {
@@ -655,17 +632,22 @@ function updateFlags() {
 
     entry.group.quaternion.slerpQuaternions(working.qA, working.qB, straighten);
 
-    const opacityDistance = THREE.MathUtils.clamp(
-      1 - (cameraDistance - 0.95) / 2.6,
-      0.14,
+    const visibilityDistance = THREE.MathUtils.clamp(
+      1 - (cameraDistance - 0.95) / 2.4,
+      0,
       1
     );
-    const opacityRange = THREE.MathUtils.clamp(
+    const visibilityRange = THREE.MathUtils.clamp(
       1 - Math.abs(relative) / (total * 0.48),
-      0.16,
+      0,
       1
     );
-    const opacity = Math.min(opacityDistance, opacityRange);
+    const visibility = Math.min(visibilityDistance, visibilityRange);
+
+    const finalOpacity =
+      visibility > 0.35
+        ? 1.0
+        : THREE.MathUtils.clamp((visibility - 0.08) / 0.27, 0, 1);
 
     entry.revealTarget = hoveredEntry === entry ? 1 : 0;
     entry.revealValue = THREE.MathUtils.lerp(
@@ -675,12 +657,12 @@ function updateFlags() {
     );
 
     entry.material.uniforms.uReveal.value = entry.revealValue;
-    entry.material.uniforms.uOpacity.value = opacity;
+    entry.material.uniforms.uOpacity.value = finalOpacity;
 
-    entry.group.visible = opacity > 0.03;
+    entry.group.visible = finalOpacity > 0.03;
 
     if (entry.labelNode) {
-      entry.labelNode.style.opacity = `${opacity * (0.82 + entry.revealValue * 0.18)}`;
+      entry.labelNode.style.opacity = `${finalOpacity * (0.82 + entry.revealValue * 0.18)}`;
     }
   });
 }
@@ -746,7 +728,7 @@ function updateFog(elapsed) {
 
     const y =
       data.baseY +
-      Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.14;
+      Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.12;
 
     sprite.position.set(
       Math.cos(orbitAngle) * radius,
@@ -755,10 +737,10 @@ function updateFog(elapsed) {
     );
 
     const pulse =
-      0.95 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.06;
+      0.95 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.05;
 
     sprite.scale.set(data.scale * pulse, data.scale * 0.62 * pulse, 1);
-    sprite.material.rotation += 0.00045 + index * 0.000006;
+    sprite.material.rotation += 0.00035 + index * 0.000005;
   });
 
   if (centralModel) {

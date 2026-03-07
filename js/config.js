@@ -58,12 +58,9 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  // use the file that actually exists in your repo now
-  background: "./assets/backgrounds/sky_sphere.jpg",
   sky: "./assets/backgrounds/sky_sphere.jpg",
+  background: "./assets/backgrounds/sky_sphere.jpg",
   fog: "./assets/textures/fog.png",
-
-  // do NOT point to a GLB until you actually upload one
   model: "./assets/models/me_on_hill.fbx"
 };
 
