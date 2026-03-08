@@ -1,57 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#AED8EB" />
-  <title>Orbit Portfolio</title>
-  <link rel="stylesheet" href="./styles.css?v=8" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>⌘</text></svg>">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Christian Parnell — Orbit Portfolio</title>
+  <meta name="description" content="Interactive orbit portfolio by Christian Parnell." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E🌊%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.183.2/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.183.2/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="app">
-    <canvas id="webgl" aria-label="3D portfolio scene"></canvas>
+    <canvas id="webgl" aria-label="3D orbit portfolio"></canvas>
 
-    <div class="scanlines" aria-hidden="true"></div>
-    <div class="noise" aria-hidden="true"></div>
-    <div class="glitch-frame" aria-hidden="true"></div>
+    <div id="loader" class="overlay overlay--visible" aria-live="polite">
+      <div class="overlay__inner">
+        <p class="eyebrow">Orbit Portfolio</p>
+        <h1>Christian Parnell</h1>
+        <p class="overlay__copy">
+          A helix of projects orbiting around a central self-portrait. Scroll to move through the work.
+        </p>
 
-    <div id="loader" class="loader" aria-live="polite">
-      <div class="loader__card">
-        <p class="eyebrow">SYSTEM BOOT</p>
-        <h2>Loading orbit interface…</h2>
-        <div class="loader__bar">
-          <div id="loaderFill" class="loader__fill"></div>
+        <div class="progress">
+          <div class="progress__bar">
+            <span id="progressFill"></span>
+          </div>
+          <p id="progressText">Loading assets… 0%</p>
         </div>
-        <p id="loaderPct" class="loader__pct">0%</p>
-        <p class="loader__note">Scroll or drag once loaded</p>
+
+        <button id="enterButton" class="button" type="button" disabled>
+          Loading…
+        </button>
+
+        <p class="overlay__hint">
+          Best with audio on. Click a folder cover to enter a project page.
+        </p>
       </div>
     </div>
 
-    <header class="hud">
-      <div>
-        <p class="eyebrow">ORBIT // DIGITAL PORTFOLIO</p>
-        <h1>Christian Parnell</h1>
+    <div id="hud" class="hud">
+      <div class="hud__left">
+        <p class="eyebrow">Orbit Portfolio</p>
+        <h2>Christian Parnell</h2>
       </div>
-
       <div class="hud__right">
-        <p>SCROLL / DRAG TO ORBIT</p>
-        <p>CLICK A TILE TO OPEN</p>
+        <p>Scroll to orbit</p>
+        <p>Click a cover to enter</p>
       </div>
-    </header>
+    </div>
 
-    <div id="hoverLabel" class="hover-label" aria-hidden="true"></div>
+    <div id="focusHint" class="focus-hint">
+      Scroll to orbit · click a folder to enter
+    </div>
 
-    <aside id="panel" class="panel" aria-hidden="true">
-      <button id="panelClose" class="panel__close" aria-label="Close panel">✕</button>
-      <p class="eyebrow">PROJECT ENTRY</p>
-      <h2 id="panelTitle">Title</h2>
-      <div id="panelBody" class="panel__body">Loading…</div>
-    </aside>
+    <div id="folderLabels" class="folder-labels" aria-hidden="true"></div>
 
-    <div class="focus-hint">digital orbit active • hover to inspect • click to open</div>
+    <button id="muteButton" class="mute-button" type="button" aria-label="Toggle audio">
+      Sound On
+    </button>
+
+    <audio id="ambientAudio" src="./assets/audio/ambient.mp3" loop preload="auto"></audio>
   </div>
 
-  <script type="module" src="./main.js?v=8"></script>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
