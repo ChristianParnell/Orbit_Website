@@ -23,7 +23,7 @@ const CFG = {
   lookY: 0.08,
 
   modelLift: -1.26,
-  modelTargetHeight: 4.55,
+  modelTargetHeight: 5.55,
   modelYaw: Math.PI * 0.045,
 
   nearStraightenStart: 3.8,
