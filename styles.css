@@ -70,8 +70,8 @@ body.is-entered .focus-hint {
   width: 100vw;
   height: 100vh;
   object-fit: cover;
-  opacity: 0.12;
-  filter: contrast(1.06) saturate(1.12) brightness(0.75) blur(0.6px);
+  opacity: 0.10;
+  filter: contrast(1.08) saturate(1.12) brightness(0.68) blur(0.8px);
   pointer-events: none;
   z-index: 0;
 }
@@ -80,8 +80,8 @@ body.is-entered .focus-hint {
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(8, 31, 51, 0.42), rgba(8, 31, 51, 0.72)),
-    radial-gradient(circle at center, rgba(47, 228, 255, 0.06), transparent 45%);
+    linear-gradient(180deg, rgba(8, 31, 51, 0.46), rgba(8, 31, 51, 0.76)),
+    radial-gradient(circle at center, rgba(47, 228, 255, 0.05), transparent 45%);
 }
 
 #webgl {
@@ -361,16 +361,61 @@ body.is-entered .focus-hint {
   min-width: 146px;
   max-width: 240px;
   transform: translate(-100%, -50%);
-  transition: opacity 0.2s ease;
-  will-change: transform, opacity;
+  transition: opacity 0.28s ease, filter 0.28s ease;
+  will-change: transform, opacity, filter;
 }
 
 .folder-label__card {
+  position: relative;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(10, 24, 38, 0.60);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: border-color 0.28s ease, background 0.28s ease, transform 0.28s ease, filter 0.28s ease;
+}
+
+.folder-label__card::before,
+.folder-label__card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.42;
+  transition: opacity 0.28s ease;
+}
+
+.folder-label__card::before {
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(47, 228, 255, 0.00) 0px,
+      rgba(47, 228, 255, 0.00) 2px,
+      rgba(47, 228, 255, 0.08) 3px,
+      rgba(47, 228, 255, 0.00) 4px
+    );
+  mix-blend-mode: screen;
+}
+
+.folder-label__card::after {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255, 87, 206, 0.00) 0%,
+      rgba(255, 87, 206, 0.08) 35%,
+      rgba(47, 228, 255, 0.10) 65%,
+      rgba(51, 255, 136, 0.00) 100%
+    );
+  transform: translateX(-100%);
+  animation: labelScan 2.8s linear infinite;
+}
+
+.folder-label__id,
+.folder-label h3,
+.folder-label p {
+  position: relative;
+  z-index: 1;
 }
 
 .folder-label__id {
@@ -379,19 +424,90 @@ body.is-entered .focus-hint {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: rgba(231, 246, 255, 0.48);
+  transition: color 0.28s ease, text-shadow 0.28s ease;
+}
+
+.folder-label h3,
+.folder-label p {
+  margin: 0;
+  transition: color 0.28s ease, text-shadow 0.28s ease, transform 0.28s ease, filter 0.28s ease, opacity 0.28s ease;
 }
 
 .folder-label h3 {
-  margin: 0;
   font-size: 0.96rem;
   line-height: 1.2;
 }
 
 .folder-label p {
-  margin: 4px 0 0;
+  margin-top: 4px;
   font-size: 0.82rem;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.folder-label:not(.is-resolved) .folder-label__card {
+  border-color: rgba(47, 228, 255, 0.16);
+  filter: saturate(1.08);
+  animation: virusCardJitter 0.18s steps(2, end) infinite,
+             virusCardFlicker 2.4s linear infinite;
+}
+
+.folder-label:not(.is-resolved) .folder-label__id,
+.folder-label:not(.is-resolved) h3,
+.folder-label:not(.is-resolved) p {
+  text-shadow:
+    -1px 0 rgba(255, 87, 206, 0.42),
+     1px 0 rgba(47, 228, 255, 0.42),
+     0 0 8px rgba(47, 228, 255, 0.12);
+  animation: virusTextShift 0.10s steps(2, end) infinite,
+             virusOpacity 1.8s linear infinite;
+}
+
+.folder-label:not(.is-resolved) h3::before,
+.folder-label:not(.is-resolved) h3::after,
+.folder-label:not(.is-resolved) p::before,
+.folder-label:not(.is-resolved) p::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.folder-label:not(.is-resolved) h3::before,
+.folder-label:not(.is-resolved) p::before {
+  color: var(--cyan);
+  transform: translate(1px, -1px);
+  clip-path: polygon(0 0, 100% 0, 100% 36%, 0 36%);
+}
+
+.folder-label:not(.is-resolved) h3::after,
+.folder-label:not(.is-resolved) p::after {
+  color: var(--pink);
+  transform: translate(-1px, 1px);
+  clip-path: polygon(0 62%, 100% 62%, 100% 100%, 0 100%);
+}
+
+.folder-label.is-resolved .folder-label__card {
+  animation: none;
+  transform: translate3d(0, 0, 0);
+  border-color: rgba(255, 255, 255, 0.10);
+  filter: none;
+}
+
+.folder-label.is-resolved .folder-label__card::before,
+.folder-label.is-resolved .folder-label__card::after {
+  opacity: 0;
+  animation: none;
+}
+
+.folder-label.is-resolved .folder-label__id,
+.folder-label.is-resolved h3,
+.folder-label.is-resolved p {
+  animation: none;
+  text-shadow: none;
+  transform: none;
+  filter: none;
 }
 
 .mute-button {
@@ -402,6 +518,46 @@ body.is-entered .focus-hint {
   font-size: 0.8rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+@keyframes labelScan {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(110%); }
+}
+
+@keyframes virusCardJitter {
+  0% { transform: translate(0px, 0px); }
+  20% { transform: translate(1px, -1px); }
+  40% { transform: translate(-1px, 1px); }
+  60% { transform: translate(1px, 0px); }
+  80% { transform: translate(-1px, 0px); }
+  100% { transform: translate(0px, 0px); }
+}
+
+@keyframes virusCardFlicker {
+  0%, 100% { opacity: 1; }
+  7% { opacity: 0.94; }
+  8% { opacity: 1; }
+  42% { opacity: 0.88; }
+  44% { opacity: 1; }
+  66% { opacity: 0.93; }
+  67% { opacity: 1; }
+}
+
+@keyframes virusTextShift {
+  0% { transform: translate(0px, 0px); }
+  25% { transform: translate(1px, 0px); }
+  50% { transform: translate(-1px, 0px); }
+  75% { transform: translate(0px, 1px); }
+  100% { transform: translate(0px, 0px); }
+}
+
+@keyframes virusOpacity {
+  0%, 100% { opacity: 1; }
+  17% { opacity: 0.88; }
+  18% { opacity: 1; }
+  57% { opacity: 0.90; }
+  58% { opacity: 1; }
 }
 
 @media (max-width: 900px) {

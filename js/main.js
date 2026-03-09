@@ -40,22 +40,23 @@ const CFG = {
   fogDensity: 0.022,
   fogSpriteCount: 16,
 
-  modelPointLimit: 32000,
-  streamPerCover: 320
+  modelPointLimit: 42000,
+  streamPerCover: 360
 };
 
 const COLORS = {
-  bg: 0x081f33,
-  ink: 0xe7f6ff,
-  green: new THREE.Color("#33ff88"),
-  cyan: new THREE.Color("#2fe4ff"),
-  blue: new THREE.Color("#4b7dff"),
-  purple: new THREE.Color("#b04dff"),
-  pink: new THREE.Color("#ff57ce"),
-  orange: new THREE.Color("#ff8b2d"),
-  yellow: new THREE.Color("#ffe166"),
-  white: new THREE.Color("#f1f5ff")
+  bgHex: 0x081f33
 };
+
+const PALETTE = [
+  new THREE.Color("#33ff88"),
+  new THREE.Color("#2fe4ff"),
+  new THREE.Color("#4b7dff"),
+  new THREE.Color("#b04dff"),
+  new THREE.Color("#ff57ce"),
+  new THREE.Color("#ff8b2d"),
+  new THREE.Color("#ffe166")
+];
 
 const canvas = document.getElementById("webgl");
 const loaderOverlay = document.getElementById("loader");
@@ -78,7 +79,7 @@ if (backgroundVideo) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(CFG.bg ?? COLORS.bg, CFG.fogDensity);
+scene.fog = new THREE.FogExp2(COLORS.bgHex, CFG.fogDensity);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -88,7 +89,7 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(COLORS.bg, 0);
+renderer.setClearColor(COLORS.bgHex, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
@@ -126,7 +127,6 @@ let modelPointCloud = null;
 let modelGlyphMaterial = null;
 let streamGlyphMaterial = null;
 let glyphAtlas = null;
-let videoTexture = null;
 let modelSampleData = null;
 
 const orbitRoot = new THREE.Group();
@@ -142,8 +142,7 @@ const working = {
   qB: new THREE.Quaternion(),
   qC: new THREE.Quaternion(),
   mA: new THREE.Matrix4(),
-  eA: new THREE.Euler(),
-  box: new THREE.Box3()
+  eA: new THREE.Euler()
 };
 
 const tempVec1 = new THREE.Vector3();
@@ -168,6 +167,7 @@ const streamSystem = {
   geometry: null,
   positions: null,
   alphas: null,
+  flowT: null,
   seeds: null,
   sizes: null,
   progress: [],
@@ -180,14 +180,6 @@ const streamSystem = {
 };
 
 setupLighting();
-
-if (backgroundVideo) {
-  videoTexture = new THREE.VideoTexture(backgroundVideo);
-  videoTexture.colorSpace = THREE.SRGBColorSpace;
-  videoTexture.minFilter = THREE.LinearFilter;
-  videoTexture.magFilter = THREE.LinearFilter;
-  videoTexture.generateMipmaps = false;
-}
 
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_, loaded, total) => {
@@ -457,11 +449,13 @@ function createFlagMaterial(texture) {
         vec3 pos = position;
         float corrupt = 1.0 - uHover;
 
-        vec2 block = floor(uv * vec2(18.0, 12.0));
+        vec2 block = floor(uv * vec2(24.0, 14.0));
         float n = hash21(block + floor(uTime * 2.0));
-        pos.x += (n - 0.5) * 0.035 * corrupt;
-        pos.y += sin(uv.x * 18.0 + uTime * 6.0 + n * 4.0) * 0.012 * corrupt;
-        pos.z += sin(uv.y * 16.0 + uTime * 4.0 + n * 5.0) * 0.020 * corrupt;
+        float band = step(0.76, fract(uv.y * 18.0 + uTime * 2.5 + n * 3.0));
+
+        pos.x += (n - 0.5) * 0.014 * corrupt;
+        pos.y += sin(uv.x * 18.0 + uTime * 6.0 + n * 4.0) * 0.005 * corrupt;
+        pos.z += sin(uv.y * 16.0 + uTime * 4.0 + n * 5.0) * (0.010 + band * 0.012) * corrupt;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
@@ -482,37 +476,39 @@ function createFlagMaterial(texture) {
       }
 
       void main() {
-        float corrupt = 1.0 - vHover;
+        float resolve = smoothstep(0.0, 1.0, vHover);
+        float corrupt = 1.0 - resolve;
 
-        vec2 block = floor(vUv * vec2(28.0, 18.0));
-        float n = hash21(block + floor(uTime * 2.6));
-        float line = step(0.86, fract(vUv.y * 36.0 + uTime * 5.0 + n * 7.0));
+        vec2 uv = vUv;
 
-        vec2 offset = vec2((n - 0.5) * 0.08 * corrupt, 0.0);
-        vec2 uvA = vUv + offset;
-        vec2 uvB = vUv + offset * 0.45 + vec2(0.006 * corrupt, 0.0);
-        vec2 uvC = vUv + offset * 0.25 - vec2(0.006 * corrupt, 0.0);
+        float lineNoise = hash21(vec2(floor(uv.y * 72.0), floor(uTime * 10.0)));
+        float bigBand = step(0.82, lineNoise);
+        float microBand = step(0.88, fract(uv.y * 42.0 + uTime * 5.0));
 
-        vec4 texA = texture2D(uMap, uvA);
-        vec4 texB = texture2D(uMap, uvB);
-        vec4 texC = texture2D(uMap, uvC);
+        uv.x += (lineNoise - 0.5) * 0.055 * corrupt * (0.35 + bigBand * 1.4);
+        uv.y += sin(uv.x * 42.0 + uTime * 8.0) * 0.0025 * corrupt;
 
-        float alpha = max(texA.a, max(texB.a, texC.a));
+        vec2 rgbShift = vec2(0.012 * corrupt * (0.6 + lineNoise), 0.0);
+        vec4 texMain = texture2D(uMap, clamp(uv, 0.001, 0.999));
+        vec4 texR = texture2D(uMap, clamp(uv + rgbShift, 0.001, 0.999));
+        vec4 texB = texture2D(uMap, clamp(uv - rgbShift, 0.001, 0.999));
+
+        float alpha = max(texMain.a, max(texR.a, texB.a));
         if (alpha < 0.02) discard;
 
         vec3 clean = texture2D(uMap, vUv).rgb;
+        vec3 infected = vec3(texR.r, texMain.g, texB.b);
 
-        vec3 glitchRGB = vec3(texB.r, texA.g, texC.b);
-        float gray = dot(glitchRGB, vec3(0.299, 0.587, 0.114));
-        vec3 corruptBase = mix(vec3(gray), glitchRGB, 0.35);
-        corruptBase += vec3(0.0, 0.07, 0.12) * line * corrupt;
-        corruptBase *= 0.78 + 0.22 * n;
+        float blockN = hash21(floor(vUv * vec2(34.0, 22.0)) + floor(uTime * 2.7));
+        float dropout = step(0.945, blockN) * corrupt;
+        float burn = step(0.88, fract(vUv.y * 38.0 + uTime * 6.0 + blockN * 4.0)) * corrupt;
 
-        float dropout = step(0.935, n) * corrupt;
-        corruptBase *= 1.0 - dropout * 0.7;
+        infected *= 0.70 + 0.30 * blockN;
+        infected += vec3(0.00, 0.10, 0.16) * burn;
+        infected = mix(infected, infected.grb * vec3(0.85, 1.15, 1.10), bigBand * corrupt * 0.5);
+        infected *= 1.0 - dropout * 0.72;
 
-        float resolve = smoothstep(0.0, 1.0, vHover);
-        vec3 finalColor = mix(corruptBase, clean, resolve);
+        vec3 finalColor = mix(infected, clean, resolve);
 
         gl_FragColor = vec4(finalColor, alpha * uOpacity);
       }
@@ -533,7 +529,7 @@ function createFlags(loader) {
     const mat = createFlagMaterial(tex);
 
     const flag = new THREE.Mesh(
-      new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 24, 14),
+      new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 18, 10),
       mat
     );
     flag.renderOrder = 10;
@@ -545,13 +541,18 @@ function createFlags(loader) {
 
     const labelNode = document.createElement("div");
     labelNode.className = "folder-label";
+
+    const safeTitle = item.title;
+    const safeSubtitle = item.subtitle;
+
     labelNode.innerHTML = `
       <div class="folder-label__card">
-        <div class="folder-label__id">node://${String(index + 1).padStart(2, "0")}</div>
-        <h3>${item.title}</h3>
-        <p>${item.subtitle}</p>
+        <div class="folder-label__id">${`node://${String(index + 1).padStart(2, "0")}`}</div>
+        <h3 data-text="${safeTitle}">${safeTitle}</h3>
+        <p data-text="${safeSubtitle}">${safeSubtitle}</p>
       </div>
     `;
+
     labelNode.style.opacity = "0";
     labelNode.style.transformOrigin = "top left";
     labelsRoot?.appendChild(labelNode);
@@ -562,7 +563,8 @@ function createFlags(loader) {
       flag,
       material: mat,
       labelAnchor,
-      labelNode
+      labelNode,
+      hoverValue: 0
     });
   });
 }
@@ -767,8 +769,8 @@ function buildBinaryModelRepresentation() {
 
   for (let i = 0; i < count; i += 1) {
     seeds[i] = Math.random();
-    sizes[i] = 0.55 + Math.random() * 0.55;
-    alphas[i] = 0.78 + Math.random() * 0.22;
+    sizes[i] = 0.34 + Math.random() * 0.26;
+    alphas[i] = 0.76 + Math.random() * 0.24;
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -793,6 +795,7 @@ function buildStreamSystem() {
   streamSystem.count = count;
   streamSystem.positions = new Float32Array(count * 3);
   streamSystem.alphas = new Float32Array(count);
+  streamSystem.flowT = new Float32Array(count);
   streamSystem.seeds = new Float32Array(count);
   streamSystem.sizes = new Float32Array(count);
   streamSystem.progress = new Array(count);
@@ -807,25 +810,31 @@ function buildStreamSystem() {
   for (let i = 0; i < count; i += 1) {
     streamSystem.coverIndex[i] = i % ORBIT_ITEMS.length;
     streamSystem.seeds[i] = Math.random();
-    streamSystem.sizes[i] = 0.50 + Math.random() * 0.45;
+    streamSystem.sizes[i] = 0.34 + Math.random() * 0.22;
     streamSystem.progress[i] = Math.random();
     streamSystem.speed[i] = 0.18 + Math.random() * 0.16;
     streamSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
     streamSystem.spreadX[i] = Math.random() * 2 - 1;
     streamSystem.spreadY[i] = Math.random() * 2 - 1;
     streamSystem.alphas[i] = 0.25;
+    streamSystem.flowT[i] = 0;
   }
 
   const geometry = new THREE.BufferGeometry();
   const positionAttr = new THREE.BufferAttribute(streamSystem.positions, 3);
   positionAttr.setUsage(THREE.DynamicDrawUsage);
+
   const alphaAttr = new THREE.BufferAttribute(streamSystem.alphas, 1);
   alphaAttr.setUsage(THREE.DynamicDrawUsage);
+
+  const flowAttr = new THREE.BufferAttribute(streamSystem.flowT, 1);
+  flowAttr.setUsage(THREE.DynamicDrawUsage);
 
   geometry.setAttribute("position", positionAttr);
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(streamSystem.seeds, 1));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(streamSystem.sizes, 1));
   geometry.setAttribute("aAlpha", alphaAttr);
+  geometry.setAttribute("aFlowT", flowAttr);
 
   streamGlyphMaterial = createStreamGlyphMaterial(glyphAtlas);
 
@@ -845,8 +854,6 @@ function createBinaryGlyphAtlas() {
   const ctx = c.getContext("2d");
 
   ctx.clearRect(0, 0, c.width, c.height);
-  ctx.fillStyle = "rgba(255,255,255,0)";
-  ctx.fillRect(0, 0, c.width, c.height);
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -864,7 +871,17 @@ function createBinaryGlyphAtlas() {
   return texture;
 }
 
+function paletteMix(t) {
+  const scaled = t * (PALETTE.length - 1);
+  const i0 = Math.floor(scaled);
+  const i1 = Math.min(i0 + 1, PALETTE.length - 1);
+  const f = scaled - i0;
+  return PALETTE[i0].clone().lerp(PALETTE[i1], f);
+}
+
 function createModelGlyphMaterial(atlas) {
+  const paletteUniform = PALETTE.map((c) => c.clone());
+
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -872,7 +889,8 @@ function createModelGlyphMaterial(atlas) {
     uniforms: {
       uAtlas: { value: atlas },
       uTime: { value: 0 },
-      uLightDir: { value: LIGHT_DIR.clone() }
+      uLightDir: { value: LIGHT_DIR.clone() },
+      uPalette: { value: paletteUniform }
     },
     vertexShader: `
       uniform float uTime;
@@ -891,28 +909,29 @@ function createModelGlyphMaterial(atlas) {
       void main() {
         vec3 p = position;
 
-        float drift = 0.004 + aSeed * 0.004;
-        p.x += sin(uTime * (0.28 + fract(aSeed * 0.30)) + aSeed * 51.0) * drift;
-        p.y += cos(uTime * (0.24 + fract(aSeed * 0.22)) + aSeed * 37.0) * drift;
-        p.z += sin(uTime * (0.26 + fract(aSeed * 0.20)) + aSeed * 23.0) * drift;
+        float drift = 0.0025 + aSeed * 0.0025;
+        p.x += sin(uTime * (0.18 + fract(aSeed * 0.25)) + aSeed * 51.0) * drift;
+        p.y += cos(uTime * (0.16 + fract(aSeed * 0.21)) + aSeed * 37.0) * drift;
+        p.z += sin(uTime * (0.17 + fract(aSeed * 0.23)) + aSeed * 23.0) * drift;
 
         vec3 worldNormal = normalize(mat3(modelMatrix) * aNormal);
         float light = max(dot(worldNormal, normalize(uLightDir)), 0.0);
-        float shade = smoothstep(0.12, 0.95, light);
+        float shade = pow(smoothstep(0.10, 0.98, light), 1.85);
 
-        float digitSwitch = floor(uTime * (0.22 + fract(aSeed * 0.16)) + aSeed * 21.0);
+        float digitSwitch = floor(uTime * (0.18 + fract(aSeed * 0.10)) + aSeed * 21.0);
         vDigit = mod(digitSwitch, 2.0);
-        vAlpha = aAlpha * mix(0.04, 1.0, shade);
+        vAlpha = aAlpha * shade;
         vShade = shade;
         vPalette = fract(aSeed * 13.7);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(1.0, aSize * (34.0 / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(1.0, aSize * (22.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: `
       uniform sampler2D uAtlas;
+      uniform vec3 uPalette[7];
 
       varying float vDigit;
       varying float vAlpha;
@@ -920,13 +939,11 @@ function createModelGlyphMaterial(atlas) {
       varying float vPalette;
 
       vec3 palette(float t) {
-        if (t < 0.15) return vec3(0.20, 1.00, 0.53);
-        if (t < 0.30) return vec3(0.18, 0.89, 1.00);
-        if (t < 0.45) return vec3(0.29, 0.49, 1.00);
-        if (t < 0.60) return vec3(0.69, 0.30, 1.00);
-        if (t < 0.75) return vec3(1.00, 0.34, 0.81);
-        if (t < 0.88) return vec3(1.00, 0.55, 0.18);
-        return vec3(1.00, 0.88, 0.40);
+        float scaled = t * 6.0;
+        int i0 = int(floor(scaled));
+        int i1 = min(i0 + 1, 6);
+        float f = fract(scaled);
+        return mix(uPalette[i0], uPalette[i1], f);
       }
 
       void main() {
@@ -936,10 +953,10 @@ function createModelGlyphMaterial(atlas) {
         vec4 glyph = texture2D(uAtlas, atlasUv);
         float alpha = glyph.a * vAlpha;
 
-        if (alpha < 0.025) discard;
+        if (alpha < 0.02) discard;
 
         vec3 color = palette(vPalette);
-        color *= mix(0.25, 1.0, vShade);
+        color *= mix(0.18, 1.0, vShade);
 
         gl_FragColor = vec4(color, alpha);
       }
@@ -948,13 +965,16 @@ function createModelGlyphMaterial(atlas) {
 }
 
 function createStreamGlyphMaterial(atlas) {
+  const paletteUniform = PALETTE.map((c) => c.clone());
+
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     uniforms: {
       uAtlas: { value: atlas },
-      uTime: { value: 0 }
+      uTime: { value: 0 },
+      uPalette: { value: paletteUniform }
     },
     vertexShader: `
       uniform float uTime;
@@ -962,37 +982,38 @@ function createStreamGlyphMaterial(atlas) {
       attribute float aSeed;
       attribute float aSize;
       attribute float aAlpha;
+      attribute float aFlowT;
 
       varying float vDigit;
       varying float vAlpha;
       varying float vPalette;
 
       void main() {
-        float digitSwitch = floor(uTime * (0.35 + fract(aSeed * 0.28)) + aSeed * 17.0);
+        float digitSwitch = floor(uTime * (0.34 + fract(aSeed * 0.18)) + aSeed * 17.0);
         vDigit = mod(digitSwitch, 2.0);
         vPalette = fract(aSeed * 11.3);
         vAlpha = aAlpha;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = max(1.0, aSize * (24.0 / max(1.0, -mvPosition.z)));
+        float grow = mix(1.0, 2.4, smoothstep(0.58, 1.0, aFlowT));
+        gl_PointSize = max(1.0, aSize * grow * (18.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: `
       uniform sampler2D uAtlas;
+      uniform vec3 uPalette[7];
 
       varying float vDigit;
       varying float vAlpha;
       varying float vPalette;
 
       vec3 palette(float t) {
-        if (t < 0.15) return vec3(0.20, 1.00, 0.53);
-        if (t < 0.30) return vec3(0.18, 0.89, 1.00);
-        if (t < 0.45) return vec3(0.29, 0.49, 1.00);
-        if (t < 0.60) return vec3(0.69, 0.30, 1.00);
-        if (t < 0.75) return vec3(1.00, 0.34, 0.81);
-        if (t < 0.88) return vec3(1.00, 0.55, 0.18);
-        return vec3(1.00, 0.88, 0.40);
+        float scaled = t * 6.0;
+        int i0 = int(floor(scaled));
+        int i1 = min(i0 + 1, 6);
+        float f = fract(scaled);
+        return mix(uPalette[i0], uPalette[i1], f);
       }
 
       void main() {
@@ -1213,9 +1234,15 @@ function updateFlags(elapsed) {
     const visibility = Math.min(farVisibility, indexVisibility);
     const finalOpacity = THREE.MathUtils.clamp(Math.pow(visibility, 0.65), 0, 1);
 
+    entry.hoverValue = THREE.MathUtils.lerp(
+      entry.hoverValue,
+      hoveredEntry === entry ? 1 : 0,
+      0.12
+    );
+
     entry.material.uniforms.uTime.value = elapsed;
     entry.material.uniforms.uOpacity.value = finalOpacity;
-    entry.material.uniforms.uHover.value = hoveredEntry === entry ? 1.0 : 0.0;
+    entry.material.uniforms.uHover.value = entry.hoverValue;
 
     entry.group.visible = finalOpacity > 0.02;
   });
@@ -1282,6 +1309,12 @@ function updateLabels() {
       entry.labelNode.style.opacity = `${titleFade}`;
       entry.labelNode.style.transform =
         `translate(calc(${x}px - 100%), calc(${y}px - 50%)) scale(${titleScale})`;
+
+      if (entry.hoverValue > 0.55) {
+        entry.labelNode.classList.add("is-resolved");
+      } else {
+        entry.labelNode.classList.remove("is-resolved");
+      }
     }
   });
 }
@@ -1338,10 +1371,6 @@ function updateBinaryModel(elapsed) {
 
   centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
   modelGlyphMaterial.uniforms.uTime.value = elapsed;
-
-  if (videoTexture) {
-    videoTexture.needsUpdate = true;
-  }
 }
 
 function updateStreamParticles(delta, elapsed) {
@@ -1404,6 +1433,8 @@ function updateStreamParticles(delta, elapsed) {
     streamSystem.positions[posOffset + 1] = working.vD.y;
     streamSystem.positions[posOffset + 2] = working.vD.z;
 
+    streamSystem.flowT[i] = t;
+
     const fadeIn = smooth01(Math.min(1, t / 0.16));
     const fadeOut = 1 - smooth01(Math.max(0, (t - 0.72) / 0.28));
     const shimmer = 0.90 + 0.10 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.2) + streamSystem.seeds[i] * 60.0);
@@ -1417,6 +1448,7 @@ function updateStreamParticles(delta, elapsed) {
 
   streamSystem.geometry.attributes.position.needsUpdate = true;
   streamSystem.geometry.attributes.aAlpha.needsUpdate = true;
+  streamSystem.geometry.attributes.aFlowT.needsUpdate = true;
   streamGlyphMaterial.uniforms.uTime.value = elapsed;
 }
 
