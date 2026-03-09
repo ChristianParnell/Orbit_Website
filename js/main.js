@@ -70,6 +70,16 @@ const PALETTE = [
   new THREE.Color("#ffe166")
 ];
 
+const MODEL_ANIMATION_SEQUENCE = [
+  "Look Hands",
+  "Dance",
+  "Search Pockets",
+  "Search"
+];
+
+const MODEL_ANIMATION_FADE = 0.30;
+const MODEL_NORMAL_SAMPLE_OFFSET = 0.01;
+
 const canvas = document.getElementById("webgl");
 const appRoot = document.getElementById("app") || document.body;
 const loaderOverlay = document.getElementById("loader");
@@ -144,6 +154,11 @@ let dragActive = false;
 let lastTouchY = 0;
 
 let centralModel = null;
+let centralModelMixer = null;
+let centralModelAnimationClips = [];
+let centralModelAnimationActions = [];
+let currentModelAnimationIndex = -1;
+
 let modelPointCloud = null;
 let modelGlyphMaterial = null;
 let streamGlyphMaterial = null;
@@ -193,6 +208,7 @@ const tempVec3 = new THREE.Vector3();
 const tempVec4 = new THREE.Vector3();
 const tempQuat = new THREE.Quaternion();
 const tempColor = new THREE.Color();
+const tempMatrix3 = new THREE.Matrix3();
 
 const flagEntries = [];
 const fogSprites = [];
@@ -693,45 +709,32 @@ function loadCenterModel() {
   const maybeGlb = typeof ASSETS.modelGLB === "string" ? ASSETS.modelGLB.trim() : "";
   const maybeFbx = typeof ASSETS.modelFBX === "string" ? ASSETS.modelFBX.trim() : "";
 
+  if (maybeFbx) {
+    loadFBXFallback(maybeFbx, maybeGltf, maybeGlb);
+    return;
+  }
+
   if (maybeGltf) {
-    gltfLoader.load(
-      maybeGltf,
-      (gltf) => setupLoadedModel(gltf.scene),
-      undefined,
-      () => {
-        if (maybeGlb) {
-          loadGlbFallback(maybeGlb, maybeFbx);
-        } else if (maybeFbx) {
-          loadFBXFallback(maybeFbx);
-        } else {
-          createFallbackModel();
-        }
-      }
-    );
+    loadGLTFFallback(maybeGltf, maybeGlb);
     return;
   }
 
   if (maybeGlb) {
-    loadGlbFallback(maybeGlb, maybeFbx);
-    return;
-  }
-
-  if (maybeFbx) {
-    loadFBXFallback(maybeFbx);
+    loadGlbFallback(maybeGlb);
     return;
   }
 
   createFallbackModel();
 }
 
-function loadGlbFallback(glbPath, fbxPath) {
+function loadGLTFFallback(gltfPath, glbPath = "") {
   gltfLoader.load(
-    glbPath,
-    (gltf) => setupLoadedModel(gltf.scene),
+    gltfPath,
+    (gltf) => setupLoadedModel(gltf.scene, gltf.animations || []),
     undefined,
     () => {
-      if (fbxPath) {
-        loadFBXFallback(fbxPath);
+      if (glbPath) {
+        loadGlbFallback(glbPath);
       } else {
         createFallbackModel();
       }
@@ -739,16 +742,35 @@ function loadGlbFallback(glbPath, fbxPath) {
   );
 }
 
-function loadFBXFallback(fbxPath) {
-  fbxLoader.load(
-    fbxPath,
-    (fbx) => setupLoadedModel(fbx),
+function loadGlbFallback(glbPath) {
+  gltfLoader.load(
+    glbPath,
+    (gltf) => setupLoadedModel(gltf.scene, gltf.animations || []),
     undefined,
     () => createFallbackModel()
   );
 }
 
-function setupLoadedModel(modelRoot) {
+function loadFBXFallback(fbxPath, gltfPath = "", glbPath = "") {
+  fbxLoader.load(
+    fbxPath,
+    (fbx) => setupLoadedModel(fbx, fbx.animations || []),
+    undefined,
+    () => {
+      if (gltfPath) {
+        loadGLTFFallback(gltfPath, glbPath);
+      } else if (glbPath) {
+        loadGlbFallback(glbPath);
+      } else {
+        createFallbackModel();
+      }
+    }
+  );
+}
+
+function setupLoadedModel(modelRoot, animations = []) {
+  resetModelAnimationState();
+
   centralModel = modelRoot;
 
   centralModel.traverse((child) => {
@@ -766,6 +788,8 @@ function setupLoadedModel(modelRoot) {
   centerAndScaleModel(centralModel);
   orbitRoot.add(centralModel);
 
+  initModelAnimations(centralModel, animations);
+
   modelSampleData = extractModelSampleData(centralModel, CFG.modelPointLimit);
   buildBinaryModelRepresentation();
   buildStreamSystem();
@@ -777,6 +801,8 @@ function setupLoadedModel(modelRoot) {
 }
 
 function createFallbackModel() {
+  resetModelAnimationState();
+
   const fallback = new THREE.Group();
 
   const body = new THREE.Mesh(
@@ -822,6 +848,128 @@ function centerAndScaleModel(model) {
   model.rotation.y = CFG.modelYaw;
 }
 
+function resetModelAnimationState() {
+  if (centralModelMixer) {
+    centralModelMixer.stopAllAction();
+    centralModelMixer.removeEventListener("finished", onModelAnimationFinished);
+  }
+
+  centralModelMixer = null;
+  centralModelAnimationClips = [];
+  centralModelAnimationActions = [];
+  currentModelAnimationIndex = -1;
+}
+
+function normalizeAnimationName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[_|]+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sortModelAnimationClips(clips) {
+  const safeClips = Array.isArray(clips)
+    ? clips.filter((clip) => clip && clip.duration > 0)
+    : [];
+
+  if (!safeClips.length) return [];
+
+  const ordered = [];
+  const used = new Set();
+
+  MODEL_ANIMATION_SEQUENCE.forEach((targetName) => {
+    const target = normalizeAnimationName(targetName);
+    const matchIndex = safeClips.findIndex((clip, idx) => {
+      if (used.has(idx)) return false;
+      return normalizeAnimationName(clip.name).includes(target);
+    });
+
+    if (matchIndex !== -1) {
+      ordered.push(safeClips[matchIndex]);
+      used.add(matchIndex);
+    }
+  });
+
+  return ordered.length ? ordered : safeClips;
+}
+
+function initModelAnimations(modelRoot, animations = []) {
+  const clips = sortModelAnimationClips(
+    animations.length ? animations : (Array.isArray(modelRoot.animations) ? modelRoot.animations : [])
+  );
+
+  if (!clips.length) return;
+
+  centralModelMixer = new THREE.AnimationMixer(modelRoot);
+  centralModelAnimationClips = clips;
+
+  centralModelAnimationActions = clips.map((clip) => {
+    const action = centralModelMixer.clipAction(clip);
+    action.enabled = true;
+    action.clampWhenFinished = true;
+    action.zeroSlopeAtStart = true;
+    action.zeroSlopeAtEnd = true;
+    action.setLoop(THREE.LoopOnce, 1);
+    return action;
+  });
+
+  if (centralModelAnimationActions.length === 1) {
+    const single = centralModelAnimationActions[0];
+    single.reset();
+    single.clampWhenFinished = false;
+    single.setLoop(THREE.LoopRepeat, Infinity);
+    single.play();
+    currentModelAnimationIndex = 0;
+    return;
+  }
+
+  centralModelMixer.addEventListener("finished", onModelAnimationFinished);
+  playModelAnimationByIndex(0, true);
+}
+
+function playModelAnimationByIndex(index, immediate = false) {
+  if (!centralModelAnimationActions.length) return;
+
+  const count = centralModelAnimationActions.length;
+  const nextIndex = ((index % count) + count) % count;
+  const nextAction = centralModelAnimationActions[nextIndex];
+  const currentAction =
+    currentModelAnimationIndex >= 0
+      ? centralModelAnimationActions[currentModelAnimationIndex]
+      : null;
+
+  nextAction.reset();
+  nextAction.enabled = true;
+  nextAction.paused = false;
+  nextAction.clampWhenFinished = true;
+  nextAction.setLoop(THREE.LoopOnce, 1);
+  nextAction.setEffectiveTimeScale(1);
+  nextAction.setEffectiveWeight(1);
+
+  if (!currentAction || immediate || currentAction === nextAction) {
+    if (currentAction && currentAction !== nextAction) {
+      currentAction.stop();
+    }
+    nextAction.fadeIn(0.12).play();
+  } else {
+    nextAction.play();
+    nextAction.crossFadeFrom(currentAction, MODEL_ANIMATION_FADE, false);
+  }
+
+  currentModelAnimationIndex = nextIndex;
+}
+
+function onModelAnimationFinished(event) {
+  if (!centralModelAnimationActions.length || centralModelAnimationActions.length === 1) return;
+
+  const finishedIndex = centralModelAnimationActions.indexOf(event.action);
+  if (finishedIndex === -1) return;
+
+  playModelAnimationByIndex(finishedIndex + 1, false);
+}
+
 function extractModelSampleData(model, maxPoints) {
   model.updateMatrixWorld(true);
 
@@ -839,13 +987,24 @@ function extractModelSampleData(model, maxPoints) {
   if (totalVertices === 0) {
     return {
       positions: new Float32Array(),
-      normals: new Float32Array()
+      normals: new Float32Array(),
+      restPositions: new Float32Array(),
+      restNormals: new Float32Array(),
+      meshRefs: [],
+      vertexIndices: new Uint32Array(),
+      skinnedFlags: new Uint8Array()
     };
   }
 
   const step = Math.max(1, Math.floor(totalVertices / maxPoints));
   const positions = [];
   const normals = [];
+  const restPositions = [];
+  const restNormals = [];
+  const meshRefs = [];
+  const vertexIndices = [];
+  const skinnedFlags = [];
+
   const normalMatrix = new THREE.Matrix3();
 
   model.traverse((child) => {
@@ -853,11 +1012,12 @@ function extractModelSampleData(model, maxPoints) {
 
     const pos = child.geometry.attributes.position;
     const nor = child.geometry.attributes.normal;
-
     normalMatrix.getNormalMatrix(child.matrixWorld);
 
     for (let i = 0; i < pos.count; i += step) {
       tempVec1.fromBufferAttribute(pos, i);
+      restPositions.push(tempVec1.x, tempVec1.y, tempVec1.z);
+
       tempVec1.applyMatrix4(child.matrixWorld);
       tempVec1.applyMatrix4(rootInverse);
       positions.push(tempVec1.x, tempVec1.y, tempVec1.z);
@@ -868,15 +1028,26 @@ function extractModelSampleData(model, maxPoints) {
         tempVec2.set(0, 1, 0);
       }
 
+      restNormals.push(tempVec2.x, tempVec2.y, tempVec2.z);
+
       tempVec2.applyMatrix3(normalMatrix).normalize();
       tempVec2.applyQuaternion(invRootQuat).normalize();
       normals.push(tempVec2.x, tempVec2.y, tempVec2.z);
+
+      meshRefs.push(child);
+      vertexIndices.push(i);
+      skinnedFlags.push(child.isSkinnedMesh ? 1 : 0);
     }
   });
 
   return {
     positions: new Float32Array(positions),
-    normals: new Float32Array(normals)
+    normals: new Float32Array(normals),
+    restPositions: new Float32Array(restPositions),
+    restNormals: new Float32Array(restNormals),
+    meshRefs,
+    vertexIndices: new Uint32Array(vertexIndices),
+    skinnedFlags: new Uint8Array(skinnedFlags)
   };
 }
 
@@ -895,8 +1066,15 @@ function buildBinaryModelRepresentation() {
   }
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(modelSampleData.positions, 3));
-  geometry.setAttribute("aNormal", new THREE.BufferAttribute(modelSampleData.normals, 3));
+
+  const positionAttr = new THREE.BufferAttribute(modelSampleData.positions, 3);
+  positionAttr.setUsage(THREE.DynamicDrawUsage);
+
+  const normalAttr = new THREE.BufferAttribute(modelSampleData.normals, 3);
+  normalAttr.setUsage(THREE.DynamicDrawUsage);
+
+  geometry.setAttribute("position", positionAttr);
+  geometry.setAttribute("aNormal", normalAttr);
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
@@ -1528,7 +1706,7 @@ function animate() {
   updateLabels();
   updateRelationLines(elapsed);
   updateFog(elapsed);
-  updateBinaryModel(elapsed);
+  updateBinaryModel(delta, elapsed);
   updateStreamParticles(delta, elapsed);
   updateFocusTunnel(delta, elapsed);
   updateDebugTerminal(elapsed);
@@ -1800,10 +1978,117 @@ function updateFog(elapsed) {
   });
 }
 
-function updateBinaryModel(elapsed) {
+function refreshAnimatedModelSampleData() {
+  if (
+    !centralModel ||
+    !modelSampleData ||
+    !modelSampleData.meshRefs?.length
+  ) return;
+
+  centralModel.updateMatrixWorld(true);
+  working.mA.copy(centralModel.matrixWorld).invert();
+  centralModel.getWorldQuaternion(working.qA);
+  working.qB.copy(working.qA).invert();
+
+  const positions = modelSampleData.positions;
+  const normals = modelSampleData.normals;
+  const restPositions = modelSampleData.restPositions;
+  const restNormals = modelSampleData.restNormals;
+  const meshRefs = modelSampleData.meshRefs;
+  const vertexIndices = modelSampleData.vertexIndices;
+  const skinnedFlags = modelSampleData.skinnedFlags;
+
+  let currentMesh = null;
+
+  for (let i = 0; i < meshRefs.length; i += 1) {
+    const mesh = meshRefs[i];
+    if (!mesh) continue;
+
+    if (mesh !== currentMesh) {
+      currentMesh = mesh;
+      currentMesh.updateMatrixWorld(true);
+      tempMatrix3.getNormalMatrix(currentMesh.matrixWorld);
+    }
+
+    const offset = i * 3;
+    const vertexIndex = vertexIndices[i];
+    const isSkinned = skinnedFlags[i] === 1 && typeof currentMesh.applyBoneTransform === "function";
+
+    tempVec1.set(
+      restPositions[offset],
+      restPositions[offset + 1],
+      restPositions[offset + 2]
+    );
+
+    if (isSkinned) {
+      currentMesh.applyBoneTransform(vertexIndex, tempVec1);
+    }
+
+    tempVec2.set(
+      restNormals[offset],
+      restNormals[offset + 1],
+      restNormals[offset + 2]
+    );
+
+    if (isSkinned) {
+      if (tempVec2.lengthSq() > 1e-8) {
+        tempVec3.set(
+          restPositions[offset],
+          restPositions[offset + 1],
+          restPositions[offset + 2]
+        );
+        tempVec3.addScaledVector(tempVec2, MODEL_NORMAL_SAMPLE_OFFSET);
+        currentMesh.applyBoneTransform(vertexIndex, tempVec3);
+
+        tempVec2.copy(tempVec3).sub(tempVec1);
+
+        if (tempVec2.lengthSq() > 1e-8) {
+          tempVec2.normalize();
+        } else {
+          tempVec2.set(0, 1, 0);
+        }
+
+        tempVec2.transformDirection(currentMesh.matrixWorld);
+        tempVec2.applyQuaternion(working.qB).normalize();
+      } else {
+        tempVec2.set(0, 1, 0).applyQuaternion(working.qB).normalize();
+      }
+    } else {
+      tempVec2.applyMatrix3(tempMatrix3).normalize();
+      tempVec2.applyQuaternion(working.qB).normalize();
+    }
+
+    tempVec1.applyMatrix4(currentMesh.matrixWorld);
+    tempVec1.applyMatrix4(working.mA);
+
+    positions[offset] = tempVec1.x;
+    positions[offset + 1] = tempVec1.y;
+    positions[offset + 2] = tempVec1.z;
+
+    normals[offset] = tempVec2.x;
+    normals[offset + 1] = tempVec2.y;
+    normals[offset + 2] = tempVec2.z;
+  }
+
+  if (modelPointCloud?.geometry) {
+    const positionAttr = modelPointCloud.geometry.getAttribute("position");
+    const normalAttr = modelPointCloud.geometry.getAttribute("aNormal");
+
+    if (positionAttr) positionAttr.needsUpdate = true;
+    if (normalAttr) normalAttr.needsUpdate = true;
+  }
+}
+
+function updateBinaryModel(delta, elapsed) {
   if (!centralModel || !modelGlyphMaterial) return;
 
   centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
+
+  if (centralModelMixer) {
+    centralModelMixer.update(delta);
+    refreshAnimatedModelSampleData();
+  }
+
   modelGlyphMaterial.uniforms.uTime.value = elapsed;
   modelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.08;
 }
