@@ -53,16 +53,7 @@ const CFG = {
   breachDuration: 4.25,
 
   relationMaxLines: 5,
-  relationLinePoints: 26,
-
-  deepScanDelay: 1.0,
-  deepScanRingScale: 1.22,
-  deepScanRingPulse: 0.06,
-
-  memoryTrailLifetime: 3.4,
-  memoryTrailGhostScale: 0.92,
-  memoryTrailMaxItems: 12,
-  memoryTrailCaptureDelta: 0.055
+  relationLinePoints: 26
 };
 
 const COLORS = {
@@ -78,69 +69,6 @@ const PALETTE = [
   new THREE.Color("#ff8b2d"),
   new THREE.Color("#ffe166")
 ];
-
-const CATEGORY_PROFILES = {
-  animation: {
-    key: "animation",
-    label: "ANIMATION",
-    color: new THREE.Color("#2fe4ff"),
-    speed: 0.96,
-    spread: 1.22,
-    curve: 1.15,
-    wobble: 0.065,
-    alpha: 1.08,
-    ringColor: new THREE.Color("#2fe4ff"),
-    lineColor: new THREE.Color("#2fe4ff")
-  },
-  game: {
-    key: "game",
-    label: "GAME",
-    color: new THREE.Color("#ff57ce"),
-    speed: 1.18,
-    spread: 0.86,
-    curve: 0.92,
-    wobble: 0.024,
-    alpha: 1.18,
-    ringColor: new THREE.Color("#ff57ce"),
-    lineColor: new THREE.Color("#ff8b2d")
-  },
-  design: {
-    key: "design",
-    label: "DESIGN",
-    color: new THREE.Color("#33ff88"),
-    speed: 0.88,
-    spread: 0.72,
-    curve: 0.82,
-    wobble: 0.012,
-    alpha: 0.95,
-    ringColor: new THREE.Color("#33ff88"),
-    lineColor: new THREE.Color("#33ff88")
-  },
-  vfx: {
-    key: "vfx",
-    label: "VFX",
-    color: new THREE.Color("#b04dff"),
-    speed: 1.06,
-    spread: 1.04,
-    curve: 1.10,
-    wobble: 0.052,
-    alpha: 1.10,
-    ringColor: new THREE.Color("#b04dff"),
-    lineColor: new THREE.Color("#b04dff")
-  },
-  default: {
-    key: "default",
-    label: "NODE",
-    color: new THREE.Color("#4b7dff"),
-    speed: 1.0,
-    spread: 1.0,
-    curve: 1.0,
-    wobble: 0.022,
-    alpha: 1.0,
-    ringColor: new THREE.Color("#4b7dff"),
-    lineColor: new THREE.Color("#4b7dff")
-  }
-};
 
 const canvas = document.getElementById("webgl");
 const appRoot = document.getElementById("app") || document.body;
@@ -242,25 +170,6 @@ const breachState = {
   strength: 0
 };
 
-const scanState = {
-  hoveredIndex: -1,
-  targetIndex: -1,
-  hoverStartAt: 0,
-  active: false,
-  strength: 0,
-  overlayEl: null,
-  panelEl: null,
-  panelTitleEl: null,
-  panelMetaEl: null,
-  panelBodyEl: null,
-  group: null,
-  ringA: null,
-  ringB: null,
-  ringC: null,
-  crossX: null,
-  crossY: null
-};
-
 const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
 
@@ -293,7 +202,6 @@ const coverWorldData = ORBIT_ITEMS.map(() => ({
   position: new THREE.Vector3(),
   right: new THREE.Vector3(1, 0, 0),
   up: new THREE.Vector3(0, 1, 0),
-  quaternion: new THREE.Quaternion(),
   visible: true
 }));
 
@@ -334,16 +242,6 @@ const focusTunnelSystem = {
 const relationSystem = {
   lines: [],
   group: null
-};
-
-const memoryTrailSystem = {
-  group: null,
-  ghosts: [],
-  splines: [],
-  lastCaptureProgress: 0.02,
-  lastCaptureIndex: -1,
-  lastCapturePosition: null,
-  lastCaptureQuaternion: null
 };
 
 setupLighting();
@@ -396,9 +294,6 @@ function initScene() {
   createFog();
   createFlags(textureLoader);
   buildRelationSystem();
-  buildMemoryTrailSystem();
-  createDeepScanUI();
-  buildDeepScanSystem();
   loadCenterModel();
 }
 
@@ -412,33 +307,6 @@ function setupLighting() {
   const key = new THREE.DirectionalLight(0xffffff, 0.30);
   key.position.copy(LIGHT_DIR).multiplyScalar(8);
   scene.add(key);
-}
-
-function getItemCategory(item) {
-  const text = [
-    item?.title ?? "",
-    item?.subtitle ?? "",
-    item?.theme ?? "",
-    item?.href ?? ""
-  ].join(" ").toLowerCase();
-
-  if (
-    /game|steam|play|interactive|prototype|unity|22 minutes|thylassaphobia/.test(text)
-  ) return CATEGORY_PROFILES.game;
-
-  if (
-    /animation|moving image|motion|gallery|film|video|anim/.test(text)
-  ) return CATEGORY_PROFILES.animation;
-
-  if (
-    /vfx|fx|shader|effect|composite|compositing|particles/.test(text)
-  ) return CATEGORY_PROFILES.vfx;
-
-  if (
-    /design|branding|brand|graphic|ui|ux|website|portfolio|print/.test(text)
-  ) return CATEGORY_PROFILES.design;
-
-  return CATEGORY_PROFILES.default;
 }
 
 function createGroundSystem() {
@@ -745,7 +613,6 @@ function createFlags(loader) {
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
     const mat = createFlagMaterial(tex);
-    const category = getItemCategory(item);
 
     const flag = new THREE.Mesh(
       new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 18, 10),
@@ -784,8 +651,7 @@ function createFlags(loader) {
       labelAnchor,
       labelNode,
       hoverValue: 0,
-      breachValue: 0,
-      category
+      breachValue: 0
     });
   });
 }
@@ -820,146 +686,6 @@ function buildRelationSystem() {
 
     relationSystem.lines.push({ line, geometry, positions, material });
   }
-}
-
-function buildMemoryTrailSystem() {
-  memoryTrailSystem.group = new THREE.Group();
-  scene.add(memoryTrailSystem.group);
-}
-
-function createDeepScanUI() {
-  if (!appRoot) return;
-
-  const overlay = document.createElement("div");
-  overlay.setAttribute("aria-hidden", "true");
-  overlay.style.position = "absolute";
-  overlay.style.inset = "0";
-  overlay.style.pointerEvents = "none";
-  overlay.style.zIndex = "5";
-  overlay.style.opacity = "0";
-  overlay.style.transition = "opacity 0.2s ease";
-  overlay.style.background = `
-    radial-gradient(circle at center, rgba(47,228,255,0.04), transparent 34%),
-    linear-gradient(180deg, rgba(2,8,16,0.22), rgba(2,8,16,0.44))
-  `;
-  overlay.style.mixBlendMode = "normal";
-  appRoot.appendChild(overlay);
-
-  const panel = document.createElement("div");
-  panel.setAttribute("aria-hidden", "true");
-  panel.style.position = "absolute";
-  panel.style.pointerEvents = "none";
-  panel.style.zIndex = "9";
-  panel.style.minWidth = "240px";
-  panel.style.maxWidth = "300px";
-  panel.style.padding = "12px 14px";
-  panel.style.border = "1px solid rgba(47,228,255,0.18)";
-  panel.style.background = "rgba(8, 18, 28, 0.78)";
-  panel.style.backdropFilter = "blur(12px)";
-  panel.style.boxShadow = "0 10px 40px rgba(0,0,0,0.25)";
-  panel.style.opacity = "0";
-  panel.style.transform = "translateY(8px)";
-  panel.style.transition = "opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease";
-  panel.style.color = "var(--text)";
-  panel.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-
-  const title = document.createElement("div");
-  title.style.fontSize = "0.78rem";
-  title.style.letterSpacing = "0.16em";
-  title.style.textTransform = "uppercase";
-  title.style.color = "rgba(231,246,255,0.58)";
-  title.style.marginBottom = "8px";
-  title.textContent = "DEEP SCAN";
-
-  const meta = document.createElement("div");
-  meta.style.fontSize = "1rem";
-  meta.style.fontWeight = "700";
-  meta.style.lineHeight = "1.3";
-  meta.style.marginBottom = "8px";
-  meta.textContent = "Awaiting node lock";
-
-  const body = document.createElement("div");
-  body.style.fontSize = "0.78rem";
-  body.style.lineHeight = "1.55";
-  body.style.color = "rgba(231,246,255,0.72)";
-  body.innerHTML = "metadata://standby";
-
-  panel.appendChild(title);
-  panel.appendChild(meta);
-  panel.appendChild(body);
-  appRoot.appendChild(panel);
-
-  scanState.overlayEl = overlay;
-  scanState.panelEl = panel;
-  scanState.panelTitleEl = title;
-  scanState.panelMetaEl = meta;
-  scanState.panelBodyEl = body;
-}
-
-function makeCircleLine(radius, segments = 64) {
-  const points = [];
-  for (let i = 0; i < segments; i += 1) {
-    const a = (i / segments) * Math.PI * 2;
-    points.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0));
-  }
-
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color: 0x2fe4ff,
-    transparent: true,
-    opacity: 0,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: true,
-    toneMapped: false
-  });
-
-  const line = new THREE.LineLoop(geometry, material);
-  line.renderOrder = 12;
-  line.frustumCulled = false;
-  return line;
-}
-
-function makeCrossLine(size, horizontal = true) {
-  const points = horizontal
-    ? [new THREE.Vector3(-size, 0, 0), new THREE.Vector3(size, 0, 0)]
-    : [new THREE.Vector3(0, -size, 0), new THREE.Vector3(0, size, 0)];
-
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color: 0x2fe4ff,
-    transparent: true,
-    opacity: 0,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: true,
-    toneMapped: false
-  });
-
-  const line = new THREE.Line(geometry, material);
-  line.renderOrder = 12;
-  line.frustumCulled = false;
-  return line;
-}
-
-function buildDeepScanSystem() {
-  const group = new THREE.Group();
-  scene.add(group);
-
-  const ringA = makeCircleLine(0.62);
-  const ringB = makeCircleLine(0.74);
-  const ringC = makeCircleLine(0.88);
-  const crossX = makeCrossLine(0.92, true);
-  const crossY = makeCrossLine(0.92, false);
-
-  group.add(ringA, ringB, ringC, crossX, crossY);
-
-  scanState.group = group;
-  scanState.ringA = ringA;
-  scanState.ringB = ringB;
-  scanState.ringC = ringC;
-  scanState.crossX = crossX;
-  scanState.crossY = crossY;
 }
 
 function loadCenterModel() {
@@ -1799,9 +1525,6 @@ function animate() {
   updateFlags(elapsed);
   updateCoverWorldData();
   updateIntersections();
-  updateDeepScan(elapsed);
-  maybeCaptureMemoryTrail(elapsed);
-  updateMemoryTrails(delta, elapsed);
   updateLabels();
   updateRelationLines(elapsed);
   updateFog(elapsed);
@@ -1839,10 +1562,6 @@ function updateAudioReactive(elapsed) {
 
   if (breachState.active) {
     target += breachState.strength * 0.28;
-  }
-
-  if (scanState.strength > 0.01) {
-    target += scanState.strength * 0.04;
   }
 
   audioReactiveLevel = THREE.MathUtils.lerp(audioReactiveLevel, target, 0.10);
@@ -1954,10 +1673,10 @@ function updateCoverWorldData() {
     const data = coverWorldData[i];
 
     entry.group.getWorldPosition(data.position);
-    entry.group.getWorldQuaternion(data.quaternion);
+    entry.group.getWorldQuaternion(tempQuat);
 
-    data.right.set(1, 0, 0).applyQuaternion(data.quaternion);
-    data.up.set(0, 1, 0).applyQuaternion(data.quaternion);
+    data.right.set(1, 0, 0).applyQuaternion(tempQuat);
+    data.up.set(0, 1, 0).applyQuaternion(tempQuat);
     data.visible = entry.group.visible;
   }
 }
@@ -1966,312 +1685,15 @@ function updateActiveNode(entry) {
   if (!entry) return;
 
   let title = entry.item.title;
-  let meta = `${entry.item.subtitle || "active node"} • ${entry.item.theme || entry.category.label}`;
+  let meta = `${entry.item.subtitle || "active node"} • ${entry.item.theme || "portfolio node"}`;
 
   const idx = flagEntries.indexOf(entry);
   if (breachState.active && idx === breachState.index) {
     meta += " • breach detected";
-  } else if (scanState.active && idx === scanState.targetIndex) {
-    meta += " • deep scan locked";
   }
 
   if (activeNodeTitle) activeNodeTitle.textContent = title;
   if (activeNodeMeta) activeNodeMeta.textContent = meta;
-}
-
-function getDeepScanEntry() {
-  if (breachState.active) return null;
-  if (scanState.targetIndex < 0 || scanState.targetIndex >= flagEntries.length) return null;
-  return flagEntries[scanState.targetIndex];
-}
-
-function updateDeepScan(elapsed) {
-  const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
-
-  if (breachState.active) {
-    scanState.hoveredIndex = -1;
-    scanState.targetIndex = -1;
-    scanState.active = false;
-  } else {
-    if (hoveredIndex !== scanState.hoveredIndex) {
-      scanState.hoveredIndex = hoveredIndex;
-      scanState.hoverStartAt = elapsed;
-      scanState.active = false;
-      scanState.targetIndex = -1;
-    }
-
-    if (hoveredIndex !== -1) {
-      if (elapsed - scanState.hoverStartAt >= CFG.deepScanDelay) {
-        scanState.active = true;
-        scanState.targetIndex = hoveredIndex;
-      }
-    } else {
-      scanState.active = false;
-      scanState.targetIndex = -1;
-    }
-  }
-
-  scanState.strength = THREE.MathUtils.lerp(
-    scanState.strength,
-    scanState.active ? 1 : 0,
-    0.12
-  );
-
-  if (scanState.overlayEl) {
-    scanState.overlayEl.style.opacity = `${0.58 * scanState.strength}`;
-  }
-
-  const entry = getDeepScanEntry();
-  if (!entry || scanState.strength < 0.01) {
-    if (scanState.group) {
-      scanState.group.visible = false;
-    }
-    if (scanState.panelEl) {
-      scanState.panelEl.style.opacity = "0";
-      scanState.panelEl.style.transform = "translateY(8px)";
-    }
-    return;
-  }
-
-  const idx = flagEntries.indexOf(entry);
-  const data = coverWorldData[idx];
-  const profile = entry.category;
-
-  if (scanState.group) {
-    scanState.group.visible = true;
-    scanState.group.position.copy(data.position);
-    scanState.group.quaternion.copy(data.quaternion);
-
-    const pulse = 1 + Math.sin(elapsed * 3.4) * CFG.deepScanRingPulse * scanState.strength;
-    const pulseB = 1 + Math.sin(elapsed * 4.6 + 1.2) * (CFG.deepScanRingPulse * 0.7) * scanState.strength;
-    const pulseC = 1 + Math.sin(elapsed * 2.8 + 2.2) * (CFG.deepScanRingPulse * 1.1) * scanState.strength;
-
-    scanState.ringA.scale.setScalar(CFG.deepScanRingScale * pulse);
-    scanState.ringB.scale.setScalar((CFG.deepScanRingScale + 0.1) * pulseB);
-    scanState.ringC.scale.setScalar((CFG.deepScanRingScale + 0.22) * pulseC);
-    scanState.crossX.scale.setScalar(CFG.deepScanRingScale * 1.06);
-    scanState.crossY.scale.setScalar(CFG.deepScanRingScale * 1.06);
-
-    scanState.ringA.material.color.copy(profile.ringColor);
-    scanState.ringB.material.color.copy(profile.ringColor);
-    scanState.ringC.material.color.copy(profile.ringColor);
-    scanState.crossX.material.color.copy(profile.ringColor);
-    scanState.crossY.material.color.copy(profile.ringColor);
-
-    scanState.ringA.material.opacity = 0.34 * scanState.strength;
-    scanState.ringB.material.opacity = 0.24 * scanState.strength;
-    scanState.ringC.material.opacity = 0.16 * scanState.strength;
-    scanState.crossX.material.opacity = 0.16 * scanState.strength;
-    scanState.crossY.material.opacity = 0.16 * scanState.strength;
-  }
-
-  if (scanState.panelEl) {
-    entry.labelAnchor.getWorldPosition(working.vB);
-    working.vB.project(camera);
-
-    const x = (working.vB.x * 0.5 + 0.5) * window.innerWidth;
-    const y = (-working.vB.y * 0.5 + 0.5) * window.innerHeight;
-
-    scanState.panelEl.style.opacity = `${scanState.strength}`;
-    scanState.panelEl.style.transform = "translateY(0px)";
-    scanState.panelEl.style.left = `${Math.min(window.innerWidth - 320, x + 26)}px`;
-    scanState.panelEl.style.top = `${Math.max(90, y - 24)}px`;
-    scanState.panelEl.style.borderColor = profile.ringColor.getStyle();
-
-    if (scanState.panelTitleEl) {
-      scanState.panelTitleEl.textContent = `DEEP SCAN // ${profile.label}`;
-      scanState.panelTitleEl.style.color = profile.ringColor.getStyle();
-    }
-
-    if (scanState.panelMetaEl) {
-      scanState.panelMetaEl.textContent = entry.item.title || "Untitled node";
-    }
-
-    if (scanState.panelBodyEl) {
-      const integrity = `${Math.round(84 + Math.sin(elapsed * 2.4 + idx) * 7 + 8)}%`;
-      const route = safeHost(entry.item.href);
-      scanState.panelBodyEl.innerHTML = `
-        node:///${String(idx + 1).padStart(2, "0")}<br>
-        type://${profile.key}<br>
-        theme://${entry.item.theme || "portfolio"}<br>
-        integrity://${integrity}<br>
-        route://${route}
-      `;
-    }
-  }
-}
-
-function safeHost(href) {
-  try {
-    return new URL(href, window.location.href).hostname || "local";
-  } catch {
-    return "local";
-  }
-}
-
-function maybeCaptureMemoryTrail(elapsed) {
-  if (!hasEntered || !activeEntry) return;
-
-  const idx = flagEntries.indexOf(activeEntry);
-  if (idx === -1) return;
-
-  const movedEnough = Math.abs(currentProgress - memoryTrailSystem.lastCaptureProgress) > CFG.memoryTrailCaptureDelta;
-  const changedNode = idx !== memoryTrailSystem.lastCaptureIndex;
-
-  if (!movedEnough && !changedNode) return;
-  if (!coverWorldData[idx].visible) return;
-
-  captureMemoryTrail(idx, elapsed);
-}
-
-function captureMemoryTrail(idx, elapsed) {
-  const entry = flagEntries[idx];
-  const data = coverWorldData[idx];
-  const profile = entry.category;
-
-  const map = entry.material.uniforms.uMap.value;
-  const ghostMaterial = new THREE.MeshBasicMaterial({
-    map,
-    color: profile.color.clone().multiplyScalar(0.95),
-    transparent: true,
-    opacity: 0.22,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    toneMapped: false
-  });
-
-  const ghost = new THREE.Mesh(
-    new THREE.PlaneGeometry(CFG.flagWidth * CFG.memoryTrailGhostScale, CFG.flagHeight * CFG.memoryTrailGhostScale),
-    ghostMaterial
-  );
-  ghost.position.copy(data.position);
-  ghost.quaternion.copy(data.quaternion);
-  ghost.renderOrder = 5;
-  ghost.frustumCulled = false;
-  memoryTrailSystem.group.add(ghost);
-
-  memoryTrailSystem.ghosts.push({
-    mesh: ghost,
-    material: ghostMaterial,
-    life: CFG.memoryTrailLifetime,
-    maxLife: CFG.memoryTrailLifetime,
-    profile
-  });
-
-  if (memoryTrailSystem.lastCapturePosition) {
-    const spline = createMemoryTrailSpline(
-      memoryTrailSystem.lastCapturePosition,
-      data.position,
-      profile.lineColor
-    );
-    memoryTrailSystem.group.add(spline.line);
-    memoryTrailSystem.splines.push(spline);
-  }
-
-  memoryTrailSystem.lastCaptureProgress = currentProgress;
-  memoryTrailSystem.lastCaptureIndex = idx;
-  memoryTrailSystem.lastCapturePosition = data.position.clone();
-  memoryTrailSystem.lastCaptureQuaternion = data.quaternion.clone();
-
-  while (
-    memoryTrailSystem.ghosts.length + memoryTrailSystem.splines.length >
-    CFG.memoryTrailMaxItems * 2
-  ) {
-    if (memoryTrailSystem.ghosts.length) {
-      const g = memoryTrailSystem.ghosts.shift();
-      memoryTrailSystem.group.remove(g.mesh);
-      g.material.dispose();
-      g.mesh.geometry.dispose();
-    }
-    if (memoryTrailSystem.splines.length) {
-      const s = memoryTrailSystem.splines.shift();
-      memoryTrailSystem.group.remove(s.line);
-      s.material.dispose();
-      s.geometry.dispose();
-    }
-  }
-}
-
-function createMemoryTrailSpline(from, to, color) {
-  const points = 22;
-  const positions = new Float32Array(points * 3);
-
-  const p0 = from.clone();
-  const p2 = to.clone();
-  const ctrl = from.clone().lerp(to, 0.5);
-  ctrl.y += THREE.MathUtils.clamp(from.distanceTo(to) * 0.18, 0.22, 0.75);
-
-  for (let i = 0; i < points; i += 1) {
-    const t = i / (points - 1);
-    quadraticBezier(p0, ctrl, p2, t, working.vA);
-    const n = i * 3;
-    positions[n] = working.vA.x;
-    positions[n + 1] = working.vA.y;
-    positions[n + 2] = working.vA.z;
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-
-  const material = new THREE.LineBasicMaterial({
-    color,
-    transparent: true,
-    opacity: 0.18,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: true,
-    toneMapped: false
-  });
-
-  const line = new THREE.Line(geometry, material);
-  line.renderOrder = 5;
-  line.frustumCulled = false;
-
-  return {
-    line,
-    geometry,
-    material,
-    life: CFG.memoryTrailLifetime * 0.92,
-    maxLife: CFG.memoryTrailLifetime * 0.92
-  };
-}
-
-function updateMemoryTrails(delta, elapsed) {
-  for (let i = memoryTrailSystem.ghosts.length - 1; i >= 0; i -= 1) {
-    const g = memoryTrailSystem.ghosts[i];
-    g.life -= delta;
-
-    if (g.life <= 0) {
-      memoryTrailSystem.group.remove(g.mesh);
-      g.material.dispose();
-      g.mesh.geometry.dispose();
-      memoryTrailSystem.ghosts.splice(i, 1);
-      continue;
-    }
-
-    const t = g.life / g.maxLife;
-    g.material.opacity = 0.22 * t * t;
-    g.mesh.scale.setScalar(1 + (1 - t) * 0.1);
-    g.mesh.position.z += Math.sin(elapsed * 1.7 + i) * 0.0005;
-  }
-
-  for (let i = memoryTrailSystem.splines.length - 1; i >= 0; i -= 1) {
-    const s = memoryTrailSystem.splines[i];
-    s.life -= delta;
-
-    if (s.life <= 0) {
-      memoryTrailSystem.group.remove(s.line);
-      s.material.dispose();
-      s.geometry.dispose();
-      memoryTrailSystem.splines.splice(i, 1);
-      continue;
-    }
-
-    const t = s.life / s.maxLife;
-    s.material.opacity = 0.18 * t * t;
-  }
 }
 
 function updateLabels() {
@@ -2302,17 +1724,16 @@ function updateLabels() {
 
     if (entry.labelNode) {
       const breachBonus = entry.breachValue * 0.95;
-      const scanBonus = scanState.active && scanState.targetIndex === index ? 0.22 : 0;
       const glitchMix =
-        (1 - entry.hoverValue) * (0.55 + audioReactiveLevel * 0.90) + breachBonus - scanBonus;
+        (1 - entry.hoverValue) * (0.55 + audioReactiveLevel * 0.90) + breachBonus;
 
       entry.labelNode.style.opacity = `${titleFade}`;
       entry.labelNode.style.transform =
         `translate(calc(${x}px - 100%), calc(${y}px - 50%)) scale(${titleScale})`;
-      entry.labelNode.style.setProperty("--label-glitch", THREE.MathUtils.clamp(glitchMix, 0, 2).toFixed(3));
+      entry.labelNode.style.setProperty("--label-glitch", glitchMix.toFixed(3));
       entry.labelNode.style.setProperty("--label-audio", (audioReactiveLevel + breachBonus * 0.3).toFixed(3));
 
-      if ((entry.hoverValue > 0.55 && entry.breachValue < 0.18) || (scanState.active && scanState.targetIndex === index)) {
+      if (entry.hoverValue > 0.55 && entry.breachValue < 0.18) {
         entry.labelNode.classList.add("is-resolved");
       } else {
         entry.labelNode.classList.remove("is-resolved");
@@ -2382,37 +1803,9 @@ function updateFog(elapsed) {
 function updateBinaryModel(elapsed) {
   if (!centralModel || !modelGlyphMaterial) return;
 
-  const scanSlow = 1 - scanState.strength * 0.3;
-  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30 * scanSlow) * 0.018;
-  modelGlyphMaterial.uniforms.uTime.value = elapsed * scanSlow;
+  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
+  modelGlyphMaterial.uniforms.uTime.value = elapsed;
   modelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.08;
-}
-
-function applyCategoryBehavior(profile, targetPos, controlPos, cover, seed, elapsed, t) {
-  switch (profile.key) {
-    case "animation":
-      controlPos.y += Math.sin(elapsed * 2.1 + seed * 40.0 + t * 8.0) * profile.wobble;
-      controlPos.addScaledVector(cover.right, Math.sin(elapsed * 1.8 + seed * 55.0) * 0.03);
-      break;
-
-    case "game":
-      controlPos.addScaledVector(cover.right, Math.sign(Math.sin(seed * 100.0)) * 0.022);
-      controlPos.y += Math.sin(elapsed * 6.2 + seed * 70.0) * 0.008;
-      break;
-
-    case "design":
-      controlPos.y *= 0.998;
-      targetPos.y = Math.round(targetPos.y * 12.0) / 12.0;
-      break;
-
-    case "vfx":
-      controlPos.addScaledVector(cover.up, Math.sin(elapsed * 4.8 + seed * 64.0 + t * 7.0) * 0.03);
-      controlPos.addScaledVector(cover.right, Math.cos(elapsed * 3.6 + seed * 52.0) * 0.025);
-      break;
-
-    default:
-      break;
-  }
 }
 
 function updateStreamParticles(delta, elapsed) {
@@ -2424,9 +1817,7 @@ function updateStreamParticles(delta, elapsed) {
   const activeIndex = activeEntry ? flagEntries.indexOf(activeEntry) : -1;
   const repairVisible = repairIndex !== -1 ? coverWorldData[repairIndex].visible : false;
   const samplePositions = modelSampleData.positions;
-  const sampleCount = modelSampleData.positions.length / 3;
-  const deepScanEntry = getDeepScanEntry();
-  const deepScanIndex = deepScanEntry ? flagEntries.indexOf(deepScanEntry) : -1;
+  const sampleCount = samplePositions.length / 3;
 
   centralModel.getWorldPosition(tempVec3);
 
@@ -2436,28 +1827,19 @@ function updateStreamParticles(delta, elapsed) {
     const borrowedToRepair = repairVisible && streamSystem.seeds[i] < siphonRatio;
     const effectiveCoverIndex = borrowedToRepair ? repairIndex : originalCoverIndex;
     const cover = coverWorldData[effectiveCoverIndex];
-    const targetEntry = flagEntries[effectiveCoverIndex];
-    const profile = targetEntry?.category ?? CATEGORY_PROFILES.default;
 
     const isRepairCover = repairIndex === effectiveCoverIndex;
     const isActiveCover = activeIndex === effectiveCoverIndex;
     const isHoveredVisual = hoveredIndex === effectiveCoverIndex;
-    const isDeepScanTarget = deepScanIndex === effectiveCoverIndex;
 
     let focus = 0.20;
     if (isActiveCover) focus = 0.32;
     if (isRepairCover) focus = borrowedToRepair
       ? (breachState.active ? 0.96 : 0.54)
       : (breachState.active ? 0.82 : 0.46);
-    if (isDeepScanTarget) focus += 0.18;
     if (!cover.visible) focus *= 0.35;
 
-    let flowSpeed = delta * streamSystem.speed[i] * profile.speed;
-    if (scanState.strength > 0.01) {
-      flowSpeed *= isDeepScanTarget ? 0.82 : 0.58;
-    }
-
-    streamSystem.progress[i] += flowSpeed * (0.55 + focus * 1.06 + audioReactiveLevel * 0.26);
+    streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.55 + focus * 1.06 + audioReactiveLevel * 0.26);
 
     if (streamSystem.progress[i] > 1.0) {
       streamSystem.progress[i] -= 1.0;
@@ -2474,22 +1856,18 @@ function updateStreamParticles(delta, elapsed) {
     );
     centralModel.localToWorld(tempVec1);
 
-    const spread = (
-      isRepairCover
-        ? THREE.MathUtils.lerp(0.20, breachState.active ? 0.10 : 0.12, focus)
-        : THREE.MathUtils.lerp(0.18, 0.050, focus)
-    ) * profile.spread;
+    const spread = isRepairCover
+      ? THREE.MathUtils.lerp(0.20, breachState.active ? 0.10 : 0.12, focus)
+      : THREE.MathUtils.lerp(0.18, 0.050, focus);
 
     tempVec2.copy(cover.position)
       .addScaledVector(cover.right, streamSystem.spreadX[i] * spread)
       .addScaledVector(cover.up, streamSystem.spreadY[i] * spread);
 
     tempVec4.copy(tempVec1).sub(tempVec3).normalize();
-    const outwardBase = isRepairCover
+    const outward = isRepairCover
       ? THREE.MathUtils.lerp(0.24, 0.13, focus)
       : THREE.MathUtils.lerp(0.34, 0.12, focus);
-
-    const outward = outwardBase * profile.curve;
 
     working.vE.copy(tempVec1).lerp(tempVec2, isRepairCover ? 0.34 : 0.32);
     working.vE.addScaledVector(tempVec4, outward);
@@ -2500,7 +1878,6 @@ function updateStreamParticles(delta, elapsed) {
     );
 
     const t = smootherstep(streamSystem.progress[i]);
-    applyCategoryBehavior(profile, tempVec2, working.vE, cover, streamSystem.seeds[i], elapsed, t);
     quadraticBezier(tempVec1, working.vE, tempVec2, t, working.vD);
 
     const posOffset = i * 3;
@@ -2514,10 +1891,9 @@ function updateStreamParticles(delta, elapsed) {
     const fadeOut = 1 - smooth01(Math.max(0, (t - 0.72) / 0.28));
     const shimmer = 0.90 + 0.10 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.2) + streamSystem.seeds[i] * 60.0);
 
-    let alphaBase = (0.06 + focus * 0.50 + audioReactiveLevel * 0.08) * profile.alpha;
+    let alphaBase = 0.06 + focus * 0.50 + audioReactiveLevel * 0.08;
     if (isRepairCover && breachState.active) alphaBase += 0.20;
     if (isHoveredVisual && !breachState.active) alphaBase += 0.03;
-    if (scanState.strength > 0.01 && !isDeepScanTarget) alphaBase *= 0.68;
 
     streamSystem.alphas[i] =
       alphaBase *
@@ -2529,7 +1905,7 @@ function updateStreamParticles(delta, elapsed) {
   streamSystem.geometry.attributes.position.needsUpdate = true;
   streamSystem.geometry.attributes.aAlpha.needsUpdate = true;
   streamSystem.geometry.attributes.aFlowT.needsUpdate = true;
-  streamGlyphMaterial.uniforms.uTime.value = elapsed * (1 - scanState.strength * 0.16);
+  streamGlyphMaterial.uniforms.uTime.value = elapsed;
   streamGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.10;
 }
 
@@ -2564,8 +1940,6 @@ function updateFocusTunnel(delta, elapsed) {
     return;
   }
 
-  const entry = flagEntries[repairIndex];
-  const profile = entry.category;
   const cover = coverWorldData[repairIndex];
   const hoverStrength = hoveredEntry ? hoveredEntry.hoverValue : 0;
   const targetStrength = breachState.active ? breachState.strength : hoverStrength;
@@ -2579,9 +1953,7 @@ function updateFocusTunnel(delta, elapsed) {
   centralModel.getWorldPosition(tempVec3);
 
   for (let i = 0; i < focusTunnelSystem.count; i += 1) {
-    let dt = delta * focusTunnelSystem.speed[i] * profile.speed;
-    if (scanState.strength > 0.01 && !breachState.active) dt *= 0.78;
-    focusTunnelSystem.progress[i] += dt * (0.95 + targetStrength * 1.25 + audioReactiveLevel * 0.65);
+    focusTunnelSystem.progress[i] += delta * focusTunnelSystem.speed[i] * (0.95 + targetStrength * 1.25 + audioReactiveLevel * 0.65);
 
     if (focusTunnelSystem.progress[i] > 1.0) {
       focusTunnelSystem.progress[i] -= 1.0;
@@ -2605,12 +1977,12 @@ function updateFocusTunnel(delta, elapsed) {
     const p3 = tempVec2;
 
     const p1 = working.vA.copy(p0).lerp(p3, 0.22)
-      .addScaledVector(tempVec4, 0.10 * profile.curve)
+      .addScaledVector(tempVec4, 0.10)
       .setY(working.vA.y + 0.14 + targetStrength * 0.05);
 
     const p2 = working.vB.copy(p0).lerp(p3, 0.74)
-      .addScaledVector(cover.up, (0.16 + targetStrength * 0.06) * profile.curve)
-      .addScaledVector(cover.right, Math.sin(focusTunnelSystem.laneAngle[i]) * 0.05 * profile.spread);
+      .addScaledVector(cover.up, 0.16 + targetStrength * 0.06)
+      .addScaledVector(cover.right, Math.sin(focusTunnelSystem.laneAngle[i]) * 0.05);
 
     const t = smootherstep(focusTunnelSystem.progress[i]);
     cubicBezier(p0, p1, p2, p3, t, working.vC);
@@ -2619,8 +1991,7 @@ function updateFocusTunnel(delta, elapsed) {
       CFG.focusTunnelRadius *
       focusTunnelSystem.radiusJitter[i] *
       Math.sin(t * Math.PI) *
-      (breachState.active ? 0.72 + targetStrength * 0.54 : 0.46 + targetStrength * 0.38) *
-      profile.spread;
+      (breachState.active ? 0.72 + targetStrength * 0.54 : 0.46 + targetStrength * 0.38);
 
     const swirl =
       focusTunnelSystem.laneAngle[i] +
@@ -2630,12 +2001,6 @@ function updateFocusTunnel(delta, elapsed) {
     working.vD.copy(working.vC)
       .addScaledVector(cover.right, Math.cos(swirl) * tunnelRadius)
       .addScaledVector(cover.up, Math.sin(swirl) * tunnelRadius * 0.72);
-
-    if (profile.key === "animation") {
-      working.vD.addScaledVector(cover.right, Math.sin(elapsed * 2.0 + focusTunnelSystem.seeds[i] * 40.0) * 0.015);
-    } else if (profile.key === "vfx") {
-      working.vD.addScaledVector(cover.up, Math.cos(elapsed * 5.0 + focusTunnelSystem.seeds[i] * 55.0) * 0.012);
-    }
 
     const posOffset = i * 3;
     focusTunnelSystem.positions[posOffset] = working.vD.x;
@@ -2649,7 +2014,7 @@ function updateFocusTunnel(delta, elapsed) {
     const pulse = 0.90 + 0.10 * Math.sin(elapsed * (1.8 + focusTunnelSystem.seeds[i] * 1.1) + focusTunnelSystem.seeds[i] * 90.0);
 
     focusTunnelSystem.alphas[i] =
-      ((breachState.active ? 0.18 + targetStrength * 0.88 : 0.08 + targetStrength * 0.56) * profile.alpha) *
+      (breachState.active ? 0.18 + targetStrength * 0.88 : 0.08 + targetStrength * 0.56) *
       fadeIn *
       fadeOut *
       pulse;
@@ -2660,7 +2025,7 @@ function updateFocusTunnel(delta, elapsed) {
   focusTunnelSystem.geometry.attributes.aFlowT.needsUpdate = true;
 
   if (focusTunnelGlyphMaterial) {
-    focusTunnelGlyphMaterial.uniforms.uTime.value = elapsed * (1 - scanState.strength * 0.12);
+    focusTunnelGlyphMaterial.uniforms.uTime.value = elapsed;
     focusTunnelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.08;
     focusTunnelGlyphMaterial.uniforms.uVisibility.value = focusTunnelSystem.visibility;
   }
@@ -2721,10 +2086,7 @@ function getRelatedIndices(index) {
 function updateRelationLines(elapsed) {
   if (!relationSystem.lines.length) return;
 
-  const focusEntry =
-    getDeepScanEntry() ||
-    hoveredEntry ||
-    (breachState.active && breachState.index >= 0 ? flagEntries[breachState.index] : null);
+  const focusEntry = hoveredEntry || (breachState.active && breachState.index >= 0 ? flagEntries[breachState.index] : null);
 
   if (!focusEntry) {
     relationSystem.lines.forEach((l) => {
@@ -2737,7 +2099,6 @@ function updateRelationLines(elapsed) {
   const sourceIndex = flagEntries.indexOf(focusEntry);
   if (sourceIndex === -1) return;
 
-  const sourceProfile = focusEntry.category;
   const related = getRelatedIndices(sourceIndex);
   const source = coverWorldData[sourceIndex];
   const visibleRelated = related.filter((idx) => coverWorldData[idx]?.visible);
@@ -2750,7 +2111,6 @@ function updateRelationLines(elapsed) {
     }
 
     const targetIndex = visibleRelated[i];
-    const targetEntry = flagEntries[targetIndex];
     const target = coverWorldData[targetIndex];
     const points = CFG.relationLinePoints;
 
@@ -2758,8 +2118,7 @@ function updateRelationLines(elapsed) {
     const p3 = working.vB.copy(target.position);
 
     const span = p0.distanceTo(p3);
-    const liftBase = THREE.MathUtils.clamp(span * 0.16, 0.24, 0.82);
-    const lift = liftBase * (scanState.active ? 1.3 : 1.0);
+    const lift = THREE.MathUtils.clamp(span * 0.16, 0.24, 0.82);
 
     const p1 = working.vC.copy(p0).lerp(p3, 0.28);
     p1.y += lift;
@@ -2775,7 +2134,7 @@ function updateRelationLines(elapsed) {
 
       const n = j * 3;
       entry.positions[n] = working.vE.x;
-      entry.positions[n + 1] = working.vE.y + Math.sin(elapsed * 1.4 + t * 6.283 + i) * 0.006 * (scanState.active ? 1.4 : 1.0);
+      entry.positions[n + 1] = working.vE.y + Math.sin(elapsed * 1.4 + t * 6.283 + i) * 0.006;
       entry.positions[n + 2] = working.vE.z;
     }
 
@@ -2783,9 +2142,11 @@ function updateRelationLines(elapsed) {
     entry.geometry.setDrawRange(0, points);
 
     const pulse = 0.5 + 0.5 * Math.sin(elapsed * 1.8 + i * 0.7);
-    const baseOpacity = breachState.active ? 0.18 : scanState.active ? 0.18 : 0.10;
+    const baseOpacity = breachState.active ? 0.16 : 0.10;
     entry.material.opacity = THREE.MathUtils.lerp(entry.material.opacity, baseOpacity + pulse * 0.05, 0.16);
-    entry.material.color.copy(targetEntry.category.lineColor || sourceProfile.lineColor);
+
+    tempColor.copy(PALETTE[(sourceIndex + i) % PALETTE.length]);
+    entry.material.color.copy(tempColor);
   });
 }
 
@@ -2805,15 +2166,7 @@ function updateDebugTerminal(elapsed) {
     lastHoveredDebugKey = hoveredKey;
   }
 
-  if (scanState.active && scanState.targetIndex >= 0) {
-    const entry = flagEntries[scanState.targetIndex];
-    if (entry && scanState.strength > 0.86 && lastActiveDebugKey !== `scan-${scanState.targetIndex}`) {
-      pushDebugEvent(`deep scan lock acquired :: ${getNodeTag(entry)}`, "SCAN");
-      lastActiveDebugKey = `scan-${scanState.targetIndex}`;
-    }
-  }
-
-  if (activeKey && activeKey !== lastActiveDebugKey && !scanState.active) {
+  if (activeKey && activeKey !== lastActiveDebugKey) {
     pushDebugEvent(`tracking orbit node :: ${activeKey}`, "LOCK");
     lastActiveDebugKey = activeKey;
   }
@@ -2839,11 +2192,6 @@ function buildAmbientDebugEvent() {
     pool.push({ level: "FLOW", message: `packet density increased :: ${hoveredKey}` });
     pool.push({ level: "NET", message: `linked node graph visible :: ${hoveredKey}` });
     pool.push({ level: "FLOW", message: `decode lattice tightening :: ${hoveredKey}` });
-  }
-
-  if (scanState.active && scanState.targetIndex >= 0) {
-    pool.push({ level: "SCAN", message: `deep scan metadata resolved :: ${getNodeTag(flagEntries[scanState.targetIndex])}` });
-    pool.push({ level: "SYS", message: "ambient packet traffic slowed for analysis" });
   }
 
   if (breachState.active && breachState.index >= 0) {
@@ -2901,16 +2249,6 @@ function getNodeTag(entry) {
   return `node://${String(index + 1).padStart(2, "0")}`;
 }
 
-function quadraticBezier(a, b, c, t, out) {
-  const inv = 1 - t;
-  out.set(
-    inv * inv * a.x + 2 * inv * t * b.x + t * t * c.x,
-    inv * inv * a.y + 2 * inv * t * b.y + t * t * c.y,
-    inv * inv * a.z + 2 * inv * t * b.z + t * t * c.z
-  );
-  return out;
-}
-
 function cubicBezier(a, b, c, d, t, out) {
   const inv = 1 - t;
   const inv2 = inv * inv;
@@ -2924,6 +2262,16 @@ function cubicBezier(a, b, c, d, t, out) {
     inv3 * a.z + 3 * inv2 * t * b.z + 3 * inv * t2 * c.z + t3 * d.z
   );
 
+  return out;
+}
+
+function quadraticBezier(a, b, c, t, out) {
+  const inv = 1 - t;
+  out.set(
+    inv * inv * a.x + 2 * inv * t * b.x + t * t * c.x,
+    inv * inv * a.y + 2 * inv * t * b.y + t * t * c.y,
+    inv * inv * a.z + 2 * inv * t * b.z + t * t * c.z
+  );
   return out;
 }
 
