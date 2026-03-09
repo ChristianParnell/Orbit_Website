@@ -6,42 +6,51 @@ import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
 const CFG = {
   ...SCENE_CONFIG,
 
-  cameraFov: 47,
-  cameraRadius: 4.15,
+  cameraFov: 46,
+  cameraRadius: 4.3,
   cameraTurns: 1.08,
 
-  flagRadius: 2.12,
-  helixAngleStep: 1.52,
+  flagRadius: 2.16,
+  helixAngleStep: 1.5,
   helixRise: 0.72,
 
-  flagWidth: 0.78,
-  flagHeight: 0.46,
+  flagWidth: 0.84,
+  flagHeight: 0.5,
 
   scrollSpeed: SCENE_CONFIG.scrollSpeed ?? 0.00042,
   touchSpeed: SCENE_CONFIG.touchSpeed ?? 0.0018,
 
-  lookY: 0.02,
+  lookY: 0.08,
 
-  // bigger + lower model
-  modelLift: -1.18,
-  modelTargetHeight: 4.35,
-  modelYaw: Math.PI * 0.045,
+  modelLift: -1.28,
+  modelTargetHeight: 4.6,
+  modelYaw: Math.PI * 0.05,
 
-  nearStraightenStart: 3.6,
-  nearStraightenEnd: 1.3,
+  nearStraightenStart: 3.8,
+  nearStraightenEnd: 1.35,
 
-  farFadeStart: 6.8,
-  farFadeEnd: 10.2,
+  farFadeStart: 7.0,
+  farFadeEnd: 10.6,
 
   titleScaleNear: 1.0,
-  titleScaleFar: 0.36,
-  titleFadeStart: 3.8,
-  titleFadeEnd: 8.8,
+  titleScaleFar: 0.42,
+  titleFadeStart: 4.0,
+  titleFadeEnd: 9.2,
 
-  fogDensity: 0.018,
-  fogSpriteOpacity: 0.22,
-  fogSpriteCount: 42,
-  fogCentralOpacity: 0.14
+  fogDensity: 0.016,
+  fogSpriteCount: 26,
+  fogCentralOpacity: 0.12
+};
+
+const PALETTE = {
+  bg: 0xaed8eb,
+  red: 0xb80001,
+  orange: 0xef510b,
+  yellow: 0xfac227,
+  blue: 0x1975b5,
+  purple: 0x6d05ff,
+  ink: 0x071019,
+  white: 0xf8fcff
 };
 
 const canvas = document.getElementById("webgl");
@@ -53,10 +62,12 @@ const labelsRoot = document.getElementById("folderLabels");
 const focusHint = document.getElementById("focusHint");
 const muteButton = document.getElementById("muteButton");
 const ambientAudio = document.getElementById("ambientAudio");
+const activeNodeTitle = document.getElementById("activeNodeTitle");
+const activeNodeMeta = document.getElementById("activeNodeMeta");
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x081018);
-scene.fog = new THREE.FogExp2(0x081018, CFG.fogDensity);
+scene.background = new THREE.Color(PALETTE.bg);
+scene.fog = new THREE.FogExp2(PALETTE.bg, CFG.fogDensity);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -66,7 +77,7 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x081018, 1);
+renderer.setClearColor(PALETTE.bg, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
@@ -94,10 +105,10 @@ let soundEnabled = true;
 let currentProgress = 0.02;
 let targetProgress = 0.02;
 let hoveredEntry = null;
+let activeEntry = null;
 let dragActive = false;
 let lastTouchY = 0;
 let centralModel = null;
-let skySphere = null;
 
 const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
@@ -126,14 +137,15 @@ manager.onProgress = (_, loaded, total) => {
 };
 manager.onLoad = () => {
   isReady = true;
+
   if (enterButton) {
     enterButton.disabled = false;
-    enterButton.textContent = "Enter site";
+    enterButton.textContent = "ENTER PORTFOLIO";
   }
 
   if (progressText) {
     progressText.textContent = missingAssets.length
-      ? "Scene loaded. Some model texture files are still missing."
+      ? "Scene loaded. A few asset paths still failed, but the core scene is ready."
       : "Assets loaded. Enter the portfolio.";
   }
 
@@ -157,68 +169,182 @@ attachEvents();
 animate();
 
 function initScene() {
-  createBackground(textureLoader);
-  createFog(textureLoader);
-  createGroundGlow();
+  createGroundSystem();
+  createFog();
   createFlags(textureLoader);
   loadCenterModel();
 }
 
 function setupLighting() {
-  const hemi = new THREE.HemisphereLight(0xe8f5ff, 0x061018, 1.3);
+  const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+  scene.add(ambient);
+
+  const hemi = new THREE.HemisphereLight(0xf8fcff, 0x7ca9bc, 1.25);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 2.35);
-  key.position.set(5.2, 7.2, 6.0);
+  const key = new THREE.DirectionalLight(0xffffff, 2.5);
+  key.position.set(5.5, 8.5, 6.5);
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x97d5ff, 1.8);
-  rim.position.set(-5.8, 4.2, -5.2);
+  const rim = new THREE.DirectionalLight(0x6d05ff, 0.9);
+  rim.position.set(-6.0, 3.2, -5.5);
   scene.add(rim);
 
-  const fill = new THREE.PointLight(0x98d8ff, 1.25, 14, 2);
-  fill.position.set(0, 1.55, 1.0);
+  const fill = new THREE.PointLight(0x1975b5, 1.6, 16, 2);
+  fill.position.set(0, 1.8, 2.1);
   scene.add(fill);
+
+  const under = new THREE.PointLight(0xfac227, 1.25, 10, 2);
+  under.position.set(0, -1.2, 0);
+  scene.add(under);
 }
 
-function createBackground(loader) {
-  const backgroundPath = ASSETS.sky || ASSETS.background;
-  const bgTexture = loader.load(backgroundPath);
+function createGroundSystem() {
+  const gridTexture = createGridTexture();
+  gridTexture.wrapS = THREE.RepeatWrapping;
+  gridTexture.wrapT = THREE.RepeatWrapping;
+  gridTexture.repeat.set(4.5, 4.5);
+  gridTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-  bgTexture.colorSpace = THREE.SRGBColorSpace;
-  bgTexture.wrapS = THREE.RepeatWrapping;
-  bgTexture.wrapT = THREE.ClampToEdgeWrapping;
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(7.2, 96),
+    new THREE.MeshBasicMaterial({
+      map: gridTexture,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false
+    })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -1.56;
+  ground.renderOrder = 1;
+  scene.add(ground);
 
-  const sphereGeo = new THREE.SphereGeometry(140, 72, 72);
-  const sphereMat = new THREE.MeshBasicMaterial({
-    map: bgTexture,
-    side: THREE.BackSide,
-    transparent: false,
-    fog: false,
-    toneMapped: false,
-    depthWrite: false
-  });
+  const ringA = new THREE.Mesh(
+    new THREE.RingGeometry(2.05, 2.18, 96),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.blue,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false,
+      side: THREE.DoubleSide
+    })
+  );
+  ringA.rotation.x = -Math.PI / 2;
+  ringA.position.y = -1.53;
+  ringA.renderOrder = 2;
+  scene.add(ringA);
 
-  skySphere = new THREE.Mesh(sphereGeo, sphereMat);
-  skySphere.renderOrder = -100;
-  scene.add(skySphere);
+  const ringB = new THREE.Mesh(
+    new THREE.RingGeometry(2.42, 2.5, 96),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.purple,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false,
+      side: THREE.DoubleSide
+    })
+  );
+  ringB.rotation.x = -Math.PI / 2;
+  ringB.position.y = -1.525;
+  ringB.renderOrder = 2;
+  scene.add(ringB);
+
+  const glow = new THREE.Mesh(
+    new THREE.CircleGeometry(2.5, 64),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.blue,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false
+    })
+  );
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = -1.55;
+  glow.renderOrder = 1;
+  scene.add(glow);
 }
 
-function createFog(loader) {
-  const fogTexture = loader.load(ASSETS.fog);
+function createGridTexture() {
+  const size = 1024;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext("2d");
 
-  fogTexture.colorSpace = THREE.SRGBColorSpace;
-  fogTexture.wrapS = THREE.ClampToEdgeWrapping;
-  fogTexture.wrapT = THREE.ClampToEdgeWrapping;
-  fogTexture.minFilter = THREE.LinearMipmapLinearFilter;
-  fogTexture.magFilter = THREE.LinearFilter;
+  ctx.clearRect(0, 0, size, size);
 
-  // central low fog so it's always visible even when billboard sprites drift behind objects
-  for (let i = 0; i < 4; i += 1) {
+  const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.48);
+  grad.addColorStop(0, "rgba(25,117,181,0.16)");
+  grad.addColorStop(0.55, "rgba(25,117,181,0.06)");
+  grad.addColorStop(1, "rgba(25,117,181,0.00)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  const step = 64;
+  for (let i = 0; i <= size; i += step) {
+    ctx.strokeStyle = i % (step * 2) === 0 ? "rgba(25,117,181,0.28)" : "rgba(7,16,25,0.10)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, size);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(size, i);
+    ctx.stroke();
+  }
+
+  for (let r = 100; r < 480; r += 74) {
+    ctx.strokeStyle = r % 148 === 0 ? "rgba(109,5,255,0.15)" : "rgba(239,81,11,0.12)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(size * 0.5, size * 0.5, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createFogTexture() {
+  const size = 256;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext("2d");
+
+  const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 6, size * 0.5, size * 0.5, size * 0.5);
+  grad.addColorStop(0, "rgba(255,255,255,0.92)");
+  grad.addColorStop(0.35, "rgba(255,255,255,0.38)");
+  grad.addColorStop(1, "rgba(255,255,255,0.00)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createFog() {
+  const fogTexture = createFogTexture();
+
+  for (let i = 0; i < 3; i += 1) {
     const mat = new THREE.MeshBasicMaterial({
       map: fogTexture,
       alphaMap: fogTexture,
-      color: 0xffffff,
+      color: i === 1 ? PALETTE.blue : PALETTE.white,
       transparent: true,
       opacity: CFG.fogCentralOpacity,
       depthWrite: false,
@@ -229,12 +355,12 @@ function createFog(loader) {
     });
 
     const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(8.2 + i * 1.1, 2.6 + i * 0.25),
+      new THREE.PlaneGeometry(7.8 + i * 1.15, 2.2 + i * 0.3),
       mat
     );
 
-    plane.position.set(0, -0.35 + i * 0.18, 0);
-    plane.rotation.x = -Math.PI / 2.9;
+    plane.position.set(0, -0.42 + i * 0.2, 0);
+    plane.rotation.x = -Math.PI / 2.95;
     plane.rotation.z = i * 0.45;
     plane.renderOrder = 3;
 
@@ -242,7 +368,7 @@ function createFog(loader) {
       centralFog: true,
       phase: Math.random() * Math.PI * 2,
       bob: 0.02 + Math.random() * 0.03,
-      spin: (i % 2 === 0 ? 1 : -1) * (0.0005 + i * 0.00015)
+      spin: (i % 2 === 0 ? 1 : -1) * (0.00042 + i * 0.00014)
     };
 
     scene.add(plane);
@@ -250,12 +376,13 @@ function createFog(loader) {
   }
 
   for (let i = 0; i < CFG.fogSpriteCount; i += 1) {
+    const colorOptions = [PALETTE.white, PALETTE.blue, PALETTE.purple];
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
       alphaMap: fogTexture,
-      color: 0xffffff,
+      color: colorOptions[i % colorOptions.length],
       transparent: true,
-      opacity: CFG.fogSpriteOpacity,
+      opacity: 0.08 + Math.random() * 0.08,
       depthWrite: false,
       depthTest: true,
       fog: false,
@@ -269,15 +396,15 @@ function createFog(loader) {
 
     const baseAngle = (i / CFG.fogSpriteCount) * Math.PI * 2;
     const baseRadius = 1.8 + Math.random() * 3.6;
-    const baseY = THREE.MathUtils.lerp(-1.45, 2.25, Math.random());
-    const scale = 2.8 + Math.random() * 4.2;
+    const baseY = THREE.MathUtils.lerp(-1.4, 2.1, Math.random());
+    const scale = 2.4 + Math.random() * 3.8;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
       baseY,
       Math.sin(baseAngle) * baseRadius
     );
-    sprite.scale.set(scale, scale * (0.58 + Math.random() * 0.24), 1);
+    sprite.scale.set(scale, scale * (0.56 + Math.random() * 0.2), 1);
 
     sprite.userData = {
       baseAngle,
@@ -285,33 +412,15 @@ function createFog(loader) {
       baseY,
       scale,
       phase: Math.random() * Math.PI * 2,
-      orbitSpeed: 0.015 + Math.random() * 0.035,
-      driftSpeed: 0.05 + Math.random() * 0.09,
-      driftAmount: 0.16 + Math.random() * 0.34,
+      orbitSpeed: 0.014 + Math.random() * 0.028,
+      driftSpeed: 0.045 + Math.random() * 0.08,
+      driftAmount: 0.16 + Math.random() * 0.28,
       centralFog: false
     };
 
     scene.add(sprite);
     fogSprites.push(sprite);
   }
-}
-
-function createGroundGlow() {
-  const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(2.35, 64),
-    new THREE.MeshBasicMaterial({
-      color: 0x56aee5,
-      transparent: true,
-      opacity: 0.2,
-      depthWrite: false,
-      toneMapped: false,
-      fog: false
-    })
-  );
-  glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -1.5;
-  glow.renderOrder = 1;
-  scene.add(glow);
 }
 
 function createFlagMaterial(texture) {
@@ -322,10 +431,12 @@ function createFlagMaterial(texture) {
     uniforms: {
       uMap: { value: texture },
       uReveal: { value: 0.0 },
-      uOpacity: { value: 1.0 }
+      uOpacity: { value: 1.0 },
+      uHover: { value: 0.0 }
     },
     vertexShader: `
       uniform float uReveal;
+      uniform float uHover;
       varying vec2 vUv;
 
       void main() {
@@ -340,8 +451,9 @@ function createFlagMaterial(texture) {
           sin(uv.y * 22.0 + edge * 18.0) * 0.030 * band +
           sin(uv.y * 11.0 + edge * 10.0) * 0.012 * band;
 
-        pos.z += ripple;
+        pos.z += ripple + uHover * 0.03;
         pos.x += sin(uv.y * 9.0 + edge * 12.0) * 0.012 * band;
+        pos.y += sin(uv.x * 8.0 + edge * 10.0) * 0.006 * uHover;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
@@ -350,6 +462,7 @@ function createFlagMaterial(texture) {
       uniform sampler2D uMap;
       uniform float uReveal;
       uniform float uOpacity;
+      uniform float uHover;
 
       varying vec2 vUv;
 
@@ -368,7 +481,14 @@ function createFlagMaterial(texture) {
           vUv.x
         );
 
-        vec3 finalColor = mix(bw, tex.rgb, revealMask);
+        vec2 split = vec2(0.008 * uHover, 0.0);
+        float r = texture2D(uMap, vUv + split).r;
+        float g = texture2D(uMap, vUv).g;
+        float b = texture2D(uMap, vUv - split).b;
+        vec3 chroma = vec3(r, g, b);
+
+        vec3 restored = mix(bw, tex.rgb, revealMask);
+        vec3 finalColor = mix(restored, chroma, uHover * 0.75);
 
         gl_FragColor = vec4(finalColor, tex.a * uOpacity);
       }
@@ -377,7 +497,7 @@ function createFlagMaterial(texture) {
 }
 
 function createFlags(loader) {
-  ORBIT_ITEMS.forEach((item) => {
+  ORBIT_ITEMS.forEach((item, index) => {
     const group = new THREE.Group();
     group.userData.item = item;
     orbitRoot.add(group);
@@ -403,6 +523,7 @@ function createFlags(loader) {
     labelNode.className = "folder-label";
     labelNode.innerHTML = `
       <div class="folder-label__card">
+        <div class="folder-label__id">node://${String(index + 1).padStart(2, "0")}</div>
         <h3>${item.title}</h3>
         <p>${item.subtitle}</p>
       </div>
@@ -495,12 +616,19 @@ function setupLoadedModel(modelRoot) {
     child.castShadow = false;
     child.receiveShadow = false;
     child.renderOrder = 6;
+    child.frustumCulled = false;
+
+    if (child.geometry && typeof child.geometry.computeVertexNormals === "function" && !child.geometry.attributes.normal) {
+      child.geometry.computeVertexNormals();
+    }
 
     if (!child.material) {
       child.material = new THREE.MeshStandardMaterial({
-        color: 0xe7eef5,
-        roughness: 0.72,
-        metalness: 0.04
+        color: 0xe8f1f9,
+        roughness: 0.56,
+        metalness: 0.04,
+        emissive: 0x102437,
+        emissiveIntensity: 0.14
       });
       return;
     }
@@ -519,18 +647,27 @@ function setupLoadedModel(modelRoot) {
 function prepareMaterial(material) {
   const base = material?.isMaterial
     ? material
-    : new THREE.MeshStandardMaterial({ color: 0xe7eef5, roughness: 0.76, metalness: 0.03 });
+    : new THREE.MeshStandardMaterial({
+        color: 0xe8f1f9,
+        roughness: 0.56,
+        metalness: 0.04
+      });
 
-  const fallbackColor = base.color ? base.color.clone() : new THREE.Color(0xe7eef5);
+  const baseColor = base.color ? base.color.clone() : new THREE.Color(0xe8f1f9);
+  baseColor.lerp(new THREE.Color(0xffffff), 0.12);
+
   const safeMaterial = new THREE.MeshStandardMaterial({
-    color: fallbackColor,
-    roughness: typeof base.roughness === "number" ? base.roughness : 0.76,
-    metalness: typeof base.metalness === "number" ? base.metalness : 0.03,
-    side: THREE.DoubleSide,
-    transparent: false,
-    opacity: 1,
+    color: baseColor,
+    roughness: typeof base.roughness === "number" ? base.roughness : 0.56,
+    metalness: typeof base.metalness === "number" ? base.metalness : 0.04,
+    side: base.side ?? THREE.DoubleSide,
+    transparent: !!base.transparent,
+    opacity: typeof base.opacity === "number" ? base.opacity : 1,
     depthWrite: true,
-    depthTest: true
+    depthTest: true,
+    emissive: new THREE.Color(0x102437),
+    emissiveIntensity: 0.12,
+    dithering: true
   });
 
   if (base.map) {
@@ -546,10 +683,13 @@ function prepareMaterial(material) {
 
   if (base.roughnessMap) safeMaterial.roughnessMap = base.roughnessMap;
   if (base.metalnessMap) safeMaterial.metalnessMap = base.metalnessMap;
+  if (base.alphaMap) safeMaterial.alphaMap = base.alphaMap;
+  if (typeof base.alphaTest === "number") safeMaterial.alphaTest = base.alphaTest;
+
   if (base.emissiveMap) {
     safeMaterial.emissiveMap = base.emissiveMap;
     safeMaterial.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-    safeMaterial.emissive.copy(base.emissive ?? new THREE.Color(0x000000));
+    safeMaterial.emissive.copy(base.emissive ?? new THREE.Color(0x102437));
     safeMaterial.emissiveIntensity = typeof base.emissiveIntensity === "number" ? base.emissiveIntensity : 1;
   }
 
@@ -578,25 +718,29 @@ function createFallbackModel() {
   const fallback = new THREE.Group();
 
   const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.44, 1.2, 8, 16),
+    new THREE.CapsuleGeometry(0.42, 1.22, 8, 16),
     new THREE.MeshStandardMaterial({
-      color: 0xdde7f0,
-      roughness: 0.72,
-      metalness: 0.04
+      color: 0xe8f1f9,
+      roughness: 0.52,
+      metalness: 0.04,
+      emissive: 0x102437,
+      emissiveIntensity: 0.16
     })
   );
-  body.position.y = -0.05;
+  body.position.y = 0.0;
   fallback.add(body);
 
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.36, 20, 20),
+    new THREE.SphereGeometry(0.34, 24, 24),
     new THREE.MeshStandardMaterial({
-      color: 0xebf2f8,
-      roughness: 0.72,
-      metalness: 0.04
+      color: 0xf8fcff,
+      roughness: 0.48,
+      metalness: 0.03,
+      emissive: 0x102437,
+      emissiveIntensity: 0.1
     })
   );
-  head.position.y = 0.96;
+  head.position.y = 0.98;
   fallback.add(head);
 
   fallback.position.y = CFG.modelLift;
@@ -662,14 +806,16 @@ function attachEvents() {
 
     hasEntered = true;
     document.body.classList.add("is-entered");
-    loaderOverlay?.setAttribute("aria-hidden", "true");
+    loaderOverlay?.classList.add("is-hidden");
     if (focusHint) focusHint.style.opacity = "1";
 
     try {
-      ambientAudio.volume = 0.55;
-      ambientAudio.currentTime = 0;
-      if (soundEnabled) {
-        await ambientAudio.play();
+      if (ambientAudio) {
+        ambientAudio.volume = 0.45;
+        ambientAudio.currentTime = 0;
+        if (soundEnabled) {
+          await ambientAudio.play();
+        }
       }
     } catch (error) {
       console.warn("Audio did not start automatically.", error);
@@ -678,9 +824,9 @@ function attachEvents() {
 
   muteButton?.addEventListener("click", async () => {
     soundEnabled = !soundEnabled;
-    muteButton.textContent = soundEnabled ? "Sound On" : "Sound Off";
+    muteButton.textContent = soundEnabled ? "SOUND ON" : "SOUND OFF";
 
-    if (!hasEntered) return;
+    if (!hasEntered || !ambientAudio) return;
 
     if (soundEnabled) {
       try {
@@ -712,6 +858,7 @@ function animate() {
   updateLabels();
   updateIntersections();
   updateFog(elapsed);
+  updateModel(elapsed);
 
   renderer.render(scene, camera);
 }
@@ -721,17 +868,11 @@ function updateCamera(elapsed) {
 
   camera.position.set(
     Math.cos(orbitTheta) * CFG.cameraRadius,
-    CFG.lookY + Math.sin(elapsed * 0.5) * 0.04,
+    CFG.lookY + Math.sin(elapsed * 0.55) * 0.04,
     Math.sin(orbitTheta) * CFG.cameraRadius
   );
 
   camera.lookAt(0, CFG.lookY, 0);
-
-  if (skySphere) {
-    skySphere.position.copy(camera.position);
-    skySphere.rotation.y = -orbitTheta * 0.18;
-    skySphere.rotation.x = Math.sin(elapsed * 0.10) * 0.01;
-  }
 }
 
 function updateFlags() {
@@ -739,9 +880,11 @@ function updateFlags() {
   const frontIndex = currentProgress * (total - 1);
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
 
+  let closest = null;
+  let closestDistance = Infinity;
+
   flagEntries.forEach((entry, index) => {
     const relative = index - frontIndex;
-
     const theta = orbitTheta + relative * CFG.helixAngleStep;
     const y = CFG.lookY + relative * CFG.helixRise;
 
@@ -754,11 +897,16 @@ function updateFlags() {
     working.mA.lookAt(entry.group.position, ORBIT_CENTER, UP);
     working.qA.setFromRotationMatrix(working.mA);
 
-    working.eA.set(-0.09, 0.02, -0.05);
+    working.eA.set(-0.12, 0.03, -0.08);
     working.qC.setFromEuler(working.eA);
     working.qA.multiply(working.qC);
 
     const cameraDistance = entry.group.position.distanceTo(camera.position);
+    if (cameraDistance < closestDistance) {
+      closestDistance = cameraDistance;
+      closest = entry;
+    }
+
     const straighten = smoothstep(
       CFG.nearStraightenStart,
       CFG.nearStraightenEnd,
@@ -782,13 +930,25 @@ function updateFlags() {
     const finalOpacity = THREE.MathUtils.clamp(Math.pow(visibility, 0.65), 0, 1);
 
     entry.revealTarget = hoveredEntry === entry ? 1 : 0;
-    entry.revealValue = THREE.MathUtils.lerp(entry.revealValue, entry.revealTarget, 0.11);
+    entry.revealValue = THREE.MathUtils.lerp(entry.revealValue, entry.revealTarget, 0.12);
 
     entry.material.uniforms.uReveal.value = entry.revealValue;
     entry.material.uniforms.uOpacity.value = finalOpacity;
+    entry.material.uniforms.uHover.value = hoveredEntry === entry ? 1.0 : 0.0;
 
     entry.group.visible = finalOpacity > 0.02;
   });
+
+  if (closest && closest !== activeEntry) {
+    activeEntry = closest;
+    updateActiveNode(activeEntry);
+  }
+}
+
+function updateActiveNode(entry) {
+  if (!entry) return;
+  if (activeNodeTitle) activeNodeTitle.textContent = entry.item.title;
+  if (activeNodeMeta) activeNodeMeta.textContent = entry.item.subtitle || "active node online";
 }
 
 function updateLabels() {
@@ -874,14 +1034,14 @@ function updateFog(elapsed) {
     );
 
     const pulse = 0.95 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.05;
-
     fogObj.scale.set(data.scale * pulse, data.scale * 0.62 * pulse, 1);
-    fogObj.material.rotation += 0.00035 + index * 0.000005;
+    fogObj.material.rotation += 0.0003 + index * 0.000004;
   });
+}
 
-  if (centralModel) {
-    centralModel.rotation.y += 0.0009;
-  }
+function updateModel(elapsed) {
+  if (!centralModel) return;
+  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.45) * 0.05;
 }
 
 function smoothstep(edge0, edge1, x) {

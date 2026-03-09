@@ -7,25 +7,21 @@
   <meta name="description" content="Interactive orbit portfolio by Christian Parnell." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E🌊%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.183.2/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.183.2/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 <body>
   <div id="app">
     <canvas id="webgl" aria-label="3D orbit portfolio"></canvas>
 
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="noise" aria-hidden="true"></div>
+    <div class="glitch-frame" aria-hidden="true"></div>
+
     <div id="loader" class="overlay overlay--visible" aria-live="polite">
       <div class="overlay__inner">
-        <p class="eyebrow">Orbit Portfolio</p>
+        <p class="eyebrow">SYSTEM BOOT</p>
         <h1>Christian Parnell</h1>
         <p class="overlay__copy">
-          A helix of projects orbiting around a central self-portrait. Scroll to move through the work.
+          Digital orbit portfolio. Scroll to move through project nodes.
         </p>
 
         <div class="progress">
@@ -40,30 +36,37 @@
         </button>
 
         <p class="overlay__hint">
-          Best with audio on. Click a folder cover to enter a project page.
+          Scroll to orbit · click a node to enter
         </p>
       </div>
     </div>
 
     <div id="hud" class="hud">
       <div class="hud__left">
-        <p class="eyebrow">Orbit Portfolio</p>
+        <p class="eyebrow">ORBIT // DIGITAL PORTFOLIO</p>
         <h2>Christian Parnell</h2>
+
+        <div class="active-node">
+          <div class="active-node__label">ACTIVE NODE</div>
+          <div id="activeNodeTitle" class="active-node__title">Awaiting orbit focus…</div>
+          <div id="activeNodeMeta" class="active-node__meta">status://standby</div>
+        </div>
       </div>
+
       <div class="hud__right">
-        <p>Scroll to orbit</p>
-        <p>Click a cover to enter</p>
+        <p>SCROLL / DRAG TO ORBIT</p>
+        <p>CLICK A TILE TO OPEN</p>
       </div>
     </div>
 
     <div id="focusHint" class="focus-hint">
-      Scroll to orbit · click a folder to enter
+      digital orbit active • hover to inspect • click to open
     </div>
 
     <div id="folderLabels" class="folder-labels" aria-hidden="true"></div>
 
     <button id="muteButton" class="mute-button" type="button" aria-label="Toggle audio">
-      Sound On
+      SOUND ON
     </button>
 
     <audio id="ambientAudio" src="./assets/audio/ambient.mp3" loop preload="auto"></audio>

@@ -58,16 +58,14 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  sky: "./assets/backgrounds/sky_sphere.jpg",
-  background: "./assets/backgrounds/sky_sphere.jpg",
-  fog: "./assets/textures/fog.png",
+  // no sky background now
+  sky: "",
+  background: "",
+  fog: "",
 
-  // Best option: export Blender model as .glb with textures embedded,
-  // then put the file in assets/models and uncomment the line below.
+  // keep FBX as the real live model path in your repo
   modelGLB: "",
   modelGLTF: "",
-
-  // Current repo fallback:
   modelFBX: "./assets/models/me_on_hill.fbx"
 };
 
