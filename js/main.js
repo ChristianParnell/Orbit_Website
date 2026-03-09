@@ -7,10 +7,10 @@ const CFG = {
   ...SCENE_CONFIG,
 
   cameraFov: 46,
-  cameraRadius: 4.2,
+  cameraRadius: 4.22,
   cameraTurns: 1.08,
 
-  flagRadius: 2.15,
+  flagRadius: 2.14,
   helixAngleStep: 1.52,
   helixRise: 0.72,
 
@@ -37,26 +37,24 @@ const CFG = {
   titleFadeStart: 4.0,
   titleFadeEnd: 9.2,
 
-  fogDensity: 0.010,
-  fogSpriteCount: 14,
+  fogDensity: 0.022,
+  fogSpriteCount: 16,
 
-  modelPointLimit: 12000,
-  streamPerCover: 240
+  modelPointLimit: 32000,
+  streamPerCover: 320
 };
 
 const COLORS = {
-  bg: 0xaed8eb,
-  ink: 0x071019,
-  red: 0xb80001,
-  orange: 0xef510b,
-  yellow: 0xfac227,
-  blue: 0x1975b5,
-  purple: 0x6d05ff,
-
-  binA: 0x8ff8ff,
-  binB: 0x31d7ff,
-  binC: 0x1399ff,
-  white: 0xf8fcff
+  bg: 0x081f33,
+  ink: 0xe7f6ff,
+  green: new THREE.Color("#33ff88"),
+  cyan: new THREE.Color("#2fe4ff"),
+  blue: new THREE.Color("#4b7dff"),
+  purple: new THREE.Color("#b04dff"),
+  pink: new THREE.Color("#ff57ce"),
+  orange: new THREE.Color("#ff8b2d"),
+  yellow: new THREE.Color("#ffe166"),
+  white: new THREE.Color("#f1f5ff")
 };
 
 const canvas = document.getElementById("webgl");
@@ -80,7 +78,7 @@ if (backgroundVideo) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(COLORS.bg, CFG.fogDensity);
+scene.fog = new THREE.FogExp2(CFG.bg ?? COLORS.bg, CFG.fogDensity);
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -93,7 +91,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(COLORS.bg, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.02;
+renderer.toneMappingExposure = 0.95;
 renderer.sortObjects = true;
 
 const camera = new THREE.PerspectiveCamera(
@@ -111,6 +109,7 @@ const pointer = new THREE.Vector2(-10, -10);
 const UP = new THREE.Vector3(0, 1, 0);
 const ORBIT_CENTER = new THREE.Vector3(0, CFG.lookY, 0);
 const CAMERA_FACE_FIX = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
+const LIGHT_DIR = new THREE.Vector3(0.75, 1.1, 0.55).normalize();
 
 let isReady = false;
 let hasEntered = false;
@@ -125,8 +124,10 @@ let lastTouchY = 0;
 let centralModel = null;
 let modelPointCloud = null;
 let modelGlyphMaterial = null;
+let streamGlyphMaterial = null;
 let glyphAtlas = null;
 let videoTexture = null;
+let modelSampleData = null;
 
 const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
@@ -136,11 +137,13 @@ const working = {
   vB: new THREE.Vector3(),
   vC: new THREE.Vector3(),
   vD: new THREE.Vector3(),
+  vE: new THREE.Vector3(),
   qA: new THREE.Quaternion(),
   qB: new THREE.Quaternion(),
   qC: new THREE.Quaternion(),
   mA: new THREE.Matrix4(),
-  eA: new THREE.Euler()
+  eA: new THREE.Euler(),
+  box: new THREE.Box3()
 };
 
 const tempVec1 = new THREE.Vector3();
@@ -152,7 +155,6 @@ const tempQuat = new THREE.Quaternion();
 const flagEntries = [];
 const fogSprites = [];
 const missingAssets = [];
-let modelLocalSamplePoints = [];
 
 const coverWorldData = ORBIT_ITEMS.map(() => ({
   position: new THREE.Vector3(),
@@ -163,18 +165,17 @@ const coverWorldData = ORBIT_ITEMS.map(() => ({
 
 const streamSystem = {
   points: null,
-  material: null,
   geometry: null,
   positions: null,
+  alphas: null,
   seeds: null,
   sizes: null,
-  alphas: null,
-  coverIndex: [],
   progress: [],
   speed: [],
+  coverIndex: [],
+  sourceIndex: [],
   spreadX: [],
   spreadY: [],
-  sourceIndex: [],
   count: 0
 };
 
@@ -205,7 +206,7 @@ manager.onLoad = () => {
 
   if (progressText) {
     progressText.textContent = missingAssets.length
-      ? "Scene loaded. Some files failed, but the core portfolio is ready."
+      ? "Scene loaded. Some files failed, but the portfolio is ready."
       : "Assets loaded. Enter the portfolio.";
   }
 
@@ -239,14 +240,14 @@ function initScene() {
 }
 
 function setupLighting() {
-  const ambient = new THREE.AmbientLight(0xffffff, 0.75);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.18);
   scene.add(ambient);
 
-  const hemi = new THREE.HemisphereLight(0xf8fcff, 0x8ab4c6, 0.9);
+  const hemi = new THREE.HemisphereLight(0x2fe4ff, 0x081f33, 0.22);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 0.65);
-  key.position.set(5.4, 7.4, 5.5);
+  const key = new THREE.DirectionalLight(0xffffff, 0.30);
+  key.position.copy(LIGHT_DIR).multiplyScalar(8);
   scene.add(key);
 }
 
@@ -263,7 +264,7 @@ function createGroundSystem() {
       map: gridTexture,
       color: 0xffffff,
       transparent: true,
-      opacity: 0.20,
+      opacity: 0.18,
       depthWrite: false,
       toneMapped: false,
       fog: false
@@ -275,11 +276,11 @@ function createGroundSystem() {
   scene.add(ground);
 
   const ringA = new THREE.Mesh(
-    new THREE.RingGeometry(2.00, 2.10, 96),
+    new THREE.RingGeometry(2.0, 2.1, 96),
     new THREE.MeshBasicMaterial({
-      color: COLORS.blue,
+      color: 0x2fe4ff,
       transparent: true,
-      opacity: 0.11,
+      opacity: 0.09,
       depthWrite: false,
       toneMapped: false,
       fog: false,
@@ -294,9 +295,9 @@ function createGroundSystem() {
   const ringB = new THREE.Mesh(
     new THREE.RingGeometry(2.32, 2.42, 96),
     new THREE.MeshBasicMaterial({
-      color: COLORS.purple,
+      color: 0xb04dff,
       transparent: true,
-      opacity: 0.06,
+      opacity: 0.05,
       depthWrite: false,
       toneMapped: false,
       fog: false,
@@ -319,17 +320,17 @@ function createGridTexture() {
   ctx.clearRect(0, 0, size, size);
 
   const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.48);
-  grad.addColorStop(0, "rgba(19,153,255,0.10)");
-  grad.addColorStop(0.55, "rgba(19,153,255,0.03)");
-  grad.addColorStop(1, "rgba(19,153,255,0.00)");
+  grad.addColorStop(0, "rgba(47,228,255,0.10)");
+  grad.addColorStop(0.55, "rgba(47,228,255,0.03)");
+  grad.addColorStop(1, "rgba(47,228,255,0.00)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
   const step = 64;
   for (let i = 0; i <= size; i += step) {
     ctx.strokeStyle = i % (step * 2) === 0
-      ? "rgba(25,117,181,0.16)"
-      : "rgba(7,16,25,0.05)";
+      ? "rgba(47,228,255,0.14)"
+      : "rgba(255,255,255,0.04)";
     ctx.lineWidth = 1;
 
     ctx.beginPath();
@@ -345,8 +346,8 @@ function createGridTexture() {
 
   for (let r = 100; r < 480; r += 74) {
     ctx.strokeStyle = r % 148 === 0
-      ? "rgba(109,5,255,0.10)"
-      : "rgba(19,153,255,0.07)";
+      ? "rgba(176,77,255,0.08)"
+      : "rgba(51,255,136,0.05)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(size * 0.5, size * 0.5, r, 0, Math.PI * 2);
@@ -366,8 +367,8 @@ function createFogTexture() {
   const ctx = c.getContext("2d");
 
   const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 10, size * 0.5, size * 0.5, size * 0.5);
-  grad.addColorStop(0, "rgba(255,255,255,0.72)");
-  grad.addColorStop(0.38, "rgba(143,248,255,0.20)");
+  grad.addColorStop(0, "rgba(47,228,255,0.36)");
+  grad.addColorStop(0.35, "rgba(176,77,255,0.08)");
   grad.addColorStop(1, "rgba(255,255,255,0.0)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
@@ -384,9 +385,9 @@ function createFog() {
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
       alphaMap: fogTexture,
-      color: i % 3 === 0 ? COLORS.white : (i % 3 === 1 ? COLORS.binA : COLORS.binB),
+      color: i % 2 === 0 ? 0x2fe4ff : 0xb04dff,
       transparent: true,
-      opacity: 0.035 + Math.random() * 0.03,
+      opacity: 0.035 + Math.random() * 0.025,
       depthWrite: false,
       depthTest: true,
       fog: false,
@@ -433,67 +434,87 @@ function createFlagMaterial(texture) {
     depthWrite: false,
     uniforms: {
       uMap: { value: texture },
-      uReveal: { value: 0.0 },
-      uOpacity: { value: 1.0 },
-      uHover: { value: 0.0 }
+      uTime: { value: 0 },
+      uHover: { value: 0.0 },
+      uOpacity: { value: 1.0 }
     },
     vertexShader: `
-      uniform float uReveal;
+      uniform float uTime;
       uniform float uHover;
       varying vec2 vUv;
+      varying float vHover;
+
+      float hash21(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
 
       void main() {
         vUv = uv;
+        vHover = uHover;
 
         vec3 pos = position;
+        float corrupt = 1.0 - uHover;
 
-        float edge = mix(-0.20, 1.20, uReveal);
-        float band = exp(-pow((uv.x - edge) * 14.0, 2.0));
-
-        float ripple =
-          sin(uv.y * 22.0 + edge * 18.0) * 0.018 * band +
-          sin(uv.y * 11.0 + edge * 10.0) * 0.008 * band;
-
-        pos.z += ripple + uHover * 0.015;
-        pos.x += sin(uv.y * 9.0 + edge * 12.0) * 0.007 * band;
-        pos.y += sin(uv.x * 8.0 + edge * 10.0) * 0.003 * uHover;
+        vec2 block = floor(uv * vec2(18.0, 12.0));
+        float n = hash21(block + floor(uTime * 2.0));
+        pos.x += (n - 0.5) * 0.035 * corrupt;
+        pos.y += sin(uv.x * 18.0 + uTime * 6.0 + n * 4.0) * 0.012 * corrupt;
+        pos.z += sin(uv.y * 16.0 + uTime * 4.0 + n * 5.0) * 0.020 * corrupt;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
     `,
     fragmentShader: `
       uniform sampler2D uMap;
-      uniform float uReveal;
-      uniform float uOpacity;
+      uniform float uTime;
       uniform float uHover;
+      uniform float uOpacity;
 
       varying vec2 vUv;
+      varying float vHover;
+
+      float hash21(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
 
       void main() {
-        vec4 tex = texture2D(uMap, vUv);
-        if (tex.a < 0.02) discard;
+        float corrupt = 1.0 - vHover;
 
-        float gray = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
-        vec3 bw = vec3(gray);
+        vec2 block = floor(vUv * vec2(28.0, 18.0));
+        float n = hash21(block + floor(uTime * 2.6));
+        float line = step(0.86, fract(vUv.y * 36.0 + uTime * 5.0 + n * 7.0));
 
-        float edge = mix(-0.20, 1.20, uReveal);
-        float waveOffset = sin(vUv.y * 22.0 + edge * 18.0) * 0.024;
-        float revealMask = 1.0 - smoothstep(
-          edge - 0.12 + waveOffset,
-          edge + 0.12 + waveOffset,
-          vUv.x
-        );
+        vec2 offset = vec2((n - 0.5) * 0.08 * corrupt, 0.0);
+        vec2 uvA = vUv + offset;
+        vec2 uvB = vUv + offset * 0.45 + vec2(0.006 * corrupt, 0.0);
+        vec2 uvC = vUv + offset * 0.25 - vec2(0.006 * corrupt, 0.0);
 
-        vec2 split = vec2(0.004 * uHover, 0.0);
-        float r = texture2D(uMap, vUv + split).r;
-        float g = texture2D(uMap, vUv).g;
-        float b = texture2D(uMap, vUv - split).b;
-        vec3 chroma = vec3(r, g, b);
+        vec4 texA = texture2D(uMap, uvA);
+        vec4 texB = texture2D(uMap, uvB);
+        vec4 texC = texture2D(uMap, uvC);
 
-        vec3 restored = mix(bw, tex.rgb, revealMask);
-        vec3 finalColor = mix(restored, chroma, uHover * 0.45);
+        float alpha = max(texA.a, max(texB.a, texC.a));
+        if (alpha < 0.02) discard;
 
-        gl_FragColor = vec4(finalColor, tex.a * uOpacity);
+        vec3 clean = texture2D(uMap, vUv).rgb;
+
+        vec3 glitchRGB = vec3(texB.r, texA.g, texC.b);
+        float gray = dot(glitchRGB, vec3(0.299, 0.587, 0.114));
+        vec3 corruptBase = mix(vec3(gray), glitchRGB, 0.35);
+        corruptBase += vec3(0.0, 0.07, 0.12) * line * corrupt;
+        corruptBase *= 0.78 + 0.22 * n;
+
+        float dropout = step(0.935, n) * corrupt;
+        corruptBase *= 1.0 - dropout * 0.7;
+
+        float resolve = smoothstep(0.0, 1.0, vHover);
+        vec3 finalColor = mix(corruptBase, clean, resolve);
+
+        gl_FragColor = vec4(finalColor, alpha * uOpacity);
       }
     `
   });
@@ -512,7 +533,7 @@ function createFlags(loader) {
     const mat = createFlagMaterial(tex);
 
     const flag = new THREE.Mesh(
-      new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 36, 18),
+      new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 24, 14),
       mat
     );
     flag.renderOrder = 10;
@@ -541,9 +562,7 @@ function createFlags(loader) {
       flag,
       material: mat,
       labelAnchor,
-      labelNode,
-      revealValue: 0,
-      revealTarget: 0
+      labelNode
     });
   });
 }
@@ -551,9 +570,7 @@ function createFlags(loader) {
 function loadCenterModel() {
   const maybeGltf = typeof ASSETS.modelGLTF === "string" ? ASSETS.modelGLTF.trim() : "";
   const maybeGlb = typeof ASSETS.modelGLB === "string" ? ASSETS.modelGLB.trim() : "";
-  const maybeFbx = typeof ASSETS.modelFBX === "string"
-    ? ASSETS.modelFBX.trim()
-    : "";
+  const maybeFbx = typeof ASSETS.modelFBX === "string" ? ASSETS.modelFBX.trim() : "";
 
   if (maybeGltf) {
     gltfLoader.load(
@@ -619,7 +636,8 @@ function setupLoadedModel(modelRoot) {
     child.receiveShadow = false;
     child.renderOrder = 5;
     child.frustumCulled = false;
-    if (child.geometry && typeof child.geometry.computeVertexNormals === "function" && !child.geometry.attributes.normal) {
+
+    if (child.geometry && !child.geometry.attributes.normal && typeof child.geometry.computeVertexNormals === "function") {
       child.geometry.computeVertexNormals();
     }
   });
@@ -627,8 +645,13 @@ function setupLoadedModel(modelRoot) {
   centerAndScaleModel(centralModel);
   orbitRoot.add(centralModel);
 
-  buildBinaryModelRepresentation(centralModel);
+  modelSampleData = extractModelSampleData(centralModel, CFG.modelPointLimit);
+  buildBinaryModelRepresentation();
   buildStreamSystem();
+
+  centralModel.traverse((child) => {
+    if (child.isMesh) child.visible = false;
+  });
 }
 
 function createFallbackModel() {
@@ -654,7 +677,8 @@ function createFallbackModel() {
   centralModel = fallback;
   orbitRoot.add(centralModel);
 
-  buildBinaryModelRepresentation(centralModel);
+  modelSampleData = extractModelSampleData(centralModel, CFG.modelPointLimit);
+  buildBinaryModelRepresentation();
   buildStreamSystem();
 }
 
@@ -675,57 +699,13 @@ function centerAndScaleModel(model) {
   model.rotation.y = CFG.modelYaw;
 }
 
-function buildBinaryModelRepresentation(model) {
-  modelLocalSamplePoints = extractModelSamplePoints(model, CFG.modelPointLimit);
-
-  if (modelLocalSamplePoints.length === 0) {
-    console.warn("No model sample points extracted.");
-    return;
-  }
-
-  const count = modelLocalSamplePoints.length / 3;
-  const positions = new Float32Array(modelLocalSamplePoints);
-  const seeds = new Float32Array(count);
-  const sizes = new Float32Array(count);
-  const alphas = new Float32Array(count);
-
-  for (let i = 0; i < count; i += 1) {
-    seeds[i] = Math.random();
-    sizes[i] = 2.0 + Math.random() * 1.5;
-    alphas[i] = 0.7 + Math.random() * 0.3;
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
-  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-  geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
-
-  modelGlyphMaterial = createBinaryPointsMaterial({
-    atlas: glyphAtlas,
-    opacity: 0.95,
-    sizePerspective: 210,
-    jitter: 0.006,
-    colorA: new THREE.Color(COLORS.binA),
-    colorB: new THREE.Color(COLORS.binC)
-  });
-
-  modelPointCloud = new THREE.Points(geometry, modelGlyphMaterial);
-  modelPointCloud.renderOrder = 8;
-  modelPointCloud.frustumCulled = false;
-  model.add(modelPointCloud);
-
-  model.traverse((child) => {
-    if (!child.isMesh) return;
-    child.visible = false;
-  });
-}
-
-function extractModelSamplePoints(model, maxPoints) {
+function extractModelSampleData(model, maxPoints) {
   model.updateMatrixWorld(true);
 
   const rootInverse = new THREE.Matrix4().copy(model.matrixWorld).invert();
-  const sampled = [];
+  const rootQuat = new THREE.Quaternion();
+  model.getWorldQuaternion(rootQuat);
+  const invRootQuat = rootQuat.clone().invert();
 
   let totalVertices = 0;
   model.traverse((child) => {
@@ -733,24 +713,129 @@ function extractModelSamplePoints(model, maxPoints) {
     totalVertices += child.geometry.attributes.position.count;
   });
 
-  if (totalVertices === 0) return sampled;
+  if (totalVertices === 0) {
+    return {
+      positions: new Float32Array(),
+      normals: new Float32Array()
+    };
+  }
 
   const step = Math.max(1, Math.floor(totalVertices / maxPoints));
+  const positions = [];
+  const normals = [];
+  const normalMatrix = new THREE.Matrix3();
 
   model.traverse((child) => {
     if (!child.isMesh || !child.geometry?.attributes?.position) return;
 
     const pos = child.geometry.attributes.position;
+    const nor = child.geometry.attributes.normal;
+
+    normalMatrix.getNormalMatrix(child.matrixWorld);
+
     for (let i = 0; i < pos.count; i += step) {
       tempVec1.fromBufferAttribute(pos, i);
       tempVec1.applyMatrix4(child.matrixWorld);
       tempVec1.applyMatrix4(rootInverse);
+      positions.push(tempVec1.x, tempVec1.y, tempVec1.z);
 
-      sampled.push(tempVec1.x, tempVec1.y, tempVec1.z);
+      if (nor) {
+        tempVec2.fromBufferAttribute(nor, i);
+      } else {
+        tempVec2.set(0, 1, 0);
+      }
+
+      tempVec2.applyMatrix3(normalMatrix).normalize();
+      tempVec2.applyQuaternion(invRootQuat).normalize();
+      normals.push(tempVec2.x, tempVec2.y, tempVec2.z);
     }
   });
 
-  return sampled;
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals)
+  };
+}
+
+function buildBinaryModelRepresentation() {
+  if (!centralModel || !modelSampleData || modelSampleData.positions.length === 0) return;
+
+  const count = modelSampleData.positions.length / 3;
+  const seeds = new Float32Array(count);
+  const sizes = new Float32Array(count);
+  const alphas = new Float32Array(count);
+
+  for (let i = 0; i < count; i += 1) {
+    seeds[i] = Math.random();
+    sizes[i] = 0.55 + Math.random() * 0.55;
+    alphas[i] = 0.78 + Math.random() * 0.22;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(modelSampleData.positions, 3));
+  geometry.setAttribute("aNormal", new THREE.BufferAttribute(modelSampleData.normals, 3));
+  geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+
+  modelGlyphMaterial = createModelGlyphMaterial(glyphAtlas);
+
+  modelPointCloud = new THREE.Points(geometry, modelGlyphMaterial);
+  modelPointCloud.renderOrder = 8;
+  modelPointCloud.frustumCulled = false;
+  centralModel.add(modelPointCloud);
+}
+
+function buildStreamSystem() {
+  if (!centralModel || !modelSampleData || modelSampleData.positions.length === 0) return;
+
+  const count = ORBIT_ITEMS.length * CFG.streamPerCover;
+  streamSystem.count = count;
+  streamSystem.positions = new Float32Array(count * 3);
+  streamSystem.alphas = new Float32Array(count);
+  streamSystem.seeds = new Float32Array(count);
+  streamSystem.sizes = new Float32Array(count);
+  streamSystem.progress = new Array(count);
+  streamSystem.speed = new Array(count);
+  streamSystem.coverIndex = new Array(count);
+  streamSystem.sourceIndex = new Array(count);
+  streamSystem.spreadX = new Array(count);
+  streamSystem.spreadY = new Array(count);
+
+  const sampleCount = modelSampleData.positions.length / 3;
+
+  for (let i = 0; i < count; i += 1) {
+    streamSystem.coverIndex[i] = i % ORBIT_ITEMS.length;
+    streamSystem.seeds[i] = Math.random();
+    streamSystem.sizes[i] = 0.50 + Math.random() * 0.45;
+    streamSystem.progress[i] = Math.random();
+    streamSystem.speed[i] = 0.18 + Math.random() * 0.16;
+    streamSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
+    streamSystem.spreadX[i] = Math.random() * 2 - 1;
+    streamSystem.spreadY[i] = Math.random() * 2 - 1;
+    streamSystem.alphas[i] = 0.25;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positionAttr = new THREE.BufferAttribute(streamSystem.positions, 3);
+  positionAttr.setUsage(THREE.DynamicDrawUsage);
+  const alphaAttr = new THREE.BufferAttribute(streamSystem.alphas, 1);
+  alphaAttr.setUsage(THREE.DynamicDrawUsage);
+
+  geometry.setAttribute("position", positionAttr);
+  geometry.setAttribute("aSeed", new THREE.BufferAttribute(streamSystem.seeds, 1));
+  geometry.setAttribute("aSize", new THREE.BufferAttribute(streamSystem.sizes, 1));
+  geometry.setAttribute("aAlpha", alphaAttr);
+
+  streamGlyphMaterial = createStreamGlyphMaterial(glyphAtlas);
+
+  const points = new THREE.Points(geometry, streamGlyphMaterial);
+  points.renderOrder = 9;
+  points.frustumCulled = false;
+
+  streamSystem.geometry = geometry;
+  streamSystem.points = points;
+  scene.add(points);
 }
 
 function createBinaryGlyphAtlas() {
@@ -766,10 +851,10 @@ function createBinaryGlyphAtlas() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 178px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+  ctx.font = "bold 174px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 
-  ctx.fillText("0", 128, 132);
-  ctx.fillText("1", 384, 132);
+  ctx.fillText("0", 128, 130);
+  ctx.fillText("1", 384, 130);
 
   const texture = new THREE.CanvasTexture(c);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -779,14 +864,7 @@ function createBinaryGlyphAtlas() {
   return texture;
 }
 
-function createBinaryPointsMaterial({
-  atlas,
-  opacity = 1,
-  sizePerspective = 200,
-  jitter = 0.004,
-  colorA = new THREE.Color(COLORS.binA),
-  colorB = new THREE.Color(COLORS.binC)
-}) {
+function createModelGlyphMaterial(atlas) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -794,45 +872,42 @@ function createBinaryPointsMaterial({
     uniforms: {
       uAtlas: { value: atlas },
       uTime: { value: 0 },
-      uOpacity: { value: opacity },
-      uSizePerspective: { value: sizePerspective },
-      uJitter: { value: jitter },
-      uColorA: { value: colorA },
-      uColorB: { value: colorB }
+      uLightDir: { value: LIGHT_DIR.clone() }
     },
     vertexShader: `
       uniform float uTime;
-      uniform float uOpacity;
-      uniform float uSizePerspective;
-      uniform float uJitter;
-      uniform vec3 uColorA;
-      uniform vec3 uColorB;
+      uniform vec3 uLightDir;
 
+      attribute vec3 aNormal;
       attribute float aSeed;
       attribute float aSize;
       attribute float aAlpha;
 
       varying float vDigit;
       varying float vAlpha;
-      varying vec3 vColor;
+      varying float vShade;
+      varying float vPalette;
 
       void main() {
         vec3 p = position;
 
-        float driftScale = uJitter * (0.6 + aSeed * 0.6);
+        float drift = 0.004 + aSeed * 0.004;
+        p.x += sin(uTime * (0.28 + fract(aSeed * 0.30)) + aSeed * 51.0) * drift;
+        p.y += cos(uTime * (0.24 + fract(aSeed * 0.22)) + aSeed * 37.0) * drift;
+        p.z += sin(uTime * (0.26 + fract(aSeed * 0.20)) + aSeed * 23.0) * drift;
 
-        p.x += sin(uTime * (0.45 + fract(aSeed * 1.7)) + aSeed * 31.0) * driftScale;
-        p.y += cos(uTime * (0.38 + fract(aSeed * 1.9)) + aSeed * 27.0) * driftScale;
-        p.z += sin(uTime * (0.42 + fract(aSeed * 1.5)) + aSeed * 19.0) * driftScale;
+        vec3 worldNormal = normalize(mat3(modelMatrix) * aNormal);
+        float light = max(dot(worldNormal, normalize(uLightDir)), 0.0);
+        float shade = smoothstep(0.12, 0.95, light);
 
-        float switchT = floor(uTime * (0.65 + fract(aSeed * 1.6)) + aSeed * 13.0);
-        vDigit = mod(switchT + floor(aSeed * 3.0), 2.0);
-
-        vAlpha = aAlpha * uOpacity * (0.82 + 0.18 * sin(uTime * (0.9 + fract(aSeed * 2.0)) + aSeed * 70.0));
-        vColor = mix(uColorA, uColorB, fract(aSeed * 17.3));
+        float digitSwitch = floor(uTime * (0.22 + fract(aSeed * 0.16)) + aSeed * 21.0);
+        vDigit = mod(digitSwitch, 2.0);
+        vAlpha = aAlpha * mix(0.04, 1.0, shade);
+        vShade = shade;
+        vPalette = fract(aSeed * 13.7);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(1.0, aSize * (uSizePerspective / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(1.0, aSize * (34.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -841,7 +916,18 @@ function createBinaryPointsMaterial({
 
       varying float vDigit;
       varying float vAlpha;
-      varying vec3 vColor;
+      varying float vShade;
+      varying float vPalette;
+
+      vec3 palette(float t) {
+        if (t < 0.15) return vec3(0.20, 1.00, 0.53);
+        if (t < 0.30) return vec3(0.18, 0.89, 1.00);
+        if (t < 0.45) return vec3(0.29, 0.49, 1.00);
+        if (t < 0.60) return vec3(0.69, 0.30, 1.00);
+        if (t < 0.75) return vec3(1.00, 0.34, 0.81);
+        if (t < 0.88) return vec3(1.00, 0.55, 0.18);
+        return vec3(1.00, 0.88, 0.40);
+      }
 
       void main() {
         vec2 uv = gl_PointCoord;
@@ -850,70 +936,78 @@ function createBinaryPointsMaterial({
         vec4 glyph = texture2D(uAtlas, atlasUv);
         float alpha = glyph.a * vAlpha;
 
-        if (alpha < 0.04) discard;
+        if (alpha < 0.025) discard;
 
-        gl_FragColor = vec4(vColor, alpha);
+        vec3 color = palette(vPalette);
+        color *= mix(0.25, 1.0, vShade);
+
+        gl_FragColor = vec4(color, alpha);
       }
     `
   });
 }
 
-function buildStreamSystem() {
-  if (!centralModel || modelLocalSamplePoints.length === 0) return;
+function createStreamGlyphMaterial(atlas) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uAtlas: { value: atlas },
+      uTime: { value: 0 }
+    },
+    vertexShader: `
+      uniform float uTime;
 
-  const count = ORBIT_ITEMS.length * CFG.streamPerCover;
-  streamSystem.count = count;
-  streamSystem.positions = new Float32Array(count * 3);
-  streamSystem.seeds = new Float32Array(count);
-  streamSystem.sizes = new Float32Array(count);
-  streamSystem.alphas = new Float32Array(count);
-  streamSystem.coverIndex = new Array(count);
-  streamSystem.progress = new Array(count);
-  streamSystem.speed = new Array(count);
-  streamSystem.spreadX = new Array(count);
-  streamSystem.spreadY = new Array(count);
-  streamSystem.sourceIndex = new Array(count);
+      attribute float aSeed;
+      attribute float aSize;
+      attribute float aAlpha;
 
-  for (let i = 0; i < count; i += 1) {
-    const coverIndex = i % ORBIT_ITEMS.length;
-    streamSystem.coverIndex[i] = coverIndex;
-    streamSystem.seeds[i] = Math.random();
-    streamSystem.sizes[i] = 1.2 + Math.random() * 0.8;
-    streamSystem.progress[i] = Math.random();
-    streamSystem.speed[i] = 0.22 + Math.random() * 0.20;
-    streamSystem.spreadX[i] = (Math.random() * 2 - 1);
-    streamSystem.spreadY[i] = (Math.random() * 2 - 1);
-    streamSystem.sourceIndex[i] = Math.floor(Math.random() * (modelLocalSamplePoints.length / 3));
-    streamSystem.alphas[i] = 0.25;
-  }
+      varying float vDigit;
+      varying float vAlpha;
+      varying float vPalette;
 
-  const geometry = new THREE.BufferGeometry();
-  const positionAttr = new THREE.BufferAttribute(streamSystem.positions, 3);
-  positionAttr.setUsage(THREE.DynamicDrawUsage);
+      void main() {
+        float digitSwitch = floor(uTime * (0.35 + fract(aSeed * 0.28)) + aSeed * 17.0);
+        vDigit = mod(digitSwitch, 2.0);
+        vPalette = fract(aSeed * 11.3);
+        vAlpha = aAlpha;
 
-  const alphaAttr = new THREE.BufferAttribute(streamSystem.alphas, 1);
-  alphaAttr.setUsage(THREE.DynamicDrawUsage);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = max(1.0, aSize * (24.0 / max(1.0, -mvPosition.z)));
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uAtlas;
 
-  geometry.setAttribute("position", positionAttr);
-  geometry.setAttribute("aSeed", new THREE.BufferAttribute(streamSystem.seeds, 1));
-  geometry.setAttribute("aSize", new THREE.BufferAttribute(streamSystem.sizes, 1));
-  geometry.setAttribute("aAlpha", alphaAttr);
+      varying float vDigit;
+      varying float vAlpha;
+      varying float vPalette;
 
-  streamSystem.material = createBinaryPointsMaterial({
-    atlas: glyphAtlas,
-    opacity: 0.8,
-    sizePerspective: 165,
-    jitter: 0.002,
-    colorA: new THREE.Color(COLORS.binA),
-    colorB: new THREE.Color(COLORS.binB)
+      vec3 palette(float t) {
+        if (t < 0.15) return vec3(0.20, 1.00, 0.53);
+        if (t < 0.30) return vec3(0.18, 0.89, 1.00);
+        if (t < 0.45) return vec3(0.29, 0.49, 1.00);
+        if (t < 0.60) return vec3(0.69, 0.30, 1.00);
+        if (t < 0.75) return vec3(1.00, 0.34, 0.81);
+        if (t < 0.88) return vec3(1.00, 0.55, 0.18);
+        return vec3(1.00, 0.88, 0.40);
+      }
+
+      void main() {
+        vec2 uv = gl_PointCoord;
+        vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
+        vec4 glyph = texture2D(uAtlas, atlasUv);
+
+        float alpha = glyph.a * vAlpha;
+        if (alpha < 0.02) discard;
+
+        vec3 color = palette(vPalette);
+        gl_FragColor = vec4(color, alpha);
+      }
+    `
   });
-
-  streamSystem.points = new THREE.Points(geometry, streamSystem.material);
-  streamSystem.points.renderOrder = 9;
-  streamSystem.points.frustumCulled = false;
-
-  scene.add(streamSystem.points);
-  streamSystem.geometry = geometry;
 }
 
 function attachEvents() {
@@ -971,7 +1065,6 @@ function attachEvents() {
 
   document.addEventListener("visibilitychange", () => {
     if (!backgroundVideo) return;
-
     if (document.hidden) {
       backgroundVideo.pause();
     } else {
@@ -1041,7 +1134,7 @@ function animate() {
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
 
   updateCamera(elapsed);
-  updateFlags();
+  updateFlags(elapsed);
   updateCoverWorldData();
   updateLabels();
   updateIntersections();
@@ -1057,14 +1150,14 @@ function updateCamera(elapsed) {
 
   camera.position.set(
     Math.cos(orbitTheta) * CFG.cameraRadius,
-    CFG.lookY + Math.sin(elapsed * 0.48) * 0.035,
+    CFG.lookY + Math.sin(elapsed * 0.48) * 0.03,
     Math.sin(orbitTheta) * CFG.cameraRadius
   );
 
   camera.lookAt(0, CFG.lookY, 0);
 }
 
-function updateFlags() {
+function updateFlags(elapsed) {
   const total = flagEntries.length;
   if (total === 0) return;
 
@@ -1120,10 +1213,7 @@ function updateFlags() {
     const visibility = Math.min(farVisibility, indexVisibility);
     const finalOpacity = THREE.MathUtils.clamp(Math.pow(visibility, 0.65), 0, 1);
 
-    entry.revealTarget = hoveredEntry === entry ? 1 : 0;
-    entry.revealValue = THREE.MathUtils.lerp(entry.revealValue, entry.revealTarget, 0.12);
-
-    entry.material.uniforms.uReveal.value = entry.revealValue;
+    entry.material.uniforms.uTime.value = elapsed;
     entry.material.uniforms.uOpacity.value = finalOpacity;
     entry.material.uniforms.uHover.value = hoveredEntry === entry ? 1.0 : 0.0;
 
@@ -1246,7 +1336,7 @@ function updateFog(elapsed) {
 function updateBinaryModel(elapsed) {
   if (!centralModel || !modelGlyphMaterial) return;
 
-  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.34) * 0.025;
+  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
   modelGlyphMaterial.uniforms.uTime.value = elapsed;
 
   if (videoTexture) {
@@ -1255,11 +1345,14 @@ function updateBinaryModel(elapsed) {
 }
 
 function updateStreamParticles(delta, elapsed) {
-  if (!streamSystem.points || !centralModel || modelLocalSamplePoints.length === 0) return;
+  if (!streamSystem.points || !centralModel || !modelSampleData || modelSampleData.positions.length === 0) return;
 
   const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
   const activeIndex = activeEntry ? flagEntries.indexOf(activeEntry) : -1;
-  const sourceCount = modelLocalSamplePoints.length / 3;
+  const samplePositions = modelSampleData.positions;
+  const sampleCount = samplePositions.length / 3;
+
+  centralModel.getWorldPosition(tempVec3);
 
   for (let i = 0; i < streamSystem.count; i += 1) {
     const coverIndex = streamSystem.coverIndex[i];
@@ -1269,53 +1362,54 @@ function updateStreamParticles(delta, elapsed) {
     const isActiveCover = activeIndex === coverIndex;
 
     let focus = 0.26;
-    if (isActiveCover) focus = 0.38;
+    if (isActiveCover) focus = 0.42;
     if (isHoveredCover) focus = 1.0;
     if (!cover.visible) focus *= 0.35;
 
-    streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.60 + focus * 1.10);
+    streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.55 + focus * 1.05);
 
     if (streamSystem.progress[i] > 1.0) {
       streamSystem.progress[i] -= 1.0;
-      streamSystem.sourceIndex[i] = Math.floor(Math.random() * sourceCount);
-      streamSystem.spreadX[i] = (Math.random() * 2 - 1);
-      streamSystem.spreadY[i] = (Math.random() * 2 - 1);
+      streamSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
+      streamSystem.spreadX[i] = Math.random() * 2 - 1;
+      streamSystem.spreadY[i] = Math.random() * 2 - 1;
     }
 
     const sourceOffset = streamSystem.sourceIndex[i] * 3;
     tempVec1.set(
-      modelLocalSamplePoints[sourceOffset],
-      modelLocalSamplePoints[sourceOffset + 1],
-      modelLocalSamplePoints[sourceOffset + 2]
+      samplePositions[sourceOffset],
+      samplePositions[sourceOffset + 1],
+      samplePositions[sourceOffset + 2]
     );
-
     centralModel.localToWorld(tempVec1);
 
-    const spread = THREE.MathUtils.lerp(0.16, 0.045, focus);
+    const spread = THREE.MathUtils.lerp(0.18, 0.045, focus);
 
     tempVec2.copy(cover.position)
       .addScaledVector(cover.right, streamSystem.spreadX[i] * spread)
       .addScaledVector(cover.up, streamSystem.spreadY[i] * spread);
 
-    tempVec3.copy(tempVec1).lerp(tempVec2, 0.5);
-    tempVec3.y += 0.16 + focus * 0.12;
-    tempVec3.addScaledVector(cover.right, streamSystem.spreadX[i] * 0.03);
+    tempVec4.copy(tempVec1).sub(tempVec3).normalize();
+    const outward = THREE.MathUtils.lerp(0.34, 0.12, focus);
+
+    working.vE.copy(tempVec1).lerp(tempVec2, 0.32);
+    working.vE.addScaledVector(tempVec4, outward);
+    working.vE.y += 0.08 + focus * 0.10;
 
     const t = smootherstep(streamSystem.progress[i]);
-
-    quadraticBezier(tempVec1, tempVec3, tempVec2, t, tempVec4);
+    quadraticBezier(tempVec1, working.vE, tempVec2, t, working.vD);
 
     const posOffset = i * 3;
-    streamSystem.positions[posOffset] = tempVec4.x;
-    streamSystem.positions[posOffset + 1] = tempVec4.y;
-    streamSystem.positions[posOffset + 2] = tempVec4.z;
+    streamSystem.positions[posOffset] = working.vD.x;
+    streamSystem.positions[posOffset + 1] = working.vD.y;
+    streamSystem.positions[posOffset + 2] = working.vD.z;
 
-    const fadeIn = smooth01(Math.min(1, t / 0.18));
+    const fadeIn = smooth01(Math.min(1, t / 0.16));
     const fadeOut = 1 - smooth01(Math.max(0, (t - 0.72) / 0.28));
-    const shimmer = 0.88 + 0.12 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.5) + streamSystem.seeds[i] * 60.0);
+    const shimmer = 0.90 + 0.10 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.2) + streamSystem.seeds[i] * 60.0);
 
     streamSystem.alphas[i] =
-      (0.10 + focus * 0.70) *
+      (0.08 + focus * 0.72) *
       fadeIn *
       fadeOut *
       shimmer;
@@ -1323,7 +1417,7 @@ function updateStreamParticles(delta, elapsed) {
 
   streamSystem.geometry.attributes.position.needsUpdate = true;
   streamSystem.geometry.attributes.aAlpha.needsUpdate = true;
-  streamSystem.material.uniforms.uTime.value = elapsed;
+  streamGlyphMaterial.uniforms.uTime.value = elapsed;
 }
 
 function quadraticBezier(a, b, c, t, out) {
