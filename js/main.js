@@ -7,10 +7,10 @@ const CFG = {
   ...SCENE_CONFIG,
 
   cameraFov: 46,
-  cameraRadius: 4.28,
+  cameraRadius: 4.2,
   cameraTurns: 1.08,
 
-  flagRadius: 2.14,
+  flagRadius: 2.15,
   helixAngleStep: 1.52,
   helixRise: 0.72,
 
@@ -37,11 +37,11 @@ const CFG = {
   titleFadeStart: 4.0,
   titleFadeEnd: 9.2,
 
-  fogDensity: 0.016,
-  fogSpriteCount: 28,
-  fogCentralOpacity: 0.11,
+  fogDensity: 0.010,
+  fogSpriteCount: 14,
 
-  particleLimit: 3400
+  modelPointLimit: 12000,
+  streamPerCover: 240
 };
 
 const COLORS = {
@@ -53,9 +53,9 @@ const COLORS = {
   blue: 0x1975b5,
   purple: 0x6d05ff,
 
-  timelineCyanA: 0x4ce7ff,
-  timelineCyanB: 0x0fa7ff,
-  timelineDeep: 0x083e5e,
+  binA: 0x8ff8ff,
+  binB: 0x31d7ff,
+  binC: 0x1399ff,
   white: 0xf8fcff
 };
 
@@ -80,7 +80,6 @@ if (backgroundVideo) {
 }
 
 const scene = new THREE.Scene();
-scene.background = null;
 scene.fog = new THREE.FogExp2(COLORS.bg, CFG.fogDensity);
 
 const renderer = new THREE.WebGLRenderer({
@@ -94,7 +93,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(COLORS.bg, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.02;
 renderer.sortObjects = true;
 
 const camera = new THREE.PerspectiveCamera(
@@ -122,11 +121,12 @@ let hoveredEntry = null;
 let activeEntry = null;
 let dragActive = false;
 let lastTouchY = 0;
+
 let centralModel = null;
+let modelPointCloud = null;
+let modelGlyphMaterial = null;
+let glyphAtlas = null;
 let videoTexture = null;
-let modelDissolve = 0.12;
-let dataParticles = null;
-let dataParticleMaterial = null;
 
 const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
@@ -135,6 +135,7 @@ const working = {
   vA: new THREE.Vector3(),
   vB: new THREE.Vector3(),
   vC: new THREE.Vector3(),
+  vD: new THREE.Vector3(),
   qA: new THREE.Quaternion(),
   qB: new THREE.Quaternion(),
   qC: new THREE.Quaternion(),
@@ -142,9 +143,40 @@ const working = {
   eA: new THREE.Euler()
 };
 
+const tempVec1 = new THREE.Vector3();
+const tempVec2 = new THREE.Vector3();
+const tempVec3 = new THREE.Vector3();
+const tempVec4 = new THREE.Vector3();
+const tempQuat = new THREE.Quaternion();
+
 const flagEntries = [];
 const fogSprites = [];
 const missingAssets = [];
+let modelLocalSamplePoints = [];
+
+const coverWorldData = ORBIT_ITEMS.map(() => ({
+  position: new THREE.Vector3(),
+  right: new THREE.Vector3(1, 0, 0),
+  up: new THREE.Vector3(0, 1, 0),
+  visible: true
+}));
+
+const streamSystem = {
+  points: null,
+  material: null,
+  geometry: null,
+  positions: null,
+  seeds: null,
+  sizes: null,
+  alphas: null,
+  coverIndex: [],
+  progress: [],
+  speed: [],
+  spreadX: [],
+  spreadY: [],
+  sourceIndex: [],
+  count: 0
+};
 
 setupLighting();
 
@@ -173,7 +205,7 @@ manager.onLoad = () => {
 
   if (progressText) {
     progressText.textContent = missingAssets.length
-      ? "Scene loaded. A few asset paths failed, but the main experience is ready."
+      ? "Scene loaded. Some files failed, but the core portfolio is ready."
       : "Assets loaded. Enter the portfolio.";
   }
 
@@ -193,6 +225,8 @@ const fbxLoader = new FBXLoader(manager);
 gltfLoader.setResourcePath("./assets/models/");
 fbxLoader.setResourcePath("./assets/models/");
 
+glyphAtlas = createBinaryGlyphAtlas();
+
 initScene();
 attachEvents();
 animate();
@@ -205,27 +239,15 @@ function initScene() {
 }
 
 function setupLighting() {
-  const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.75);
   scene.add(ambient);
 
-  const hemi = new THREE.HemisphereLight(0xf8fcff, 0x79a8bb, 1.3);
+  const hemi = new THREE.HemisphereLight(0xf8fcff, 0x8ab4c6, 0.9);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 2.55);
-  key.position.set(5.6, 8.8, 6.6);
+  const key = new THREE.DirectionalLight(0xffffff, 0.65);
+  key.position.set(5.4, 7.4, 5.5);
   scene.add(key);
-
-  const rim = new THREE.DirectionalLight(COLORS.timelineCyanA, 1.05);
-  rim.position.set(-5.8, 3.4, -5.1);
-  scene.add(rim);
-
-  const fill = new THREE.PointLight(COLORS.blue, 1.45, 16, 2);
-  fill.position.set(0.2, 1.95, 2.1);
-  scene.add(fill);
-
-  const under = new THREE.PointLight(COLORS.timelineCyanB, 1.2, 10, 2);
-  under.position.set(0, -1.1, 0.4);
-  scene.add(under);
 }
 
 function createGroundSystem() {
@@ -236,12 +258,12 @@ function createGroundSystem() {
   gridTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
   const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(7.2, 96),
+    new THREE.CircleGeometry(7.0, 96),
     new THREE.MeshBasicMaterial({
       map: gridTexture,
       color: 0xffffff,
       transparent: true,
-      opacity: 0.38,
+      opacity: 0.20,
       depthWrite: false,
       toneMapped: false,
       fog: false
@@ -253,11 +275,11 @@ function createGroundSystem() {
   scene.add(ground);
 
   const ringA = new THREE.Mesh(
-    new THREE.RingGeometry(2.02, 2.14, 96),
+    new THREE.RingGeometry(2.00, 2.10, 96),
     new THREE.MeshBasicMaterial({
       color: COLORS.blue,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.11,
       depthWrite: false,
       toneMapped: false,
       fog: false,
@@ -266,15 +288,15 @@ function createGroundSystem() {
   );
   ringA.rotation.x = -Math.PI / 2;
   ringA.position.y = -1.53;
-  ringA.renderOrder = 2;
+  ringA.renderOrder = 1;
   scene.add(ringA);
 
   const ringB = new THREE.Mesh(
-    new THREE.RingGeometry(2.36, 2.48, 96),
+    new THREE.RingGeometry(2.32, 2.42, 96),
     new THREE.MeshBasicMaterial({
       color: COLORS.purple,
       transparent: true,
-      opacity: 0.10,
+      opacity: 0.06,
       depthWrite: false,
       toneMapped: false,
       fog: false,
@@ -283,24 +305,8 @@ function createGroundSystem() {
   );
   ringB.rotation.x = -Math.PI / 2;
   ringB.position.y = -1.525;
-  ringB.renderOrder = 2;
+  ringB.renderOrder = 1;
   scene.add(ringB);
-
-  const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(2.55, 64),
-    new THREE.MeshBasicMaterial({
-      color: COLORS.timelineCyanB,
-      transparent: true,
-      opacity: 0.11,
-      depthWrite: false,
-      toneMapped: false,
-      fog: false
-    })
-  );
-  glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -1.55;
-  glow.renderOrder = 1;
-  scene.add(glow);
 }
 
 function createGridTexture() {
@@ -313,17 +319,17 @@ function createGridTexture() {
   ctx.clearRect(0, 0, size, size);
 
   const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.48);
-  grad.addColorStop(0, "rgba(15,167,255,0.18)");
-  grad.addColorStop(0.55, "rgba(15,167,255,0.05)");
-  grad.addColorStop(1, "rgba(15,167,255,0.00)");
+  grad.addColorStop(0, "rgba(19,153,255,0.10)");
+  grad.addColorStop(0.55, "rgba(19,153,255,0.03)");
+  grad.addColorStop(1, "rgba(19,153,255,0.00)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
   const step = 64;
   for (let i = 0; i <= size; i += step) {
     ctx.strokeStyle = i % (step * 2) === 0
-      ? "rgba(25,117,181,0.24)"
-      : "rgba(7,16,25,0.08)";
+      ? "rgba(25,117,181,0.16)"
+      : "rgba(7,16,25,0.05)";
     ctx.lineWidth = 1;
 
     ctx.beginPath();
@@ -337,10 +343,10 @@ function createGridTexture() {
     ctx.stroke();
   }
 
-  for (let r = 100; r < 480; r += 72) {
-    ctx.strokeStyle = r % 144 === 0
-      ? "rgba(109,5,255,0.14)"
-      : "rgba(15,167,255,0.10)";
+  for (let r = 100; r < 480; r += 74) {
+    ctx.strokeStyle = r % 148 === 0
+      ? "rgba(109,5,255,0.10)"
+      : "rgba(19,153,255,0.07)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(size * 0.5, size * 0.5, r, 0, Math.PI * 2);
@@ -359,10 +365,10 @@ function createFogTexture() {
   c.height = size;
   const ctx = c.getContext("2d");
 
-  const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 6, size * 0.5, size * 0.5, size * 0.5);
-  grad.addColorStop(0, "rgba(255,255,255,0.92)");
-  grad.addColorStop(0.35, "rgba(76,231,255,0.42)");
-  grad.addColorStop(1, "rgba(255,255,255,0.00)");
+  const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, 10, size * 0.5, size * 0.5, size * 0.5);
+  grad.addColorStop(0, "rgba(255,255,255,0.72)");
+  grad.addColorStop(0.38, "rgba(143,248,255,0.20)");
+  grad.addColorStop(1, "rgba(255,255,255,0.0)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
@@ -374,85 +380,45 @@ function createFogTexture() {
 function createFog() {
   const fogTexture = createFogTexture();
 
-  for (let i = 0; i < 3; i += 1) {
-    const mat = new THREE.MeshBasicMaterial({
-      map: fogTexture,
-      alphaMap: fogTexture,
-      color: i === 1 ? COLORS.timelineCyanB : COLORS.white,
-      transparent: true,
-      opacity: CFG.fogCentralOpacity,
-      depthWrite: false,
-      depthTest: true,
-      fog: false,
-      toneMapped: false,
-      side: THREE.DoubleSide
-    });
-
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(7.8 + i * 1.1, 2.25 + i * 0.28),
-      mat
-    );
-
-    plane.position.set(0, -0.45 + i * 0.2, 0);
-    plane.rotation.x = -Math.PI / 2.95;
-    plane.rotation.z = i * 0.42;
-    plane.renderOrder = 3;
-
-    plane.userData = {
-      centralFog: true,
-      phase: Math.random() * Math.PI * 2,
-      bob: 0.45 + Math.random() * 0.45,
-      spin: (i % 2 === 0 ? 1 : -1) * (0.045 + i * 0.01),
-      baseY: plane.position.y,
-      baseRotZ: plane.rotation.z
-    };
-
-    scene.add(plane);
-    fogSprites.push(plane);
-  }
-
   for (let i = 0; i < CFG.fogSpriteCount; i += 1) {
-    const colorOptions = [COLORS.white, COLORS.timelineCyanA, COLORS.timelineCyanB];
     const material = new THREE.SpriteMaterial({
       map: fogTexture,
       alphaMap: fogTexture,
-      color: colorOptions[i % colorOptions.length],
+      color: i % 3 === 0 ? COLORS.white : (i % 3 === 1 ? COLORS.binA : COLORS.binB),
       transparent: true,
-      opacity: 0.07 + Math.random() * 0.07,
+      opacity: 0.035 + Math.random() * 0.03,
       depthWrite: false,
       depthTest: true,
       fog: false,
       toneMapped: false
     });
+
     material.alphaTest = 0.02;
 
     const sprite = new THREE.Sprite(material);
-    sprite.renderOrder = 4;
+    sprite.renderOrder = 2;
 
     const baseAngle = (i / CFG.fogSpriteCount) * Math.PI * 2;
-    const baseRadius = 1.8 + Math.random() * 3.4;
-    const baseY = THREE.MathUtils.lerp(-1.4, 2.1, Math.random());
-    const scale = 2.5 + Math.random() * 3.8;
-    const baseRot = Math.random() * Math.PI * 2;
+    const baseRadius = 2.2 + Math.random() * 3.3;
+    const baseY = THREE.MathUtils.lerp(-1.2, 2.2, Math.random());
+    const scale = 2.2 + Math.random() * 2.4;
 
     sprite.position.set(
       Math.cos(baseAngle) * baseRadius,
       baseY,
       Math.sin(baseAngle) * baseRadius
     );
-    sprite.scale.set(scale, scale * (0.56 + Math.random() * 0.2), 1);
+    sprite.scale.set(scale, scale * (0.52 + Math.random() * 0.18), 1);
 
     sprite.userData = {
       baseAngle,
       baseRadius,
       baseY,
       scale,
-      baseRot,
       phase: Math.random() * Math.PI * 2,
-      orbitSpeed: 0.014 + Math.random() * 0.028,
-      driftSpeed: 0.045 + Math.random() * 0.08,
-      driftAmount: 0.16 + Math.random() * 0.28,
-      centralFog: false
+      orbitSpeed: 0.010 + Math.random() * 0.016,
+      driftSpeed: 0.035 + Math.random() * 0.04,
+      driftAmount: 0.10 + Math.random() * 0.18
     };
 
     scene.add(sprite);
@@ -485,12 +451,12 @@ function createFlagMaterial(texture) {
         float band = exp(-pow((uv.x - edge) * 14.0, 2.0));
 
         float ripple =
-          sin(uv.y * 22.0 + edge * 18.0) * 0.030 * band +
-          sin(uv.y * 11.0 + edge * 10.0) * 0.012 * band;
+          sin(uv.y * 22.0 + edge * 18.0) * 0.018 * band +
+          sin(uv.y * 11.0 + edge * 10.0) * 0.008 * band;
 
-        pos.z += ripple + uHover * 0.03;
-        pos.x += sin(uv.y * 9.0 + edge * 12.0) * 0.012 * band;
-        pos.y += sin(uv.x * 8.0 + edge * 10.0) * 0.006 * uHover;
+        pos.z += ripple + uHover * 0.015;
+        pos.x += sin(uv.y * 9.0 + edge * 12.0) * 0.007 * band;
+        pos.y += sin(uv.x * 8.0 + edge * 10.0) * 0.003 * uHover;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
@@ -511,21 +477,21 @@ function createFlagMaterial(texture) {
         vec3 bw = vec3(gray);
 
         float edge = mix(-0.20, 1.20, uReveal);
-        float waveOffset = sin(vUv.y * 22.0 + edge * 18.0) * 0.035;
+        float waveOffset = sin(vUv.y * 22.0 + edge * 18.0) * 0.024;
         float revealMask = 1.0 - smoothstep(
-          edge - 0.14 + waveOffset,
-          edge + 0.14 + waveOffset,
+          edge - 0.12 + waveOffset,
+          edge + 0.12 + waveOffset,
           vUv.x
         );
 
-        vec2 split = vec2(0.008 * uHover, 0.0);
+        vec2 split = vec2(0.004 * uHover, 0.0);
         float r = texture2D(uMap, vUv + split).r;
         float g = texture2D(uMap, vUv).g;
         float b = texture2D(uMap, vUv - split).b;
         vec3 chroma = vec3(r, g, b);
 
         vec3 restored = mix(bw, tex.rgb, revealMask);
-        vec3 finalColor = mix(restored, chroma, uHover * 0.78);
+        vec3 finalColor = mix(restored, chroma, uHover * 0.45);
 
         gl_FragColor = vec4(finalColor, tex.a * uOpacity);
       }
@@ -587,7 +553,7 @@ function loadCenterModel() {
   const maybeGlb = typeof ASSETS.modelGLB === "string" ? ASSETS.modelGLB.trim() : "";
   const maybeFbx = typeof ASSETS.modelFBX === "string"
     ? ASSETS.modelFBX.trim()
-    : (typeof ASSETS.model === "string" ? ASSETS.model.trim() : "");
+    : "";
 
   if (maybeGltf) {
     gltfLoader.load(
@@ -649,179 +615,47 @@ function setupLoadedModel(modelRoot) {
 
   centralModel.traverse((child) => {
     if (!child.isMesh) return;
-
     child.castShadow = false;
     child.receiveShadow = false;
-    child.renderOrder = 6;
+    child.renderOrder = 5;
     child.frustumCulled = false;
-
     if (child.geometry && typeof child.geometry.computeVertexNormals === "function" && !child.geometry.attributes.normal) {
       child.geometry.computeVertexNormals();
-    }
-
-    if (Array.isArray(child.material)) {
-      child.material = child.material.map((mat) => applyCodeDissolveMaterial(mat));
-    } else {
-      child.material = applyCodeDissolveMaterial(child.material);
     }
   });
 
   centerAndScaleModel(centralModel);
   orbitRoot.add(centralModel);
-  buildDataParticlesFromModel(centralModel);
+
+  buildBinaryModelRepresentation(centralModel);
+  buildStreamSystem();
 }
 
-function prepareMaterial(material) {
-  const base = material?.isMaterial
-    ? material
-    : new THREE.MeshStandardMaterial({
-        color: 0xe8f1f9,
-        roughness: 0.56,
-        metalness: 0.04
-      });
+function createFallbackModel() {
+  const fallback = new THREE.Group();
 
-  const baseColor = base.color ? base.color.clone() : new THREE.Color(0xe8f1f9);
-  baseColor.lerp(new THREE.Color(0xffffff), 0.12);
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.42, 1.22, 8, 16),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  body.position.y = 0.0;
+  fallback.add(body);
 
-  const safeMaterial = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: typeof base.roughness === "number" ? base.roughness : 0.56,
-    metalness: typeof base.metalness === "number" ? base.metalness : 0.04,
-    side: typeof base.side === "number" ? base.side : THREE.DoubleSide,
-    transparent: !!base.transparent,
-    opacity: typeof base.opacity === "number" ? base.opacity : 1,
-    depthWrite: true,
-    depthTest: true,
-    emissive: new THREE.Color(COLORS.timelineDeep),
-    emissiveIntensity: 0.16,
-    dithering: true
-  });
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 24, 24),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  head.position.y = 0.98;
+  fallback.add(head);
 
-  if (base.map) {
-    safeMaterial.map = base.map;
-    safeMaterial.map.colorSpace = THREE.SRGBColorSpace;
-    safeMaterial.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
+  fallback.position.y = CFG.modelLift;
+  fallback.rotation.y = CFG.modelYaw;
 
-  if (base.normalMap) {
-    safeMaterial.normalMap = base.normalMap;
-    safeMaterial.normalMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
+  centralModel = fallback;
+  orbitRoot.add(centralModel);
 
-  if (base.roughnessMap) safeMaterial.roughnessMap = base.roughnessMap;
-  if (base.metalnessMap) safeMaterial.metalnessMap = base.metalnessMap;
-  if (base.alphaMap) safeMaterial.alphaMap = base.alphaMap;
-  if (typeof base.alphaTest === "number") safeMaterial.alphaTest = base.alphaTest;
-
-  if (base.emissiveMap) {
-    safeMaterial.emissiveMap = base.emissiveMap;
-    safeMaterial.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-  }
-
-  safeMaterial.needsUpdate = true;
-  return safeMaterial;
-}
-
-function applyCodeDissolveMaterial(sourceMaterial) {
-  const mat = prepareMaterial(sourceMaterial);
-
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uCodeVideo = { value: videoTexture };
-    shader.uniforms.uTime = { value: 0 };
-    shader.uniforms.uDissolve = { value: 0.12 };
-    shader.uniforms.uTargetLocal = { value: new THREE.Vector3(0, 0.8, 0) };
-    shader.uniforms.uCodeColorA = { value: new THREE.Color(COLORS.timelineCyanA) };
-    shader.uniforms.uCodeColorB = { value: new THREE.Color(COLORS.timelineCyanB) };
-
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        `
-        #include <common>
-
-        uniform float uTime;
-        uniform float uDissolve;
-        uniform vec3 uTargetLocal;
-
-        varying vec2 vCodeUv;
-        varying float vDissolveMask;
-        varying float vScan;
-
-        float hash13(vec3 p) {
-          p = fract(p * 0.1031);
-          p += dot(p, p.yzx + 33.33);
-          return fract((p.x + p.y) * p.z);
-        }
-        `
-      )
-      .replace(
-        "#include <begin_vertex>",
-        `
-        vec3 transformed = vec3(position);
-
-        vec3 localPosBase = transformed;
-
-        float n = hash13(floor(localPosBase * 14.0) + vec3(uTime * 1.2));
-        float sweep = smoothstep(-1.25, 1.85, localPosBase.y + sin(localPosBase.x * 5.0 + uTime * 1.15) * 0.18);
-        float trigger = clamp(uDissolve * 1.1 + sweep * 0.28, 0.0, 1.0);
-        float mask = smoothstep(trigger - 0.16, trigger + 0.16, n);
-
-        vDissolveMask = mask;
-        vScan = sweep;
-        vCodeUv = vec2(
-          localPosBase.x * 0.18 + 0.5 + uTime * 0.028,
-          localPosBase.y * 0.16 + 0.5
-        );
-
-        vec3 toTarget = normalize(uTargetLocal - localPosBase + vec3(0.0001));
-        transformed += normal * mask * 0.045;
-        transformed += toTarget * mask * (0.02 + 0.18 * uDissolve);
-        `
-      );
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        `
-        #include <common>
-
-        uniform sampler2D uCodeVideo;
-        uniform float uTime;
-        uniform vec3 uCodeColorA;
-        uniform vec3 uCodeColorB;
-
-        varying vec2 vCodeUv;
-        varying float vDissolveMask;
-        varying float vScan;
-        `
-      )
-      .replace(
-        "#include <alphamap_fragment>",
-        `
-        #include <alphamap_fragment>
-
-        vec2 codeUv = fract(vCodeUv);
-        vec3 codeSample = texture2D(uCodeVideo, codeUv).rgb;
-        float codeLuma = dot(codeSample, vec3(0.299, 0.587, 0.114));
-
-        vec3 codeTint = mix(uCodeColorA, uCodeColorB, clamp(codeLuma * 1.4, 0.0, 1.0));
-        float lines = step(0.66, fract(vCodeUv.y * 54.0 - uTime * 1.4));
-        float sparkle = step(0.92, fract(codeLuma * 13.0 + vCodeUv.x * 8.0 + uTime * 0.6));
-
-        float overlay = clamp(vDissolveMask * 0.88 + vScan * 0.12, 0.0, 1.0);
-        diffuseColor.rgb = mix(diffuseColor.rgb, codeTint, overlay);
-        diffuseColor.rgb += codeTint * lines * overlay * 0.16;
-        diffuseColor.rgb += vec3(1.0) * sparkle * overlay * 0.04;
-
-        if (vDissolveMask > 0.94) discard;
-        `
-      );
-
-    mat.userData.shader = shader;
-  };
-
-  mat.needsUpdate = true;
-  return mat;
+  buildBinaryModelRepresentation(centralModel);
+  buildStreamSystem();
 }
 
 function centerAndScaleModel(model) {
@@ -841,170 +675,245 @@ function centerAndScaleModel(model) {
   model.rotation.y = CFG.modelYaw;
 }
 
-function createFallbackModel() {
-  const fallback = new THREE.Group();
+function buildBinaryModelRepresentation(model) {
+  modelLocalSamplePoints = extractModelSamplePoints(model, CFG.modelPointLimit);
 
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.42, 1.22, 8, 16),
-    applyCodeDissolveMaterial(
-      new THREE.MeshStandardMaterial({
-        color: 0xe8f1f9,
-        roughness: 0.52,
-        metalness: 0.04,
-        emissive: new THREE.Color(COLORS.timelineDeep),
-        emissiveIntensity: 0.16
-      })
-    )
-  );
-  body.position.y = 0.0;
-  fallback.add(body);
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.34, 24, 24),
-    applyCodeDissolveMaterial(
-      new THREE.MeshStandardMaterial({
-        color: 0xf8fcff,
-        roughness: 0.48,
-        metalness: 0.03,
-        emissive: new THREE.Color(COLORS.timelineDeep),
-        emissiveIntensity: 0.10
-      })
-    )
-  );
-  head.position.y = 0.98;
-  fallback.add(head);
-
-  fallback.position.y = CFG.modelLift;
-  fallback.rotation.y = CFG.modelYaw;
-
-  centralModel = fallback;
-  orbitRoot.add(centralModel);
-  buildDataParticlesFromModel(centralModel);
-}
-
-function buildDataParticlesFromModel(model) {
-  if (dataParticles) {
-    model.remove(dataParticles);
-    dataParticles.geometry.dispose();
-    dataParticles.material.dispose();
-    dataParticles = null;
-    dataParticleMaterial = null;
+  if (modelLocalSamplePoints.length === 0) {
+    console.warn("No model sample points extracted.");
+    return;
   }
 
-  model.updateMatrixWorld(true);
-
-  const rootInverse = new THREE.Matrix4().copy(model.matrixWorld).invert();
-  const sampled = [];
-  const temp = new THREE.Vector3();
-
-  model.traverse((child) => {
-    if (!child.isMesh || !child.geometry || !child.geometry.attributes.position) return;
-
-    const pos = child.geometry.attributes.position;
-    const step = Math.max(1, Math.floor(pos.count / 1200));
-
-    for (let i = 0; i < pos.count; i += step) {
-      temp.fromBufferAttribute(pos, i);
-      temp.applyMatrix4(child.matrixWorld);
-      temp.applyMatrix4(rootInverse);
-
-      sampled.push(temp.x, temp.y, temp.z);
-
-      if (sampled.length / 3 >= CFG.particleLimit) {
-        break;
-      }
-    }
-  });
-
-  if (sampled.length === 0) return;
-
-  const count = sampled.length / 3;
-  const positions = new Float32Array(sampled);
+  const count = modelLocalSamplePoints.length / 3;
+  const positions = new Float32Array(modelLocalSamplePoints);
   const seeds = new Float32Array(count);
   const sizes = new Float32Array(count);
+  const alphas = new Float32Array(count);
 
   for (let i = 0; i < count; i += 1) {
     seeds[i] = Math.random();
-    sizes[i] = 1.1 + Math.random() * 2.2;
+    sizes[i] = 2.0 + Math.random() * 1.5;
+    alphas[i] = 0.7 + Math.random() * 0.3;
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
 
-  dataParticleMaterial = new THREE.ShaderMaterial({
+  modelGlyphMaterial = createBinaryPointsMaterial({
+    atlas: glyphAtlas,
+    opacity: 0.95,
+    sizePerspective: 210,
+    jitter: 0.006,
+    colorA: new THREE.Color(COLORS.binA),
+    colorB: new THREE.Color(COLORS.binC)
+  });
+
+  modelPointCloud = new THREE.Points(geometry, modelGlyphMaterial);
+  modelPointCloud.renderOrder = 8;
+  modelPointCloud.frustumCulled = false;
+  model.add(modelPointCloud);
+
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    child.visible = false;
+  });
+}
+
+function extractModelSamplePoints(model, maxPoints) {
+  model.updateMatrixWorld(true);
+
+  const rootInverse = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const sampled = [];
+
+  let totalVertices = 0;
+  model.traverse((child) => {
+    if (!child.isMesh || !child.geometry?.attributes?.position) return;
+    totalVertices += child.geometry.attributes.position.count;
+  });
+
+  if (totalVertices === 0) return sampled;
+
+  const step = Math.max(1, Math.floor(totalVertices / maxPoints));
+
+  model.traverse((child) => {
+    if (!child.isMesh || !child.geometry?.attributes?.position) return;
+
+    const pos = child.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i += step) {
+      tempVec1.fromBufferAttribute(pos, i);
+      tempVec1.applyMatrix4(child.matrixWorld);
+      tempVec1.applyMatrix4(rootInverse);
+
+      sampled.push(tempVec1.x, tempVec1.y, tempVec1.z);
+    }
+  });
+
+  return sampled;
+}
+
+function createBinaryGlyphAtlas() {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const ctx = c.getContext("2d");
+
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "rgba(255,255,255,0)";
+  ctx.fillRect(0, 0, c.width, c.height);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 178px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+
+  ctx.fillText("0", 128, 132);
+  ctx.fillText("1", 384, 132);
+
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+function createBinaryPointsMaterial({
+  atlas,
+  opacity = 1,
+  sizePerspective = 200,
+  jitter = 0.004,
+  colorA = new THREE.Color(COLORS.binA),
+  colorB = new THREE.Color(COLORS.binC)
+}) {
+  return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     uniforms: {
+      uAtlas: { value: atlas },
       uTime: { value: 0 },
-      uDissolve: { value: 0.12 },
-      uTargetLocal: { value: new THREE.Vector3(0, 0.8, 0) },
-      uColorA: { value: new THREE.Color(COLORS.timelineCyanA) },
-      uColorB: { value: new THREE.Color(COLORS.timelineCyanB) }
+      uOpacity: { value: opacity },
+      uSizePerspective: { value: sizePerspective },
+      uJitter: { value: jitter },
+      uColorA: { value: colorA },
+      uColorB: { value: colorB }
     },
     vertexShader: `
       uniform float uTime;
-      uniform float uDissolve;
-      uniform vec3 uTargetLocal;
-
-      attribute float aSeed;
-      attribute float aSize;
-
-      varying float vAlpha;
-      varying float vSeed;
-
-      void main() {
-        float travel = smoothstep(aSeed * 0.72, min(1.0, aSeed * 0.72 + 0.28), uDissolve);
-
-        vec3 swirl = vec3(
-          sin(uTime * 2.2 + aSeed * 41.0),
-          cos(uTime * 1.7 + aSeed * 37.0),
-          sin(uTime * 1.35 + aSeed * 29.0)
-        ) * (0.035 + aSeed * 0.06);
-
-        vec3 p = mix(position + swirl, uTargetLocal + swirl * 1.35, travel);
-
-        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-
-        gl_PointSize = (aSize + travel * 2.8) * (220.0 / max(1.0, -mvPosition.z));
-        gl_Position = projectionMatrix * mvPosition;
-
-        vAlpha = (0.15 + travel * 0.92) * (0.8 + 0.2 * sin(uTime * 7.0 + aSeed * 60.0));
-        vSeed = aSeed;
-      }
-    `,
-    fragmentShader: `
+      uniform float uOpacity;
+      uniform float uSizePerspective;
+      uniform float uJitter;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
 
+      attribute float aSeed;
+      attribute float aSize;
+      attribute float aAlpha;
+
+      varying float vDigit;
       varying float vAlpha;
-      varying float vSeed;
+      varying vec3 vColor;
 
       void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float dist = length(uv);
-        float disc = smoothstep(0.5, 0.0, dist);
+        vec3 p = position;
 
-        float glyphA = step(0.34, abs(uv.x)) * step(abs(uv.y), 0.42);
-        float glyphB = step(0.34, abs(uv.y)) * step(abs(uv.x), 0.16);
-        float glyph = max(glyphA, glyphB);
+        float driftScale = uJitter * (0.6 + aSeed * 0.6);
 
-        vec3 color = mix(uColorA, uColorB, fract(vSeed * 12.7));
-        float alpha = disc * (0.55 + glyph * 0.45) * vAlpha;
+        p.x += sin(uTime * (0.45 + fract(aSeed * 1.7)) + aSeed * 31.0) * driftScale;
+        p.y += cos(uTime * (0.38 + fract(aSeed * 1.9)) + aSeed * 27.0) * driftScale;
+        p.z += sin(uTime * (0.42 + fract(aSeed * 1.5)) + aSeed * 19.0) * driftScale;
 
-        if (alpha < 0.02) discard;
+        float switchT = floor(uTime * (0.65 + fract(aSeed * 1.6)) + aSeed * 13.0);
+        vDigit = mod(switchT + floor(aSeed * 3.0), 2.0);
 
-        gl_FragColor = vec4(color, alpha);
+        vAlpha = aAlpha * uOpacity * (0.82 + 0.18 * sin(uTime * (0.9 + fract(aSeed * 2.0)) + aSeed * 70.0));
+        vColor = mix(uColorA, uColorB, fract(aSeed * 17.3));
+
+        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+        gl_PointSize = max(1.0, aSize * (uSizePerspective / max(1.0, -mvPosition.z)));
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uAtlas;
+
+      varying float vDigit;
+      varying float vAlpha;
+      varying vec3 vColor;
+
+      void main() {
+        vec2 uv = gl_PointCoord;
+        vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
+
+        vec4 glyph = texture2D(uAtlas, atlasUv);
+        float alpha = glyph.a * vAlpha;
+
+        if (alpha < 0.04) discard;
+
+        gl_FragColor = vec4(vColor, alpha);
       }
     `
   });
+}
 
-  dataParticles = new THREE.Points(geometry, dataParticleMaterial);
-  dataParticles.renderOrder = 12;
-  dataParticles.frustumCulled = false;
-  model.add(dataParticles);
+function buildStreamSystem() {
+  if (!centralModel || modelLocalSamplePoints.length === 0) return;
+
+  const count = ORBIT_ITEMS.length * CFG.streamPerCover;
+  streamSystem.count = count;
+  streamSystem.positions = new Float32Array(count * 3);
+  streamSystem.seeds = new Float32Array(count);
+  streamSystem.sizes = new Float32Array(count);
+  streamSystem.alphas = new Float32Array(count);
+  streamSystem.coverIndex = new Array(count);
+  streamSystem.progress = new Array(count);
+  streamSystem.speed = new Array(count);
+  streamSystem.spreadX = new Array(count);
+  streamSystem.spreadY = new Array(count);
+  streamSystem.sourceIndex = new Array(count);
+
+  for (let i = 0; i < count; i += 1) {
+    const coverIndex = i % ORBIT_ITEMS.length;
+    streamSystem.coverIndex[i] = coverIndex;
+    streamSystem.seeds[i] = Math.random();
+    streamSystem.sizes[i] = 1.2 + Math.random() * 0.8;
+    streamSystem.progress[i] = Math.random();
+    streamSystem.speed[i] = 0.22 + Math.random() * 0.20;
+    streamSystem.spreadX[i] = (Math.random() * 2 - 1);
+    streamSystem.spreadY[i] = (Math.random() * 2 - 1);
+    streamSystem.sourceIndex[i] = Math.floor(Math.random() * (modelLocalSamplePoints.length / 3));
+    streamSystem.alphas[i] = 0.25;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positionAttr = new THREE.BufferAttribute(streamSystem.positions, 3);
+  positionAttr.setUsage(THREE.DynamicDrawUsage);
+
+  const alphaAttr = new THREE.BufferAttribute(streamSystem.alphas, 1);
+  alphaAttr.setUsage(THREE.DynamicDrawUsage);
+
+  geometry.setAttribute("position", positionAttr);
+  geometry.setAttribute("aSeed", new THREE.BufferAttribute(streamSystem.seeds, 1));
+  geometry.setAttribute("aSize", new THREE.BufferAttribute(streamSystem.sizes, 1));
+  geometry.setAttribute("aAlpha", alphaAttr);
+
+  streamSystem.material = createBinaryPointsMaterial({
+    atlas: glyphAtlas,
+    opacity: 0.8,
+    sizePerspective: 165,
+    jitter: 0.002,
+    colorA: new THREE.Color(COLORS.binA),
+    colorB: new THREE.Color(COLORS.binB)
+  });
+
+  streamSystem.points = new THREE.Points(geometry, streamSystem.material);
+  streamSystem.points.renderOrder = 9;
+  streamSystem.points.frustumCulled = false;
+
+  scene.add(streamSystem.points);
+  streamSystem.geometry = geometry;
 }
 
 function attachEvents() {
@@ -1062,6 +971,7 @@ function attachEvents() {
 
   document.addEventListener("visibilitychange", () => {
     if (!backgroundVideo) return;
+
     if (document.hidden) {
       backgroundVideo.pause();
     } else {
@@ -1090,6 +1000,10 @@ function attachEvents() {
       }
     } catch (error) {
       console.warn("Audio did not start automatically.", error);
+    }
+
+    if (focusHint) {
+      focusHint.style.opacity = "1";
     }
   });
 
@@ -1128,10 +1042,12 @@ function animate() {
 
   updateCamera(elapsed);
   updateFlags();
+  updateCoverWorldData();
   updateLabels();
   updateIntersections();
   updateFog(elapsed);
-  updateModelEffects(elapsed, delta);
+  updateBinaryModel(elapsed);
+  updateStreamParticles(delta, elapsed);
 
   renderer.render(scene, camera);
 }
@@ -1141,7 +1057,7 @@ function updateCamera(elapsed) {
 
   camera.position.set(
     Math.cos(orbitTheta) * CFG.cameraRadius,
-    CFG.lookY + Math.sin(elapsed * 0.55) * 0.04,
+    CFG.lookY + Math.sin(elapsed * 0.48) * 0.035,
     Math.sin(orbitTheta) * CFG.cameraRadius
   );
 
@@ -1220,6 +1136,20 @@ function updateFlags() {
   }
 }
 
+function updateCoverWorldData() {
+  for (let i = 0; i < flagEntries.length; i += 1) {
+    const entry = flagEntries[i];
+    const data = coverWorldData[i];
+
+    entry.group.getWorldPosition(data.position);
+    entry.group.getWorldQuaternion(tempQuat);
+
+    data.right.set(1, 0, 0).applyQuaternion(tempQuat);
+    data.up.set(0, 1, 0).applyQuaternion(tempQuat);
+    data.visible = entry.group.visible;
+  }
+}
+
 function updateActiveNode(entry) {
   if (!entry) return;
 
@@ -1228,8 +1158,7 @@ function updateActiveNode(entry) {
   }
 
   if (activeNodeMeta) {
-    const meta = `${entry.item.subtitle || "active node"} • ${entry.item.theme || "portfolio node"}`;
-    activeNodeMeta.textContent = meta;
+    activeNodeMeta.textContent = `${entry.item.subtitle || "active node"} • ${entry.item.theme || "portfolio node"}`;
   }
 }
 
@@ -1290,16 +1219,10 @@ function updateFog(elapsed) {
   fogSprites.forEach((fogObj, index) => {
     const data = fogObj.userData;
 
-    if (data.centralFog) {
-      fogObj.position.y = data.baseY + Math.sin(elapsed * data.bob + data.phase) * 0.03;
-      fogObj.rotation.z = data.baseRotZ + Math.sin(elapsed * 0.24 + data.phase) * 0.06 + elapsed * data.spin * 0.02;
-      return;
-    }
-
     const orbitAngle =
       data.baseAngle +
       elapsed * data.orbitSpeed +
-      Math.sin(elapsed * 0.16 + data.phase) * 0.15;
+      Math.sin(elapsed * 0.16 + data.phase) * 0.12;
 
     const radius =
       data.baseRadius +
@@ -1307,7 +1230,7 @@ function updateFog(elapsed) {
 
     const y =
       data.baseY +
-      Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.12;
+      Math.sin(elapsed * (data.driftSpeed * 1.7) + index) * 0.08;
 
     fogObj.position.set(
       Math.cos(orbitAngle) * radius,
@@ -1315,58 +1238,115 @@ function updateFog(elapsed) {
       Math.sin(orbitAngle) * radius
     );
 
-    const pulse = 0.95 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.05;
-    fogObj.scale.set(data.scale * pulse, data.scale * 0.62 * pulse, 1);
-    fogObj.material.rotation = data.baseRot + elapsed * (0.04 + index * 0.001);
+    const pulse = 0.96 + Math.sin(elapsed * (data.driftSpeed * 2) + data.phase) * 0.04;
+    fogObj.scale.set(data.scale * pulse, data.scale * 0.60 * pulse, 1);
   });
 }
 
-function updateModelEffects(elapsed, delta) {
-  if (!centralModel) return;
+function updateBinaryModel(elapsed) {
+  if (!centralModel || !modelGlyphMaterial) return;
 
-  const targetEntry = hoveredEntry || activeEntry;
-
-  working.vC.set(0, 0.8, 0);
-
-  if (targetEntry) {
-    targetEntry.group.getWorldPosition(working.vA);
-    working.vC.copy(working.vA);
-    centralModel.worldToLocal(working.vC);
-  }
-
-  const desiredDissolve = targetEntry
-    ? (hoveredEntry ? 0.82 : 0.42)
-    : 0.12;
-
-  modelDissolve = THREE.MathUtils.lerp(modelDissolve, desiredDissolve, hoveredEntry ? 0.08 : 0.05);
-
-  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.45) * 0.05;
-
-  centralModel.traverse((child) => {
-    if (!child.isMesh) return;
-
-    const shader = child.material?.userData?.shader;
-    if (!shader) return;
-
-    shader.uniforms.uTime.value = elapsed;
-    shader.uniforms.uDissolve.value = modelDissolve;
-    shader.uniforms.uTargetLocal.value.copy(working.vC);
-  });
-
-  if (dataParticleMaterial) {
-    dataParticleMaterial.uniforms.uTime.value = elapsed;
-    dataParticleMaterial.uniforms.uDissolve.value = modelDissolve;
-    dataParticleMaterial.uniforms.uTargetLocal.value.copy(working.vC);
-  }
+  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.34) * 0.025;
+  modelGlyphMaterial.uniforms.uTime.value = elapsed;
 
   if (videoTexture) {
     videoTexture.needsUpdate = true;
   }
+}
 
-  void delta;
+function updateStreamParticles(delta, elapsed) {
+  if (!streamSystem.points || !centralModel || modelLocalSamplePoints.length === 0) return;
+
+  const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
+  const activeIndex = activeEntry ? flagEntries.indexOf(activeEntry) : -1;
+  const sourceCount = modelLocalSamplePoints.length / 3;
+
+  for (let i = 0; i < streamSystem.count; i += 1) {
+    const coverIndex = streamSystem.coverIndex[i];
+    const cover = coverWorldData[coverIndex];
+
+    const isHoveredCover = hoveredIndex === coverIndex;
+    const isActiveCover = activeIndex === coverIndex;
+
+    let focus = 0.26;
+    if (isActiveCover) focus = 0.38;
+    if (isHoveredCover) focus = 1.0;
+    if (!cover.visible) focus *= 0.35;
+
+    streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.60 + focus * 1.10);
+
+    if (streamSystem.progress[i] > 1.0) {
+      streamSystem.progress[i] -= 1.0;
+      streamSystem.sourceIndex[i] = Math.floor(Math.random() * sourceCount);
+      streamSystem.spreadX[i] = (Math.random() * 2 - 1);
+      streamSystem.spreadY[i] = (Math.random() * 2 - 1);
+    }
+
+    const sourceOffset = streamSystem.sourceIndex[i] * 3;
+    tempVec1.set(
+      modelLocalSamplePoints[sourceOffset],
+      modelLocalSamplePoints[sourceOffset + 1],
+      modelLocalSamplePoints[sourceOffset + 2]
+    );
+
+    centralModel.localToWorld(tempVec1);
+
+    const spread = THREE.MathUtils.lerp(0.16, 0.045, focus);
+
+    tempVec2.copy(cover.position)
+      .addScaledVector(cover.right, streamSystem.spreadX[i] * spread)
+      .addScaledVector(cover.up, streamSystem.spreadY[i] * spread);
+
+    tempVec3.copy(tempVec1).lerp(tempVec2, 0.5);
+    tempVec3.y += 0.16 + focus * 0.12;
+    tempVec3.addScaledVector(cover.right, streamSystem.spreadX[i] * 0.03);
+
+    const t = smootherstep(streamSystem.progress[i]);
+
+    quadraticBezier(tempVec1, tempVec3, tempVec2, t, tempVec4);
+
+    const posOffset = i * 3;
+    streamSystem.positions[posOffset] = tempVec4.x;
+    streamSystem.positions[posOffset + 1] = tempVec4.y;
+    streamSystem.positions[posOffset + 2] = tempVec4.z;
+
+    const fadeIn = smooth01(Math.min(1, t / 0.18));
+    const fadeOut = 1 - smooth01(Math.max(0, (t - 0.72) / 0.28));
+    const shimmer = 0.88 + 0.12 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.5) + streamSystem.seeds[i] * 60.0);
+
+    streamSystem.alphas[i] =
+      (0.10 + focus * 0.70) *
+      fadeIn *
+      fadeOut *
+      shimmer;
+  }
+
+  streamSystem.geometry.attributes.position.needsUpdate = true;
+  streamSystem.geometry.attributes.aAlpha.needsUpdate = true;
+  streamSystem.material.uniforms.uTime.value = elapsed;
+}
+
+function quadraticBezier(a, b, c, t, out) {
+  const inv = 1 - t;
+  out.set(
+    inv * inv * a.x + 2 * inv * t * b.x + t * t * c.x,
+    inv * inv * a.y + 2 * inv * t * b.y + t * t * c.y,
+    inv * inv * a.z + 2 * inv * t * b.z + t * t * c.z
+  );
+  return out;
+}
+
+function smooth01(x) {
+  const t = THREE.MathUtils.clamp(x, 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 function smoothstep(edge0, edge1, x) {
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
+}
+
+function smootherstep(x) {
+  const t = THREE.MathUtils.clamp(x, 0, 1);
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }

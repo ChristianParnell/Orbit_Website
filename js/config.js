@@ -58,10 +58,6 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  sky: "",
-  background: "",
-  fog: "",
-
   modelGLB: "",
   modelGLTF: "",
   modelFBX: "./assets/models/me_on_hill.fbx"
