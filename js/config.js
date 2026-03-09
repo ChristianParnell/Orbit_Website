@@ -43,7 +43,7 @@ export const ORBIT_ITEMS = [
     id: "twenty-two-minutes",
     title: "22 Minutes",
     subtitle: "Published on Steam",
-    href: "./pages/twenty-two-minutes.html",
+    href: ".https://store.steampowered.com/app/2765180/22_Minutes/",
     cover: "./assets/covers/steam_22minutes.png",
     theme: "Game development"
   },
