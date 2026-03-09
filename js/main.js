@@ -43,10 +43,10 @@ const CFG = {
   modelPointLimit: 42000,
   streamPerCover: 360,
 
-  hoverBorrowRatio: 0.48,
-  focusTunnelParticles: 820,
+  hoverBorrowRatio: 0.18,
+  focusTunnelParticles: 560,
   focusTunnelTwist: 14.5,
-  focusTunnelRadius: 0.085
+  focusTunnelRadius: 0.072
 };
 
 const COLORS = {
@@ -463,10 +463,11 @@ function createFog() {
 }
 
 function createFlagMaterial(texture) {
-  return new THREE.ShaderMaterial({
+  const mat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
-    depthWrite: false,
+    depthWrite: true,
+    depthTest: true,
     uniforms: {
       uMap: { value: texture },
       uTime: { value: 0 },
@@ -534,7 +535,6 @@ function createFlagMaterial(texture) {
 
         float lineNoise = hash21(vec2(floor(uv.y * 72.0), floor(uTime * 10.0)));
         float bigBand = step(0.82, lineNoise);
-        float microBand = step(0.88, fract(uv.y * 42.0 + uTime * 5.0));
 
         uv.x += (lineNoise - 0.5) * 0.055 * corrupt * audioBuzz * (0.35 + bigBand * 1.4);
         uv.y += sin(uv.x * 42.0 + uTime * 8.0) * 0.0025 * corrupt * audioBuzz;
@@ -545,7 +545,7 @@ function createFlagMaterial(texture) {
         vec4 texB = texture2D(uMap, clamp(uv - rgbShift, 0.001, 0.999));
 
         float alpha = max(texMain.a, max(texR.a, texB.a));
-        if (alpha < 0.02) discard;
+        if (alpha < 0.03) discard;
 
         vec3 clean = texture2D(uMap, vUv).rgb;
         vec3 infected = vec3(texR.r, texMain.g, texB.b);
@@ -566,6 +566,9 @@ function createFlagMaterial(texture) {
       }
     `
   });
+
+  mat.alphaTest = 0.03;
+  return mat;
 }
 
 function createFlags(loader) {
@@ -584,7 +587,7 @@ function createFlags(loader) {
       new THREE.PlaneGeometry(CFG.flagWidth, CFG.flagHeight, 18, 10),
       mat
     );
-    flag.renderOrder = 10;
+    flag.renderOrder = 7;
     group.add(flag);
 
     const labelAnchor = new THREE.Object3D();
@@ -823,7 +826,7 @@ function buildBinaryModelRepresentation() {
 
   for (let i = 0; i < count; i += 1) {
     seeds[i] = Math.random();
-    sizes[i] = 0.34 + Math.random() * 0.26;
+    sizes[i] = 0.56 + Math.random() * 0.34;
     alphas[i] = 0.76 + Math.random() * 0.24;
   }
 
@@ -864,7 +867,7 @@ function buildStreamSystem() {
   for (let i = 0; i < count; i += 1) {
     streamSystem.coverIndex[i] = i % ORBIT_ITEMS.length;
     streamSystem.seeds[i] = Math.random();
-    streamSystem.sizes[i] = 0.34 + Math.random() * 0.22;
+    streamSystem.sizes[i] = 0.54 + Math.random() * 0.30;
     streamSystem.progress[i] = Math.random();
     streamSystem.speed[i] = 0.18 + Math.random() * 0.16;
     streamSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
@@ -921,7 +924,7 @@ function buildFocusTunnelSystem() {
 
   for (let i = 0; i < count; i += 1) {
     focusTunnelSystem.seeds[i] = Math.random();
-    focusTunnelSystem.sizes[i] = 0.38 + Math.random() * 0.26;
+    focusTunnelSystem.sizes[i] = 0.62 + Math.random() * 0.34;
     focusTunnelSystem.progress[i] = Math.random();
     focusTunnelSystem.speed[i] = 0.46 + Math.random() * 0.34;
     focusTunnelSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
@@ -950,7 +953,7 @@ function buildFocusTunnelSystem() {
   focusTunnelGlyphMaterial = createFocusedStreamGlyphMaterial(glyphAtlas);
 
   const points = new THREE.Points(geometry, focusTunnelGlyphMaterial);
-  points.renderOrder = 11;
+  points.renderOrder = 10;
   points.frustumCulled = false;
 
   focusTunnelSystem.geometry = geometry;
@@ -988,6 +991,7 @@ function createModelGlyphMaterial(atlas) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    depthTest: true,
     blending: THREE.NormalBlending,
     uniforms: {
       uAtlas: { value: atlas },
@@ -1032,7 +1036,7 @@ function createModelGlyphMaterial(atlas) {
         vPalette = fract(aSeed * 13.7);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(1.0, aSize * (22.0 / max(1.0, -mvPosition.z)) * (1.0 + uAudioPulse * 0.12));
+        gl_PointSize = max(2.4, aSize * (34.0 / max(1.0, -mvPosition.z)) * (1.0 + uAudioPulse * 0.14));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1077,6 +1081,7 @@ function createStreamGlyphMaterial(atlas) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    depthTest: true,
     blending: THREE.AdditiveBlending,
     uniforms: {
       uAtlas: { value: atlas },
@@ -1106,7 +1111,7 @@ function createStreamGlyphMaterial(atlas) {
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         float nearFolderGrow = mix(1.0, 1.52, smoothstep(0.52, 1.0, aFlowT));
         float audioGrow = 1.0 + uAudioPulse * 0.12;
-        gl_PointSize = max(1.0, aSize * nearFolderGrow * audioGrow * (18.0 / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(2.0, aSize * nearFolderGrow * audioGrow * (28.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1147,6 +1152,7 @@ function createFocusedStreamGlyphMaterial(atlas) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    depthTest: true,
     blending: THREE.AdditiveBlending,
     uniforms: {
       uAtlas: { value: atlas },
@@ -1178,7 +1184,7 @@ function createFocusedStreamGlyphMaterial(atlas) {
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         float decodeGrow = mix(1.12, 1.92, smoothstep(0.18, 1.0, aFlowT));
         float audioGrow = 1.0 + uAudioPulse * 0.16;
-        gl_PointSize = max(1.0, aSize * decodeGrow * audioGrow * (20.0 / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(2.0, aSize * decodeGrow * audioGrow * (30.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1656,9 +1662,9 @@ function updateStreamParticles(delta, elapsed) {
     const isHoveredCover = hoveredIndex === effectiveCoverIndex;
     const isActiveCover = activeIndex === effectiveCoverIndex;
 
-    let focus = 0.24;
-    if (isActiveCover) focus = 0.42;
-    if (isHoveredCover) focus = borrowedToHover ? 1.06 : 0.92;
+    let focus = 0.22;
+    if (isActiveCover) focus = 0.36;
+    if (isHoveredCover) focus = borrowedToHover ? 0.74 : 0.62;
     if (!cover.visible) focus *= 0.35;
 
     streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.55 + focus * 1.10 + audioReactiveLevel * 0.35);
@@ -1679,7 +1685,7 @@ function updateStreamParticles(delta, elapsed) {
     centralModel.localToWorld(tempVec1);
 
     const spread = isHoveredCover
-      ? THREE.MathUtils.lerp(0.13, 0.026, focus)
+      ? THREE.MathUtils.lerp(0.17, 0.08, focus)
       : THREE.MathUtils.lerp(0.18, 0.050, focus);
 
     tempVec2.copy(cover.position)
@@ -1688,13 +1694,13 @@ function updateStreamParticles(delta, elapsed) {
 
     tempVec4.copy(tempVec1).sub(tempVec3).normalize();
     const outward = isHoveredCover
-      ? THREE.MathUtils.lerp(0.18, 0.08, focus)
+      ? THREE.MathUtils.lerp(0.22, 0.12, focus)
       : THREE.MathUtils.lerp(0.34, 0.12, focus);
 
-    working.vE.copy(tempVec1).lerp(tempVec2, isHoveredCover ? 0.40 : 0.32);
+    working.vE.copy(tempVec1).lerp(tempVec2, isHoveredCover ? 0.34 : 0.32);
     working.vE.addScaledVector(tempVec4, outward);
-    working.vE.y += 0.08 + focus * 0.12;
-    working.vE.addScaledVector(cover.right, streamSystem.spreadX[i] * (isHoveredCover ? 0.06 : 0.02));
+    working.vE.y += 0.08 + focus * 0.09;
+    working.vE.addScaledVector(cover.right, streamSystem.spreadX[i] * (isHoveredCover ? 0.035 : 0.02));
 
     const t = smootherstep(streamSystem.progress[i]);
     quadraticBezier(tempVec1, working.vE, tempVec2, t, working.vD);
@@ -1711,7 +1717,7 @@ function updateStreamParticles(delta, elapsed) {
     const shimmer = 0.90 + 0.10 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.2) + streamSystem.seeds[i] * 60.0);
 
     streamSystem.alphas[i] =
-      (0.08 + focus * 0.76 + audioReactiveLevel * 0.12) *
+      (0.07 + focus * 0.58 + audioReactiveLevel * 0.10) *
       fadeIn *
       fadeOut *
       shimmer;
@@ -1765,7 +1771,7 @@ function updateFocusTunnel(delta, elapsed) {
   centralModel.getWorldPosition(tempVec3);
 
   for (let i = 0; i < focusTunnelSystem.count; i += 1) {
-    focusTunnelSystem.progress[i] += delta * focusTunnelSystem.speed[i] * (0.95 + hoverStrength * 1.45 + audioReactiveLevel * 0.85);
+    focusTunnelSystem.progress[i] += delta * focusTunnelSystem.speed[i] * (0.95 + hoverStrength * 1.15 + audioReactiveLevel * 0.65);
 
     if (focusTunnelSystem.progress[i] > 1.0) {
       focusTunnelSystem.progress[i] -= 1.0;
@@ -1804,7 +1810,7 @@ function updateFocusTunnel(delta, elapsed) {
       CFG.focusTunnelRadius *
       focusTunnelSystem.radiusJitter[i] *
       Math.sin(t * Math.PI) *
-      (0.54 + hoverStrength * 0.50);
+      (0.46 + hoverStrength * 0.38);
 
     const swirl =
       focusTunnelSystem.laneAngle[i] +
@@ -1827,7 +1833,7 @@ function updateFocusTunnel(delta, elapsed) {
     const pulse = 0.90 + 0.10 * Math.sin(elapsed * (1.8 + focusTunnelSystem.seeds[i] * 1.1) + focusTunnelSystem.seeds[i] * 90.0);
 
     focusTunnelSystem.alphas[i] =
-      (0.15 + hoverStrength * 0.88 + audioReactiveLevel * 0.16) *
+      (0.10 + hoverStrength * 0.64 + audioReactiveLevel * 0.12) *
       fadeIn *
       fadeOut *
       pulse;
