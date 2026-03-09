@@ -27,7 +27,7 @@ export const ORBIT_ITEMS = [
     id: "fab",
     title: "FAB",
     subtitle: "Online Asset Store",
-    href: "./pages/fab.html",
+    href: "https://www.fab.com/sellers/Oblix%20Studio",
     cover: "./assets/covers/fab.png",
     theme: "Digital assets"
   },
@@ -35,7 +35,7 @@ export const ORBIT_ITEMS = [
     id: "sketchfab",
     title: "Sketchfab",
     subtitle: "3D Model Asset store",
-    href: "./pages/sketchfab.html",
+    href: "https://sketchfab.com/OblixStudio",
     cover: "./assets/covers/sketchfab.png",
     theme: "3D work"
   },
@@ -43,7 +43,7 @@ export const ORBIT_ITEMS = [
     id: "twenty-two-minutes",
     title: "22 Minutes",
     subtitle: "Published on Steam",
-    href: ".https://store.steampowered.com/app/2765180/22_Minutes/",
+    href: "https://store.steampowered.com/app/2765180/22_Minutes/",
     cover: "./assets/covers/steam_22minutes.png",
     theme: "Game development"
   },
