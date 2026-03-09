@@ -5,18 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Christian Parnell — Orbit Portfolio</title>
   <meta name="description" content="Interactive orbit portfolio by Christian Parnell." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E🌊%3C/text%3E%3C/svg%3E">
+  <link
+    rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E🌊%3C/text%3E%3C/svg%3E"
+  />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <div id="app">
+    <video
+      id="backgroundLoop"
+      class="background-loop"
+      src="./assets/video/backgroundloop.mp4"
+      autoplay
+      muted
+      loop
+      playsinline
+      preload="auto"
+      aria-hidden="true"
+    ></video>
+
     <canvas id="webgl" aria-label="3D orbit portfolio"></canvas>
 
     <div class="scanlines" aria-hidden="true"></div>
     <div class="noise" aria-hidden="true"></div>
     <div class="glitch-frame" aria-hidden="true"></div>
 
-    <div id="loader" class="overlay overlay--visible" aria-live="polite">
+    <div id="loader" class="overlay" aria-live="polite">
       <div class="overlay__inner">
         <p class="eyebrow">SYSTEM BOOT</p>
         <h1>Christian Parnell</h1>
@@ -36,7 +51,7 @@
         </button>
 
         <p class="overlay__hint">
-          Scroll to orbit · click a node to enter
+          Scroll to orbit · click a node to open
         </p>
       </div>
     </div>

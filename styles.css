@@ -7,9 +7,9 @@
 :root {
   --bg: #AED8EB;
   --ink: #071019;
-  --panel: rgba(248, 252, 255, 0.72);
-  --panel-strong: rgba(248, 252, 255, 0.84);
-  --line: rgba(7, 16, 25, 0.16);
+  --panel: rgba(248, 252, 255, 0.70);
+  --panel-strong: rgba(248, 252, 255, 0.82);
+  --line: rgba(7, 16, 25, 0.14);
   --line-strong: rgba(25, 117, 181, 0.34);
   --muted: rgba(7, 16, 25, 0.68);
 
@@ -18,10 +18,12 @@
   --yellow: #FAC227;
   --blue: #1975B5;
   --purple: #6D05FF;
-  --white: #F8FCFF;
 
-  --shadow: 0 24px 72px rgba(0, 0, 0, 0.16);
-  --shadow-strong: 0 30px 90px rgba(0, 0, 0, 0.22);
+  --cyan-a: #4CE7FF;
+  --cyan-b: #0FA7FF;
+
+  --shadow: 0 24px 72px rgba(0, 0, 0, 0.14);
+  --shadow-strong: 0 30px 90px rgba(0, 0, 0, 0.20);
 }
 
 html,
@@ -51,20 +53,30 @@ body.is-entered .focus-hint {
   overflow: hidden;
   background:
     radial-gradient(circle at 18% 18%, rgba(109, 5, 255, 0.08), transparent 18%),
-    radial-gradient(circle at 82% 20%, rgba(239, 81, 11, 0.09), transparent 18%),
-    radial-gradient(circle at 80% 84%, rgba(184, 0, 1, 0.08), transparent 14%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(7, 16, 25, 0.02));
+    radial-gradient(circle at 82% 20%, rgba(239, 81, 11, 0.08), transparent 18%),
+    radial-gradient(circle at 80% 84%, rgba(184, 0, 1, 0.06), transparent 14%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(7, 16, 25, 0.03));
 }
 
-canvas {
-  display: block;
+.background-loop {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
+  object-fit: cover;
+  opacity: 0.20;
+  filter: saturate(1.2) contrast(1.12) brightness(0.92) blur(0.5px);
+  pointer-events: none;
+  z-index: 0;
 }
 
 #webgl {
   position: fixed;
   inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
 }
 
 .scanlines,
@@ -76,7 +88,6 @@ canvas {
 .folder-labels,
 .mute-button {
   position: absolute;
-  z-index: 5;
 }
 
 .scanlines,
@@ -87,32 +98,35 @@ canvas {
 }
 
 .scanlines {
-  opacity: 0.07;
+  z-index: 2;
+  opacity: 0.08;
   background: repeating-linear-gradient(
     180deg,
     rgba(7, 16, 25, 0.00) 0px,
     rgba(7, 16, 25, 0.00) 2px,
-    rgba(7, 16, 25, 0.10) 3px,
+    rgba(7, 16, 25, 0.08) 3px,
     rgba(7, 16, 25, 0.00) 4px
   );
   mix-blend-mode: multiply;
 }
 
 .noise {
-  opacity: 0.22;
+  z-index: 2;
+  opacity: 0.20;
   background:
-    radial-gradient(circle at 12% 14%, rgba(109, 5, 255, 0.12), transparent 20%),
-    radial-gradient(circle at 86% 18%, rgba(239, 81, 11, 0.12), transparent 18%),
-    radial-gradient(circle at 82% 82%, rgba(184, 0, 1, 0.10), transparent 15%),
-    radial-gradient(circle at 18% 86%, rgba(25, 117, 181, 0.12), transparent 16%);
+    radial-gradient(circle at 12% 14%, rgba(109, 5, 255, 0.14), transparent 20%),
+    radial-gradient(circle at 86% 18%, rgba(239, 81, 11, 0.14), transparent 18%),
+    radial-gradient(circle at 82% 82%, rgba(184, 0, 1, 0.12), transparent 15%),
+    radial-gradient(circle at 18% 86%, rgba(25, 117, 181, 0.16), transparent 16%);
   animation: driftNoise 12s linear infinite;
 }
 
 .glitch-frame {
-  border: 1px solid rgba(7, 16, 25, 0.18);
+  z-index: 3;
+  border: 1px solid rgba(7, 16, 25, 0.16);
   box-shadow:
-    inset 0 0 0 1px rgba(25, 117, 181, 0.18),
-    inset 0 0 0 10px rgba(255, 255, 255, 0.05);
+    inset 0 0 0 1px rgba(25, 117, 181, 0.16),
+    inset 0 0 0 10px rgba(255, 255, 255, 0.04);
 }
 
 .glitch-frame::before,
@@ -121,19 +135,27 @@ canvas {
   position: absolute;
   inset: 14px;
   border: 1px solid transparent;
-  opacity: 0.36;
+  opacity: 0.34;
 }
 
 .glitch-frame::before {
-  border-color: rgba(109, 5, 255, 0.28);
+  border-color: rgba(109, 5, 255, 0.26);
   transform: translate(1px, -1px);
-  animation: glitchShiftA 2.7s steps(2, end) infinite;
+  animation: glitchShiftA 2.8s steps(2, end) infinite;
 }
 
 .glitch-frame::after {
-  border-color: rgba(239, 81, 11, 0.24);
+  border-color: rgba(239, 81, 11, 0.22);
   transform: translate(-1px, 1px);
-  animation: glitchShiftB 3.2s steps(2, end) infinite;
+  animation: glitchShiftB 3.3s steps(2, end) infinite;
+}
+
+.overlay,
+.hud,
+.focus-hint,
+.folder-labels,
+.mute-button {
+  z-index: 6;
 }
 
 .overlay {
@@ -142,7 +164,7 @@ canvas {
   place-items: center;
   padding: 32px;
   background:
-    linear-gradient(180deg, rgba(174, 216, 235, 0.88), rgba(174, 216, 235, 0.94)),
+    linear-gradient(180deg, rgba(174, 216, 235, 0.90), rgba(174, 216, 235, 0.95)),
     radial-gradient(circle at center, rgba(25, 117, 181, 0.06), transparent 30%);
   transition: opacity 0.6s ease;
 }
@@ -151,7 +173,7 @@ canvas {
   width: min(680px, calc(100vw - 32px));
   padding: clamp(24px, 4vw, 40px);
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(248, 252, 255, 0.72), rgba(248, 252, 255, 0.82));
+  background: linear-gradient(180deg, rgba(248, 252, 255, 0.72), rgba(248, 252, 255, 0.84));
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-strong);
   position: relative;
@@ -175,7 +197,7 @@ canvas {
 
 .overlay h1 {
   margin: 0;
-  font-size: clamp(2rem, 5vw, 4.25rem);
+  font-size: clamp(2rem, 5vw, 4.2rem);
   line-height: 0.92;
   letter-spacing: -0.04em;
 }
@@ -196,7 +218,7 @@ canvas {
   height: 10px;
   overflow: hidden;
   border: 1px solid rgba(7, 16, 25, 0.16);
-  background: rgba(7, 16, 25, 0.07);
+  background: rgba(7, 16, 25, 0.06);
 }
 
 .progress__bar span {
@@ -218,7 +240,7 @@ canvas {
   appearance: none;
   border: 1px solid rgba(7, 16, 25, 0.16);
   color: var(--ink);
-  background: linear-gradient(180deg, rgba(248, 252, 255, 0.86), rgba(248, 252, 255, 0.68));
+  background: linear-gradient(180deg, rgba(248, 252, 255, 0.88), rgba(248, 252, 255, 0.70));
   cursor: pointer;
   transition: transform 0.2s ease, background 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
   box-shadow: var(--shadow);
@@ -243,7 +265,7 @@ canvas {
 .mute-button:hover {
   transform: translateY(-1px);
   border-color: rgba(25, 117, 181, 0.34);
-  background: linear-gradient(180deg, rgba(248, 252, 255, 0.95), rgba(248, 252, 255, 0.76));
+  background: linear-gradient(180deg, rgba(248, 252, 255, 0.95), rgba(248, 252, 255, 0.78));
 }
 
 .hud {
@@ -254,7 +276,6 @@ canvas {
   gap: 24px;
   padding: 24px;
   pointer-events: none;
-  z-index: 4;
 }
 
 .hud h2,
@@ -279,19 +300,19 @@ canvas {
 .active-node {
   margin-top: 14px;
   min-width: 260px;
-  max-width: 380px;
+  max-width: 420px;
   padding: 12px 14px;
   border: 1px solid rgba(7, 16, 25, 0.14);
-  background: rgba(248, 252, 255, 0.54);
+  background: rgba(248, 252, 255, 0.56);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
 }
 
 .active-node__label {
-  font-size: 0.7rem;
+  font-size: 0.70rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(7, 16, 25, 0.6);
+  color: rgba(7, 16, 25, 0.60);
   margin-bottom: 8px;
 }
 
@@ -327,7 +348,6 @@ canvas {
 .folder-labels {
   inset: 0;
   pointer-events: none;
-  z-index: 3;
 }
 
 .folder-label {
@@ -371,7 +391,6 @@ canvas {
 .mute-button {
   right: 24px;
   bottom: 24px;
-  z-index: 6;
   padding: 12px 14px;
   font-weight: 700;
   font-size: 0.8rem;

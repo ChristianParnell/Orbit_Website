@@ -58,12 +58,10 @@ export const ORBIT_ITEMS = [
 ];
 
 export const ASSETS = {
-  // no sky background now
   sky: "",
   background: "",
   fog: "",
 
-  // keep FBX as the real live model path in your repo
   modelGLB: "",
   modelGLTF: "",
   modelFBX: "./assets/models/me_on_hill.fbx"
