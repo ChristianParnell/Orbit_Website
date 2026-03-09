@@ -40,13 +40,20 @@ const CFG = {
   fogDensity: 0.022,
   fogSpriteCount: 16,
 
-  modelPointLimit: 42000,
-  streamPerCover: 360,
+  modelPointLimit: 26000,
+  streamPerCover: 300,
 
-  hoverBorrowRatio: 0.18,
-  focusTunnelParticles: 560,
-  focusTunnelTwist: 14.5,
-  focusTunnelRadius: 0.072
+  hoverBorrowRatio: 0.12,
+  focusTunnelParticles: 480,
+  focusTunnelTwist: 13.2,
+  focusTunnelRadius: 0.064,
+
+  breachMinInterval: 10.0,
+  breachMaxInterval: 18.0,
+  breachDuration: 4.25,
+
+  relationMaxLines: 5,
+  relationLinePoints: 26
 };
 
 const COLORS = {
@@ -154,6 +161,15 @@ let nextDebugEventAt = 0;
 let lastHoveredDebugKey = "";
 let lastActiveDebugKey = "";
 
+const breachState = {
+  active: false,
+  index: -1,
+  start: 0,
+  end: 0,
+  nextAt: 0,
+  strength: 0
+};
+
 const orbitRoot = new THREE.Group();
 scene.add(orbitRoot);
 
@@ -176,6 +192,7 @@ const tempVec2 = new THREE.Vector3();
 const tempVec3 = new THREE.Vector3();
 const tempVec4 = new THREE.Vector3();
 const tempQuat = new THREE.Quaternion();
+const tempColor = new THREE.Color();
 
 const flagEntries = [];
 const fogSprites = [];
@@ -220,6 +237,11 @@ const focusTunnelSystem = {
   radiusJitter: [],
   count: 0,
   visibility: 0
+};
+
+const relationSystem = {
+  lines: [],
+  group: null
 };
 
 setupLighting();
@@ -271,6 +293,7 @@ function initScene() {
   createGroundSystem();
   createFog();
   createFlags(textureLoader);
+  buildRelationSystem();
   loadCenterModel();
 }
 
@@ -473,16 +496,19 @@ function createFlagMaterial(texture) {
       uTime: { value: 0 },
       uHover: { value: 0.0 },
       uOpacity: { value: 1.0 },
-      uAudioReactive: { value: 0.10 }
+      uAudioReactive: { value: 0.10 },
+      uBreach: { value: 0.0 }
     },
     vertexShader: `
       uniform float uTime;
       uniform float uHover;
       uniform float uAudioReactive;
+      uniform float uBreach;
 
       varying vec2 vUv;
       varying float vHover;
       varying float vAudioReactive;
+      varying float vBreach;
 
       float hash21(vec2 p) {
         p = fract(p * vec2(123.34, 456.21));
@@ -494,18 +520,20 @@ function createFlagMaterial(texture) {
         vUv = uv;
         vHover = uHover;
         vAudioReactive = uAudioReactive;
+        vBreach = uBreach;
 
         vec3 pos = position;
         float corrupt = 1.0 - uHover;
+        float unstable = corrupt + uBreach * 1.25;
         float audioBuzz = 0.78 + uAudioReactive * 0.95;
 
         vec2 block = floor(uv * vec2(24.0, 14.0));
         float n = hash21(block + floor(uTime * 2.0));
         float band = step(0.76, fract(uv.y * 18.0 + uTime * 2.5 + n * 3.0));
 
-        pos.x += (n - 0.5) * 0.014 * corrupt * audioBuzz;
-        pos.y += sin(uv.x * 18.0 + uTime * 6.0 + n * 4.0) * 0.005 * corrupt * audioBuzz;
-        pos.z += sin(uv.y * 16.0 + uTime * 4.0 + n * 5.0) * (0.010 + band * 0.012) * corrupt * audioBuzz;
+        pos.x += (n - 0.5) * 0.016 * unstable * audioBuzz;
+        pos.y += sin(uv.x * 18.0 + uTime * 6.0 + n * 4.0) * 0.006 * unstable * audioBuzz;
+        pos.z += sin(uv.y * 16.0 + uTime * 4.0 + n * 5.0) * (0.012 + band * 0.016) * unstable * audioBuzz;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
       }
@@ -515,10 +543,12 @@ function createFlagMaterial(texture) {
       uniform float uTime;
       uniform float uHover;
       uniform float uOpacity;
+      uniform float uBreach;
 
       varying vec2 vUv;
       varying float vHover;
       varying float vAudioReactive;
+      varying float vBreach;
 
       float hash21(vec2 p) {
         p = fract(p * vec2(123.34, 456.21));
@@ -529,6 +559,7 @@ function createFlagMaterial(texture) {
       void main() {
         float resolve = smoothstep(0.0, 1.0, vHover);
         float corrupt = 1.0 - resolve;
+        float unstable = corrupt + vBreach * 1.18;
         float audioBuzz = 0.8 + vAudioReactive * 1.2;
 
         vec2 uv = vUv;
@@ -536,10 +567,10 @@ function createFlagMaterial(texture) {
         float lineNoise = hash21(vec2(floor(uv.y * 72.0), floor(uTime * 10.0)));
         float bigBand = step(0.82, lineNoise);
 
-        uv.x += (lineNoise - 0.5) * 0.055 * corrupt * audioBuzz * (0.35 + bigBand * 1.4);
-        uv.y += sin(uv.x * 42.0 + uTime * 8.0) * 0.0025 * corrupt * audioBuzz;
+        uv.x += (lineNoise - 0.5) * 0.060 * unstable * audioBuzz * (0.35 + bigBand * 1.4);
+        uv.y += sin(uv.x * 42.0 + uTime * 8.0) * 0.003 * unstable * audioBuzz;
 
-        vec2 rgbShift = vec2(0.012 * corrupt * audioBuzz * (0.6 + lineNoise), 0.0);
+        vec2 rgbShift = vec2(0.013 * unstable * audioBuzz * (0.6 + lineNoise), 0.0);
         vec4 texMain = texture2D(uMap, clamp(uv, 0.001, 0.999));
         vec4 texR = texture2D(uMap, clamp(uv + rgbShift, 0.001, 0.999));
         vec4 texB = texture2D(uMap, clamp(uv - rgbShift, 0.001, 0.999));
@@ -551,15 +582,15 @@ function createFlagMaterial(texture) {
         vec3 infected = vec3(texR.r, texMain.g, texB.b);
 
         float blockN = hash21(floor(vUv * vec2(34.0, 22.0)) + floor(uTime * 2.7));
-        float dropout = step(0.945, blockN) * corrupt;
-        float burn = step(0.88, fract(vUv.y * 38.0 + uTime * 6.0 + blockN * 4.0)) * corrupt;
+        float dropout = step(0.935, blockN) * unstable;
+        float burn = step(0.88, fract(vUv.y * 38.0 + uTime * 6.0 + blockN * 4.0)) * unstable;
 
-        infected *= 0.70 + 0.30 * blockN;
+        infected *= 0.68 + 0.32 * blockN;
         infected += vec3(0.00, 0.10, 0.16) * burn * audioBuzz;
-        infected = mix(infected, infected.grb * vec3(0.85, 1.15, 1.10), bigBand * corrupt * 0.5);
-        infected *= 1.0 - dropout * 0.72;
+        infected = mix(infected, infected.grb * vec3(0.82, 1.18, 1.10), bigBand * unstable * 0.55);
+        infected *= 1.0 - dropout * 0.74;
 
-        float shimmer = 0.94 + sin(uTime * 8.0 + lineNoise * 12.0) * 0.03 * corrupt * audioBuzz;
+        float shimmer = 0.92 + sin(uTime * 8.0 + lineNoise * 12.0) * 0.05 * unstable * audioBuzz;
         vec3 finalColor = mix(infected * shimmer, clean, resolve);
 
         gl_FragColor = vec4(finalColor, alpha * uOpacity);
@@ -597,8 +628,8 @@ function createFlags(loader) {
     const labelNode = document.createElement("div");
     labelNode.className = "folder-label";
 
-    const safeTitle = item.title;
-    const safeSubtitle = item.subtitle;
+    const safeTitle = item.title ?? `Node ${index + 1}`;
+    const safeSubtitle = item.subtitle ?? "portfolio node";
 
     labelNode.innerHTML = `
       <div class="folder-label__card">
@@ -619,9 +650,42 @@ function createFlags(loader) {
       material: mat,
       labelAnchor,
       labelNode,
-      hoverValue: 0
+      hoverValue: 0,
+      breachValue: 0
     });
   });
+}
+
+function buildRelationSystem() {
+  relationSystem.group = new THREE.Group();
+  scene.add(relationSystem.group);
+
+  for (let i = 0; i < CFG.relationMaxLines; i += 1) {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(CFG.relationLinePoints * 3);
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage)
+    );
+    geometry.setDrawRange(0, 0);
+
+    const material = new THREE.LineBasicMaterial({
+      color: 0x2fe4ff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false
+    });
+
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 6;
+    line.frustumCulled = false;
+    relationSystem.group.add(line);
+
+    relationSystem.lines.push({ line, geometry, positions, material });
+  }
 }
 
 function loadCenterModel() {
@@ -826,8 +890,8 @@ function buildBinaryModelRepresentation() {
 
   for (let i = 0; i < count; i += 1) {
     seeds[i] = Math.random();
-    sizes[i] = 0.56 + Math.random() * 0.34;
-    alphas[i] = 0.76 + Math.random() * 0.24;
+    sizes[i] = 0.86 + Math.random() * 0.52;
+    alphas[i] = 0.74 + Math.random() * 0.24;
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -867,7 +931,7 @@ function buildStreamSystem() {
   for (let i = 0; i < count; i += 1) {
     streamSystem.coverIndex[i] = i % ORBIT_ITEMS.length;
     streamSystem.seeds[i] = Math.random();
-    streamSystem.sizes[i] = 0.54 + Math.random() * 0.30;
+    streamSystem.sizes[i] = 0.78 + Math.random() * 0.40;
     streamSystem.progress[i] = Math.random();
     streamSystem.speed[i] = 0.18 + Math.random() * 0.16;
     streamSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
@@ -924,7 +988,7 @@ function buildFocusTunnelSystem() {
 
   for (let i = 0; i < count; i += 1) {
     focusTunnelSystem.seeds[i] = Math.random();
-    focusTunnelSystem.sizes[i] = 0.62 + Math.random() * 0.34;
+    focusTunnelSystem.sizes[i] = 0.88 + Math.random() * 0.44;
     focusTunnelSystem.progress[i] = Math.random();
     focusTunnelSystem.speed[i] = 0.46 + Math.random() * 0.34;
     focusTunnelSystem.sourceIndex[i] = Math.floor(Math.random() * sampleCount);
@@ -963,25 +1027,29 @@ function buildFocusTunnelSystem() {
 
 function createBinaryGlyphAtlas() {
   const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 256;
+  c.width = 2048;
+  c.height = 1024;
   const ctx = c.getContext("2d");
 
   ctx.clearRect(0, 0, c.width, c.height);
-
+  ctx.imageSmoothingEnabled = true;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 174px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 
-  ctx.fillText("0", 128, 130);
-  ctx.fillText("1", 384, 130);
+  ctx.font = '900 760px ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace';
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowColor = "rgba(255,255,255,0.14)";
+  ctx.shadowBlur = 12;
+
+  ctx.fillText("0", 512, 520);
+  ctx.fillText("1", 1536, 520);
 
   const texture = new THREE.CanvasTexture(c);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
+  texture.needsUpdate = true;
   return texture;
 }
 
@@ -1018,8 +1086,8 @@ function createModelGlyphMaterial(atlas) {
       void main() {
         vec3 p = position;
 
-        float drift = 0.0025 + aSeed * 0.0025;
-        float audioDrift = 1.0 + uAudioPulse * (0.25 + aSeed * 0.35);
+        float drift = 0.0022 + aSeed * 0.0020;
+        float audioDrift = 1.0 + uAudioPulse * (0.20 + aSeed * 0.28);
 
         p.x += sin(uTime * (0.18 + fract(aSeed * 0.25)) + aSeed * 51.0) * drift * audioDrift;
         p.y += cos(uTime * (0.16 + fract(aSeed * 0.21)) + aSeed * 37.0) * drift * audioDrift;
@@ -1036,7 +1104,7 @@ function createModelGlyphMaterial(atlas) {
         vPalette = fract(aSeed * 13.7);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(2.4, aSize * (34.0 / max(1.0, -mvPosition.z)) * (1.0 + uAudioPulse * 0.14));
+        gl_PointSize = max(4.0, aSize * (46.0 / max(1.0, -mvPosition.z)) * (1.0 + uAudioPulse * 0.18));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1063,11 +1131,10 @@ function createModelGlyphMaterial(atlas) {
 
         vec4 glyph = texture2D(uAtlas, atlasUv);
         float alpha = glyph.a * vAlpha;
-
         if (alpha < 0.02) discard;
 
         vec3 color = palette(vPalette);
-        color *= mix(0.18, 1.0, vShade);
+        color *= mix(0.24, 1.0, vShade);
 
         gl_FragColor = vec4(color, alpha);
       }
@@ -1109,9 +1176,9 @@ function createStreamGlyphMaterial(atlas) {
         vAlpha = aAlpha * (0.92 + uAudioPulse * 0.24);
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        float nearFolderGrow = mix(1.0, 1.52, smoothstep(0.52, 1.0, aFlowT));
+        float nearFolderGrow = mix(1.0, 1.46, smoothstep(0.52, 1.0, aFlowT));
         float audioGrow = 1.0 + uAudioPulse * 0.12;
-        gl_PointSize = max(2.0, aSize * nearFolderGrow * audioGrow * (28.0 / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(3.4, aSize * nearFolderGrow * audioGrow * (34.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1182,9 +1249,9 @@ function createFocusedStreamGlyphMaterial(atlas) {
         vAlpha = aAlpha * uVisibility * (1.0 + uAudioPulse * 0.32);
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        float decodeGrow = mix(1.12, 1.92, smoothstep(0.18, 1.0, aFlowT));
+        float decodeGrow = mix(1.10, 1.80, smoothstep(0.18, 1.0, aFlowT));
         float audioGrow = 1.0 + uAudioPulse * 0.16;
-        gl_PointSize = max(2.0, aSize * decodeGrow * audioGrow * (30.0 / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(3.6, aSize * decodeGrow * audioGrow * (38.0 / max(1.0, -mvPosition.z)));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1293,6 +1360,7 @@ function attachEvents() {
     }
 
     initAudioReactive();
+    scheduleNextBreach(clock.elapsedTime);
     pushDebugEvent("diagnostic shell booted", "BOOT");
     pushDebugEvent("ambient packet lattice online", "SYS");
 
@@ -1368,6 +1436,75 @@ function initAudioReactive() {
   }
 }
 
+function scheduleNextBreach(elapsed) {
+  breachState.nextAt = elapsed + THREE.MathUtils.randFloat(CFG.breachMinInterval, CFG.breachMaxInterval);
+}
+
+function pickBreachIndex() {
+  const visible = [];
+  for (let i = 0; i < flagEntries.length; i += 1) {
+    if (flagEntries[i].group.visible) visible.push(i);
+  }
+
+  if (visible.length === 0) return -1;
+
+  if (visible.length === 1) return visible[0];
+
+  const filtered = visible.filter((i) => flagEntries[i] !== hoveredEntry);
+  const pool = filtered.length ? filtered : visible;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function startSystemBreach(elapsed) {
+  const index = pickBreachIndex();
+  if (index === -1) {
+    scheduleNextBreach(elapsed + 2);
+    return;
+  }
+
+  breachState.active = true;
+  breachState.index = index;
+  breachState.start = elapsed;
+  breachState.end = elapsed + CFG.breachDuration;
+  breachState.strength = 0;
+
+  const entry = flagEntries[index];
+  pushDebugEvent(`system breach :: ${getNodeTag(entry)}`, "ALRT");
+  pushDebugEvent(`auto-lock repair stream :: ${entry.item.title}`, "FLOW");
+}
+
+function stopSystemBreach(elapsed) {
+  if (breachState.index >= 0 && breachState.index < flagEntries.length) {
+    const entry = flagEntries[breachState.index];
+    pushDebugEvent(`breach resolved :: ${getNodeTag(entry)}`, "OK");
+  }
+
+  breachState.active = false;
+  breachState.index = -1;
+  breachState.strength = 0;
+  scheduleNextBreach(elapsed);
+}
+
+function updateSystemBreach(elapsed) {
+  if (!hasEntered) return;
+
+  if (!breachState.active) {
+    if (breachState.nextAt === 0) scheduleNextBreach(elapsed);
+    if (elapsed >= breachState.nextAt) {
+      startSystemBreach(elapsed);
+    }
+    return;
+  }
+
+  if (elapsed >= breachState.end) {
+    stopSystemBreach(elapsed);
+    return;
+  }
+
+  const t = (elapsed - breachState.start) / Math.max(0.001, breachState.end - breachState.start);
+  breachState.strength = Math.sin(t * Math.PI);
+}
+
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -1383,12 +1520,14 @@ function animate() {
 
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
 
+  updateSystemBreach(elapsed);
   updateAudioReactive(elapsed);
   updateCamera(elapsed);
   updateFlags(elapsed);
   updateCoverWorldData();
-  updateLabels();
   updateIntersections();
+  updateLabels();
+  updateRelationLines(elapsed);
   updateFog(elapsed);
   updateBinaryModel(elapsed);
   updateStreamParticles(delta, elapsed);
@@ -1420,6 +1559,10 @@ function updateAudioReactive(elapsed) {
     target = THREE.MathUtils.clamp(avg * 1.65, 0.04, 0.48);
   } else {
     target = 0.09 + (Math.sin(elapsed * 1.3) * 0.5 + 0.5) * 0.07;
+  }
+
+  if (breachState.active) {
+    target += breachState.strength * 0.28;
   }
 
   audioReactiveLevel = THREE.MathUtils.lerp(audioReactiveLevel, target, 0.10);
@@ -1503,10 +1646,18 @@ function updateFlags(elapsed) {
       0.12
     );
 
+    const breached = breachState.active && breachState.index === index;
+    entry.breachValue = THREE.MathUtils.lerp(
+      entry.breachValue,
+      breached ? breachState.strength : 0,
+      0.16
+    );
+
     entry.material.uniforms.uTime.value = elapsed;
     entry.material.uniforms.uOpacity.value = finalOpacity;
     entry.material.uniforms.uHover.value = entry.hoverValue;
     entry.material.uniforms.uAudioReactive.value = audioReactiveLevel;
+    entry.material.uniforms.uBreach.value = entry.breachValue;
 
     entry.group.visible = finalOpacity > 0.02;
   });
@@ -1534,20 +1685,23 @@ function updateCoverWorldData() {
 function updateActiveNode(entry) {
   if (!entry) return;
 
-  if (activeNodeTitle) {
-    activeNodeTitle.textContent = entry.item.title;
+  let title = entry.item.title;
+  let meta = `${entry.item.subtitle || "active node"} • ${entry.item.theme || "portfolio node"}`;
+
+  const idx = flagEntries.indexOf(entry);
+  if (breachState.active && idx === breachState.index) {
+    meta += " • breach detected";
   }
 
-  if (activeNodeMeta) {
-    activeNodeMeta.textContent = `${entry.item.subtitle || "active node"} • ${entry.item.theme || "portfolio node"}`;
-  }
+  if (activeNodeTitle) activeNodeTitle.textContent = title;
+  if (activeNodeMeta) activeNodeMeta.textContent = meta;
 }
 
 function updateLabels() {
   const width = window.innerWidth;
   const height = window.innerHeight;
 
-  flagEntries.forEach((entry) => {
+  flagEntries.forEach((entry, index) => {
     entry.labelAnchor.getWorldPosition(working.vB);
     working.vB.project(camera);
 
@@ -1570,19 +1724,25 @@ function updateLabels() {
     const y = (-working.vB.y * 0.5 + 0.5) * height;
 
     if (entry.labelNode) {
-      const glitchMix = (1 - entry.hoverValue) * (0.55 + audioReactiveLevel * 0.90);
+      const breachBonus = entry.breachValue * 0.95;
+      const glitchMix =
+        (1 - entry.hoverValue) * (0.55 + audioReactiveLevel * 0.90) + breachBonus;
 
       entry.labelNode.style.opacity = `${titleFade}`;
       entry.labelNode.style.transform =
         `translate(calc(${x}px - 100%), calc(${y}px - 50%)) scale(${titleScale})`;
       entry.labelNode.style.setProperty("--label-glitch", glitchMix.toFixed(3));
-      entry.labelNode.style.setProperty("--label-audio", audioReactiveLevel.toFixed(3));
+      entry.labelNode.style.setProperty("--label-audio", (audioReactiveLevel + breachBonus * 0.3).toFixed(3));
 
-      if (entry.hoverValue > 0.55) {
+      if (entry.hoverValue > 0.55 && entry.breachValue < 0.18) {
         entry.labelNode.classList.add("is-resolved");
       } else {
         entry.labelNode.classList.remove("is-resolved");
       }
+    }
+
+    if (breachState.active && breachState.index === index) {
+      updateActiveNode(entry);
     }
   });
 }
@@ -1604,6 +1764,13 @@ function updateIntersections() {
   }
 
   renderer.domElement.style.cursor = hoveredEntry ? "pointer" : "grab";
+}
+
+function getRepairTargetEntry() {
+  if (breachState.active && breachState.index >= 0 && breachState.index < flagEntries.length) {
+    return flagEntries[breachState.index];
+  }
+  return hoveredEntry;
 }
 
 function updateFog(elapsed) {
@@ -1639,15 +1806,17 @@ function updateBinaryModel(elapsed) {
 
   centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
   modelGlyphMaterial.uniforms.uTime.value = elapsed;
-  modelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel;
+  modelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.08;
 }
 
 function updateStreamParticles(delta, elapsed) {
   if (!streamSystem.points || !centralModel || !modelSampleData || modelSampleData.positions.length === 0) return;
 
   const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
+  const repairEntry = getRepairTargetEntry();
+  const repairIndex = repairEntry ? flagEntries.indexOf(repairEntry) : -1;
   const activeIndex = activeEntry ? flagEntries.indexOf(activeEntry) : -1;
-  const hoveredVisible = hoveredIndex !== -1 ? coverWorldData[hoveredIndex].visible : false;
+  const repairVisible = repairIndex !== -1 ? coverWorldData[repairIndex].visible : false;
   const samplePositions = modelSampleData.positions;
   const sampleCount = samplePositions.length / 3;
 
@@ -1655,19 +1824,23 @@ function updateStreamParticles(delta, elapsed) {
 
   for (let i = 0; i < streamSystem.count; i += 1) {
     const originalCoverIndex = streamSystem.coverIndex[i];
-    const borrowedToHover = hoveredVisible && streamSystem.seeds[i] < CFG.hoverBorrowRatio;
-    const effectiveCoverIndex = borrowedToHover ? hoveredIndex : originalCoverIndex;
+    const siphonRatio = breachState.active ? CFG.hoverBorrowRatio * 2.2 : CFG.hoverBorrowRatio;
+    const borrowedToRepair = repairVisible && streamSystem.seeds[i] < siphonRatio;
+    const effectiveCoverIndex = borrowedToRepair ? repairIndex : originalCoverIndex;
     const cover = coverWorldData[effectiveCoverIndex];
 
-    const isHoveredCover = hoveredIndex === effectiveCoverIndex;
+    const isRepairCover = repairIndex === effectiveCoverIndex;
     const isActiveCover = activeIndex === effectiveCoverIndex;
+    const isHoveredVisual = hoveredIndex === effectiveCoverIndex;
 
-    let focus = 0.22;
-    if (isActiveCover) focus = 0.36;
-    if (isHoveredCover) focus = borrowedToHover ? 0.74 : 0.62;
+    let focus = 0.20;
+    if (isActiveCover) focus = 0.32;
+    if (isRepairCover) focus = borrowedToRepair
+      ? (breachState.active ? 0.96 : 0.54)
+      : (breachState.active ? 0.82 : 0.46);
     if (!cover.visible) focus *= 0.35;
 
-    streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.55 + focus * 1.10 + audioReactiveLevel * 0.35);
+    streamSystem.progress[i] += delta * streamSystem.speed[i] * (0.55 + focus * 1.06 + audioReactiveLevel * 0.26);
 
     if (streamSystem.progress[i] > 1.0) {
       streamSystem.progress[i] -= 1.0;
@@ -1684,8 +1857,8 @@ function updateStreamParticles(delta, elapsed) {
     );
     centralModel.localToWorld(tempVec1);
 
-    const spread = isHoveredCover
-      ? THREE.MathUtils.lerp(0.17, 0.08, focus)
+    const spread = isRepairCover
+      ? THREE.MathUtils.lerp(0.20, breachState.active ? 0.10 : 0.12, focus)
       : THREE.MathUtils.lerp(0.18, 0.050, focus);
 
     tempVec2.copy(cover.position)
@@ -1693,14 +1866,17 @@ function updateStreamParticles(delta, elapsed) {
       .addScaledVector(cover.up, streamSystem.spreadY[i] * spread);
 
     tempVec4.copy(tempVec1).sub(tempVec3).normalize();
-    const outward = isHoveredCover
-      ? THREE.MathUtils.lerp(0.22, 0.12, focus)
+    const outward = isRepairCover
+      ? THREE.MathUtils.lerp(0.24, 0.13, focus)
       : THREE.MathUtils.lerp(0.34, 0.12, focus);
 
-    working.vE.copy(tempVec1).lerp(tempVec2, isHoveredCover ? 0.34 : 0.32);
+    working.vE.copy(tempVec1).lerp(tempVec2, isRepairCover ? 0.34 : 0.32);
     working.vE.addScaledVector(tempVec4, outward);
-    working.vE.y += 0.08 + focus * 0.09;
-    working.vE.addScaledVector(cover.right, streamSystem.spreadX[i] * (isHoveredCover ? 0.035 : 0.02));
+    working.vE.y += 0.08 + focus * (breachState.active ? 0.15 : 0.09);
+    working.vE.addScaledVector(
+      cover.right,
+      streamSystem.spreadX[i] * (isRepairCover ? (breachState.active ? 0.06 : 0.03) : 0.02)
+    );
 
     const t = smootherstep(streamSystem.progress[i]);
     quadraticBezier(tempVec1, working.vE, tempVec2, t, working.vD);
@@ -1716,8 +1892,12 @@ function updateStreamParticles(delta, elapsed) {
     const fadeOut = 1 - smooth01(Math.max(0, (t - 0.72) / 0.28));
     const shimmer = 0.90 + 0.10 * Math.sin(elapsed * (0.8 + streamSystem.seeds[i] * 1.2) + streamSystem.seeds[i] * 60.0);
 
+    let alphaBase = 0.06 + focus * 0.50 + audioReactiveLevel * 0.08;
+    if (isRepairCover && breachState.active) alphaBase += 0.20;
+    if (isHoveredVisual && !breachState.active) alphaBase += 0.03;
+
     streamSystem.alphas[i] =
-      (0.07 + focus * 0.58 + audioReactiveLevel * 0.10) *
+      alphaBase *
       fadeIn *
       fadeOut *
       shimmer;
@@ -1727,7 +1907,7 @@ function updateStreamParticles(delta, elapsed) {
   streamSystem.geometry.attributes.aAlpha.needsUpdate = true;
   streamSystem.geometry.attributes.aFlowT.needsUpdate = true;
   streamGlyphMaterial.uniforms.uTime.value = elapsed;
-  streamGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel;
+  streamGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.10;
 }
 
 function updateFocusTunnel(delta, elapsed) {
@@ -1738,11 +1918,12 @@ function updateFocusTunnel(delta, elapsed) {
     modelSampleData.positions.length === 0
   ) return;
 
-  const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
+  const repairEntry = getRepairTargetEntry();
+  const repairIndex = repairEntry ? flagEntries.indexOf(repairEntry) : -1;
   const samplePositions = modelSampleData.positions;
   const sampleCount = samplePositions.length / 3;
 
-  if (hoveredIndex === -1 || !coverWorldData[hoveredIndex].visible) {
+  if (repairIndex === -1 || !coverWorldData[repairIndex].visible) {
     focusTunnelSystem.visibility = THREE.MathUtils.lerp(focusTunnelSystem.visibility, 0, 0.10);
 
     for (let i = 0; i < focusTunnelSystem.count; i += 1) {
@@ -1760,18 +1941,20 @@ function updateFocusTunnel(delta, elapsed) {
     return;
   }
 
-  const cover = coverWorldData[hoveredIndex];
+  const cover = coverWorldData[repairIndex];
   const hoverStrength = hoveredEntry ? hoveredEntry.hoverValue : 0;
+  const targetStrength = breachState.active ? breachState.strength : hoverStrength;
+
   focusTunnelSystem.visibility = THREE.MathUtils.lerp(
     focusTunnelSystem.visibility,
-    hoverStrength,
+    targetStrength,
     0.14
   );
 
   centralModel.getWorldPosition(tempVec3);
 
   for (let i = 0; i < focusTunnelSystem.count; i += 1) {
-    focusTunnelSystem.progress[i] += delta * focusTunnelSystem.speed[i] * (0.95 + hoverStrength * 1.15 + audioReactiveLevel * 0.65);
+    focusTunnelSystem.progress[i] += delta * focusTunnelSystem.speed[i] * (0.95 + targetStrength * 1.25 + audioReactiveLevel * 0.65);
 
     if (focusTunnelSystem.progress[i] > 1.0) {
       focusTunnelSystem.progress[i] -= 1.0;
@@ -1789,7 +1972,6 @@ function updateFocusTunnel(delta, elapsed) {
     centralModel.localToWorld(tempVec1);
 
     tempVec2.copy(cover.position);
-
     tempVec4.copy(tempVec1).sub(tempVec3).normalize();
 
     const p0 = tempVec1;
@@ -1797,10 +1979,10 @@ function updateFocusTunnel(delta, elapsed) {
 
     const p1 = working.vA.copy(p0).lerp(p3, 0.22)
       .addScaledVector(tempVec4, 0.10)
-      .setY(working.vA.y + 0.14 + hoverStrength * 0.04);
+      .setY(working.vA.y + 0.14 + targetStrength * 0.05);
 
     const p2 = working.vB.copy(p0).lerp(p3, 0.74)
-      .addScaledVector(cover.up, 0.16 + hoverStrength * 0.05)
+      .addScaledVector(cover.up, 0.16 + targetStrength * 0.06)
       .addScaledVector(cover.right, Math.sin(focusTunnelSystem.laneAngle[i]) * 0.05);
 
     const t = smootherstep(focusTunnelSystem.progress[i]);
@@ -1810,7 +1992,7 @@ function updateFocusTunnel(delta, elapsed) {
       CFG.focusTunnelRadius *
       focusTunnelSystem.radiusJitter[i] *
       Math.sin(t * Math.PI) *
-      (0.46 + hoverStrength * 0.38);
+      (breachState.active ? 0.72 + targetStrength * 0.54 : 0.46 + targetStrength * 0.38);
 
     const swirl =
       focusTunnelSystem.laneAngle[i] +
@@ -1833,7 +2015,7 @@ function updateFocusTunnel(delta, elapsed) {
     const pulse = 0.90 + 0.10 * Math.sin(elapsed * (1.8 + focusTunnelSystem.seeds[i] * 1.1) + focusTunnelSystem.seeds[i] * 90.0);
 
     focusTunnelSystem.alphas[i] =
-      (0.10 + hoverStrength * 0.64 + audioReactiveLevel * 0.12) *
+      (breachState.active ? 0.18 + targetStrength * 0.88 : 0.08 + targetStrength * 0.56) *
       fadeIn *
       fadeOut *
       pulse;
@@ -1845,9 +2027,128 @@ function updateFocusTunnel(delta, elapsed) {
 
   if (focusTunnelGlyphMaterial) {
     focusTunnelGlyphMaterial.uniforms.uTime.value = elapsed;
-    focusTunnelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel;
+    focusTunnelGlyphMaterial.uniforms.uAudioPulse.value = audioReactiveLevel + breachState.strength * 0.08;
     focusTunnelGlyphMaterial.uniforms.uVisibility.value = focusTunnelSystem.visibility;
   }
+}
+
+function resolveItemIndex(ref) {
+  if (typeof ref === "number") {
+    return ref >= 0 && ref < ORBIT_ITEMS.length ? ref : -1;
+  }
+
+  if (typeof ref !== "string") return -1;
+
+  const lower = ref.trim().toLowerCase();
+  return ORBIT_ITEMS.findIndex((item) => {
+    return (
+      (item.title && item.title.toLowerCase() === lower) ||
+      (item.href && item.href.toLowerCase() === lower) ||
+      (item.id && String(item.id).toLowerCase() === lower)
+    );
+  });
+}
+
+function getRelatedIndices(index) {
+  const item = ORBIT_ITEMS[index];
+  const result = [];
+  const used = new Set([index]);
+
+  const add = (idx) => {
+    if (idx < 0 || idx >= ORBIT_ITEMS.length) return;
+    if (used.has(idx)) return;
+    used.add(idx);
+    result.push(idx);
+  };
+
+  if (Array.isArray(item.relatedIndices)) {
+    item.relatedIndices.forEach(add);
+  }
+
+  if (Array.isArray(item.related)) {
+    item.related.forEach((ref) => add(resolveItemIndex(ref)));
+  }
+
+  if (item.theme) {
+    ORBIT_ITEMS.forEach((other, idx) => {
+      if (idx === index) return;
+      if (other.theme && other.theme === item.theme) add(idx);
+    });
+  }
+
+  add(index - 1);
+  add(index + 1);
+  add(index - 2);
+  add(index + 2);
+
+  return result.slice(0, CFG.relationMaxLines);
+}
+
+function updateRelationLines(elapsed) {
+  if (!relationSystem.lines.length) return;
+
+  const focusEntry = hoveredEntry || (breachState.active && breachState.index >= 0 ? flagEntries[breachState.index] : null);
+
+  if (!focusEntry) {
+    relationSystem.lines.forEach((l) => {
+      l.material.opacity = THREE.MathUtils.lerp(l.material.opacity, 0, 0.12);
+      l.geometry.setDrawRange(0, 0);
+    });
+    return;
+  }
+
+  const sourceIndex = flagEntries.indexOf(focusEntry);
+  if (sourceIndex === -1) return;
+
+  const related = getRelatedIndices(sourceIndex);
+  const source = coverWorldData[sourceIndex];
+  const visibleRelated = related.filter((idx) => coverWorldData[idx]?.visible);
+
+  relationSystem.lines.forEach((entry, i) => {
+    if (i >= visibleRelated.length) {
+      entry.material.opacity = THREE.MathUtils.lerp(entry.material.opacity, 0, 0.18);
+      entry.geometry.setDrawRange(0, 0);
+      return;
+    }
+
+    const targetIndex = visibleRelated[i];
+    const target = coverWorldData[targetIndex];
+    const points = CFG.relationLinePoints;
+
+    const p0 = working.vA.copy(source.position);
+    const p3 = working.vB.copy(target.position);
+
+    const span = p0.distanceTo(p3);
+    const lift = THREE.MathUtils.clamp(span * 0.16, 0.24, 0.82);
+
+    const p1 = working.vC.copy(p0).lerp(p3, 0.28);
+    p1.y += lift;
+    p1.addScaledVector(source.right, 0.10);
+
+    const p2 = working.vD.copy(p0).lerp(p3, 0.72);
+    p2.y += lift;
+    p2.addScaledVector(target.right, -0.10);
+
+    for (let j = 0; j < points; j += 1) {
+      const t = j / (points - 1);
+      cubicBezier(p0, p1, p2, p3, t, working.vE);
+
+      const n = j * 3;
+      entry.positions[n] = working.vE.x;
+      entry.positions[n + 1] = working.vE.y + Math.sin(elapsed * 1.4 + t * 6.283 + i) * 0.006;
+      entry.positions[n + 2] = working.vE.z;
+    }
+
+    entry.geometry.attributes.position.needsUpdate = true;
+    entry.geometry.setDrawRange(0, points);
+
+    const pulse = 0.5 + 0.5 * Math.sin(elapsed * 1.8 + i * 0.7);
+    const baseOpacity = breachState.active ? 0.16 : 0.10;
+    entry.material.opacity = THREE.MathUtils.lerp(entry.material.opacity, baseOpacity + pulse * 0.05, 0.16);
+
+    tempColor.copy(PALETTE[(sourceIndex + i) % PALETTE.length]);
+    entry.material.color.copy(tempColor);
+  });
 }
 
 function updateDebugTerminal(elapsed) {
@@ -1859,7 +2160,7 @@ function updateDebugTerminal(elapsed) {
   if (hoveredKey !== lastHoveredDebugKey) {
     if (hoveredKey) {
       pushDebugEvent(`node corruption detected :: ${hoveredKey}`, "WARN");
-      pushDebugEvent(`focused decode tunnel engaged :: ${hoveredKey}`, "FLOW");
+      pushDebugEvent(`relation map expanded :: ${hoveredKey}`, "NET");
     } else if (lastHoveredDebugKey) {
       pushDebugEvent(`asset integrity restored :: ${lastHoveredDebugKey}`, "OK");
     }
@@ -1890,8 +2191,13 @@ function buildAmbientDebugEvent() {
 
   if (hoveredKey) {
     pool.push({ level: "FLOW", message: `packet density increased :: ${hoveredKey}` });
+    pool.push({ level: "NET", message: `linked node graph visible :: ${hoveredKey}` });
     pool.push({ level: "FLOW", message: `decode lattice tightening :: ${hoveredKey}` });
-    pool.push({ level: "SYS", message: `repair stream synced to active hover target` });
+  }
+
+  if (breachState.active && breachState.index >= 0) {
+    pool.push({ level: "ALRT", message: `breach cascade contained :: ${getNodeTag(flagEntries[breachState.index])}` });
+    pool.push({ level: "FLOW", message: `repair beam locked to failing node` });
   }
 
   if (activeKey) {
@@ -1944,16 +2250,6 @@ function getNodeTag(entry) {
   return `node://${String(index + 1).padStart(2, "0")}`;
 }
 
-function quadraticBezier(a, b, c, t, out) {
-  const inv = 1 - t;
-  out.set(
-    inv * inv * a.x + 2 * inv * t * b.x + t * t * c.x,
-    inv * inv * a.y + 2 * inv * t * b.y + t * t * c.y,
-    inv * inv * a.z + 2 * inv * t * b.z + t * t * c.z
-  );
-  return out;
-}
-
 function cubicBezier(a, b, c, d, t, out) {
   const inv = 1 - t;
   const inv2 = inv * inv;
@@ -1967,6 +2263,16 @@ function cubicBezier(a, b, c, d, t, out) {
     inv3 * a.z + 3 * inv2 * t * b.z + 3 * inv * t2 * c.z + t3 * d.z
   );
 
+  return out;
+}
+
+function quadraticBezier(a, b, c, t, out) {
+  const inv = 1 - t;
+  out.set(
+    inv * inv * a.x + 2 * inv * t * b.x + t * t * c.x,
+    inv * inv * a.y + 2 * inv * t * b.y + t * t * c.y,
+    inv * inv * a.z + 2 * inv * t * b.z + t * t * c.z
+  );
   return out;
 }
 
