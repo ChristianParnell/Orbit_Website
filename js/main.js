@@ -890,7 +890,7 @@ function buildBinaryModelRepresentation() {
 
   for (let i = 0; i < count; i += 1) {
     seeds[i] = Math.random();
-    sizes[i] = 0.86 + Math.random() * 0.52;
+    sizes[i] = 0.68 + Math.random() * 0.34;
     alphas[i] = 0.74 + Math.random() * 0.24;
   }
 
@@ -1104,7 +1104,7 @@ function createModelGlyphMaterial(atlas) {
         vPalette = fract(aSeed * 13.7);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(4.0, aSize * (46.0 / max(1.0, -mvPosition.z)) * (1.0 + uAudioPulse * 0.18));
+        gl_PointSize = max(3.0, aSize * (36.0 / max(1.0, -mvPosition.z)) * (1.0 + uAudioPulse * 0.14));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1447,7 +1447,6 @@ function pickBreachIndex() {
   }
 
   if (visible.length === 0) return -1;
-
   if (visible.length === 1) return visible[0];
 
   const filtered = visible.filter((i) => flagEntries[i] !== hoveredEntry);
@@ -1921,7 +1920,7 @@ function updateFocusTunnel(delta, elapsed) {
   const repairEntry = getRepairTargetEntry();
   const repairIndex = repairEntry ? flagEntries.indexOf(repairEntry) : -1;
   const samplePositions = modelSampleData.positions;
-  const sampleCount = samplePositions.length / 3;
+  const sampleCount = modelSampleData.positions.length / 3;
 
   if (repairIndex === -1 || !coverWorldData[repairIndex].visible) {
     focusTunnelSystem.visibility = THREE.MathUtils.lerp(focusTunnelSystem.visibility, 0, 0.10);
