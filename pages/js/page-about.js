@@ -3,14 +3,14 @@ import { renderPage } from "./render-page.js";
 renderPage({
   title: "About",
   kicker: "Background",
-  intro: "This page is built as a clean foundation for your personal portfolio. Use it to introduce your design voice, animation background, game development focus, and the kind of work you want people to remember after leaving the site.",
+  intro: "Hey I'm Still adding to this",
   heroImage: "../assets/covers/about.JPG",
-  heroCaption: "Swap this copy for a short personal statement or a one-line design philosophy.",
+  heroCaption: "Will ad a personal Statement here",
   tags: ["Animation", "Game Development", "3D", "Visual Storytelling"],
   sections: [
     {
       title: "Who I am",
-      body: "Write this in your own voice. Keep it direct and personal. Explain what kind of designer you are, what kinds of worlds or experiences you like building, and what pulls you toward motion, interaction, atmosphere, and storytelling."
+      body: "will talk about how i am a designer"
     },
     {
       title: "What this site is for",
