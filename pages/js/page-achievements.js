@@ -10,13 +10,13 @@ renderPage({
   timeline: [
     {
       year: "Add Date",
-      title: "Featured milestone",
-      description: "Replace this with a real achievement, exhibition, internship, release, or award."
+      title: "22 Minutes",
+      description: "22 Minutes is published on Steam!"
     },
     {
       year: "Add Date",
-      title: "Project launch",
-      description: "Use this slot for a finished portfolio piece or public release."
+      title: "Thylassaphobia",
+      description: "Will be published on Steam in June."
     },
     {
       year: "Add Date",
