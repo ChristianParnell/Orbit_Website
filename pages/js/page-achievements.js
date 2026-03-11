@@ -3,7 +3,7 @@ import { renderPage } from "./render-page.js";
 renderPage({
   title: "Achievements",
   kicker: "Highlights",
-  intro: "Use this page for the milestones that support your story. That could include awards, exhibitions, completed courses, major project outcomes, work experience, or important turning points in your creative practice.",
+  intro: "Hey, Here is the page im still working on.",
   heroImage: "../assets/covers/achievements.jpg",
   heroCaption: "A page for the moments, wins, and milestones worth surfacing clearly.",
   tags: ["Milestones", "Experience", "Study", "Recognition"],
