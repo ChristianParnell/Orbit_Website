@@ -3,26 +3,26 @@ import { renderPage } from "./render-page.js";
 renderPage({
   title: "Contact",
   kicker: "Get in touch",
-  intro: "This page is ready for your contact details, social links, CV download, and a clear invitation for collaboration. Replace the placeholder links below with your real ones.",
+  intro: "Hey!",
   heroImage: "../assets/covers/contact.jpg",
-  heroCaption: "A simple end point for collaborators, employers, and clients.",
+  heroCaption: "I'm Super keen on getting in contact to collabortate",
   tags: ["Email", "Links", "Collaboration", "CV"],
   links: [
     {
-      title: "Email",
-      description: "Replace with your real email address.",
-      href: "mailto:your@email.com",
+      title: "oblixstudio@gmail.com",
+      description: "Company Email",
+      href: "christianparenll2024@gmai..com",
       external: true
     },
     {
       title: "LinkedIn",
-      description: "Swap this for your profile.",
+      description: "Job Protfolio",
       href: "https://www.linkedin.com/",
       external: true
     },
     {
       title: "GitHub",
-      description: "Link to your code, experiments, or public repos.",
+      description: "https://github.com/ChristianParnell/Orbit_Website",
       href: "https://github.com/",
       external: true
     }
