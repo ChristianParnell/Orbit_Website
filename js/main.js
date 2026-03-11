@@ -38,10 +38,10 @@ const CFG = {
   titleFadeEnd: 9.2,
 
   fogDensity: 0.022,
-  fogSpriteCount: 16,
+  fogSpriteCount: 1,
 
   modelPointLimit: 8000,
-  streamPerCover: 300,
+  streamPerCover: 120,
 
   hoverBorrowRatio: 0.12,
   focusTunnelParticles: 480,
