@@ -41,7 +41,7 @@ const CFG = {
   fogSpriteCount: 1,
 
   modelPointLimit: 8000,
-  streamPerCover: 120,
+  streamPerCover: 100,
 
   hoverBorrowRatio: 0.12,
   focusTunnelParticles: 480,
