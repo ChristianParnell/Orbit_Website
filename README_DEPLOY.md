@@ -1,6 +1,5 @@
-# Orbit Website Rewrite — GitHub Pages Setup
+# Orbit Website Rewrite GitHub Pages Setup
 
-This package is written to fit the existing repository shape:
 
 - `/assets/audio/ambient.mp3`
 - `/assets/backgrounds/sky_sphere.jpg`
@@ -10,7 +9,7 @@ This package is written to fit the existing repository shape:
 
 ## Files in this rewrite
 
-Replace or add these into your repo:
+Replace or add these into repo:
 
 - `index.html`
 - `styles.css`
@@ -78,15 +77,6 @@ Useful values:
 - `coverHeightTop`
 - `coverHeightBottom`
 
-## Optional future upgrades
-
-- add real video files to an `/assets/video/` folder
-- add a lightbox gallery
-- add a filtered projects page
-- add a contact form
-- add a custom loading animation
-- add drag-to-orbit desktop input
-- swap FBX for GLB later for faster loading if you want
 
 
 ## Import map fix
