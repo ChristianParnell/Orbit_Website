@@ -1,4 +1,8 @@
-# Orbit Website Rewrite GitHub Pages Setup
+# SETUP GUIDE FOR DEPLOYMENT <NOT REAL README>
+
+
+
+# Orbit Website GitHub Pages Setup
 
 
 - `/assets/audio/ambient.mp3`
