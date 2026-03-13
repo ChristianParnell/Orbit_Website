@@ -1,87 +1,38 @@
-# SETUP GUIDE FOR DEPLOYMENT <NOT REAL README>
+Orbit_Profile_Website
+
+24/02 -> Spent a day working on figuring out how to do this website thing. What code? HTML?? I asked chat GPT, and has all the info i needed on creating a html file as well as coding it. I wasn’t used to using html and C+ so this was very cool! Love coding and got a new found love for this.
+
+25/02 -> Got to lecture and needed help setting up pages! Chat GPT let me down on live server hosting though Visual studios, as there just isn’t anything like that. So using Github Pages is huge for launching the website and editing it.
+
+27/02 -> added some fog that broke the site. Worked on it alot, transparency issues with the opacity map seemeed to be the causing issue.
+
+28/03 -> came into problems with tiles being too far away from the modle, too wide and open space. Fixed brought all closer to the center. 
+
+1/03 -> fixed folder Helix effect. Speed and cork screw effect that orbit/spirals around modle was way too fase. Also made more space between folders so model is more visable.
+
+2/03 -> Huge lighting issues, light from the sky_sphere is casting addittional light to the folder covers. Fixed, but model has not lighting and currupted, the GL file cant be accesses to get textures. 
 
 
 
-# Orbit Website GitHub Pages Setup
-
-
-- `/assets/audio/ambient.mp3`
-- `/assets/backgrounds/sky_sphere.jpg`
-- `/assets/covers/...`
-- `/assets/models/me_on_hill.fbx`
-- `/assets/textures/fog.png`
-
-## Files in this rewrite
-
-Replace or add these into repo:
-
-- `index.html`
-- `styles.css`
-- `/js/config.js`
-- `/js/main.js`
-- `/pages/*.html`
-- `/pages/page.css`
-- `/pages/js/*.js`
-- `.nojekyll`
-
-## Deployment steps
-
-1. Back up your current repo.
-2. Copy these new files into the repo root and matching folders.
-3. Keep your existing `/assets` folder exactly where it is.
-4. Commit and push to `main`.
-5. In GitHub:
-   - Open **Settings**
-   - Go to **Pages**
-   - Set source to **Deploy from a branch**
-   - Branch: **main**
-   - Folder: **/(root)**
-6. Wait for Pages to rebuild.
-
-## Important notes
-
-- This build uses plain static HTML/CSS/JS.
-- It uses Three.js from a CDN, so there is no build process.
-- All page links are relative and GitHub Pages safe.
-- Audio only starts after the **Enter site** button is pressed.
-
-## First edits to make
-
-### Replace placeholder text
-Edit:
-- `/pages/js/page-about.js`
-- `/pages/js/page-gallery.js`
-- `/pages/js/page-achievements.js`
-- `/pages/js/page-contact.js`
-- `/pages/js/page-fab.js`
-- `/pages/js/page-sketchfab.js`
-- `/pages/js/page-22minutes.js`
-
-### Change or add orbit folders
-Edit:
-- `/js/config.js`
-
-Each item has:
-- `title`
-- `subtitle`
-- `href`
-- `cover`
-
-### Tweak the helix or camera
-Edit:
-- `/js/config.js`
-
-Useful values:
-- `cameraRadius`
-- `coverRadius`
-- `turns`
-- `scrollSpeed`
-- `cameraHeightTop`
-- `cameraHeightBottom`
-- `coverHeightTop`
-- `coverHeightBottom`
 
 
 
-## Import map fix
-This package uses a browser import map in `index.html` so GitHub Pages can resolve `three` and `three/addons/` without a bundler. Keep the `<script type="importmap">` block intact.
+5/03 -> the model still has no texture. Chat GPT cant resolve this issue either.  Took too long to resove stopped trying, will come back to this issue. Did amend some title text issues where the title of folders were too far away from the folder, and both folder and text fades away from camera. 
+
+4/03 -> Re-imported model and resized it, the rock base is now bigger, covering most the bottom scene. The flow of the folders doing a helix up the website is better, and more convincing, with this model change. 
+
+9/03 -> Made some Huge Changes! Biggest yet. I have completly re-done the website, I decided to go with a code breaking style, with corrupt files and effects. I found a cool image of a binary animation someone had done online, and thought would it be possible with Chat Gpt? And Yes! Its defentily. By making the model transparent and making a solid color background, there is a huge diffrence. I made a color ramp from adobe color pallets. Plugged it into the chat GPT to edit the styles and Js-Main and made some intresting color binary number effects. I had initally got some problemts with size of these binary numbers. But amended them now. I needed a video for the background and got Ai to generate a code flux background, its transparency is low and suits the color “blue” with background “dark Blue” this whole effect really completes the look. I added some binary flow exscaping the center model into the cover files, they get slightly bigger the closer they get to the cover. The website needed some more effect, and was too static, MORE CHAOS. So i added this random event were a cover file would get breached and code would get sucked into it. This works well! And you can see the binary effect better flowing out the character not just hovering over a file.
+
+
+
+10/03 -> Added Animations   
+
+
+ 
+12/03 -> Worked on limiting render performance. With GPU and CPU struggling to keep up i have implemented verables:
+·	modelPointLimit: 8000
+·	streamPerCover: 120
+·	focusTunnelParticles: 180
+·	pixel ratio 1.5
+·	60 FPS cap
+
