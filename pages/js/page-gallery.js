@@ -90,70 +90,70 @@ const renderItems = [
     type: "image",
     title: "Hero Render — Orbit Portrait",
     description: "Primary hero still for the portfolio, designed to feel cinematic and strong at a glance.",
-    src: "../assets/gallery/renders/render-01-orbit-portrait.jpg",
+    src: "../assets/gallery/renders/render-01-orbit-portrait.png",
     placeholder: "Hero render"
   },
   {
     type: "image",
     title: "Environment Render — Dusk Scene",
     description: "Wide environmental frame focused on mood, depth and spatial composition.",
-    src: "../assets/gallery/renders/render-02-dusk-environment.jpg",
+    src: "../assets/gallery/renders/render-02-dusk-environment.png",
     placeholder: "Environment render"
   },
   {
     type: "image",
     title: "Character Render — Front View",
     description: "Front-facing presentation render with a clean pose and readable lighting.",
-    src: "../assets/gallery/renders/render-03-character-front.jpg",
+    src: "../assets/gallery/renders/render-03-character-front.png",
     placeholder: "Character front render"
   },
   {
     type: "image",
     title: "Character Render — Profile View",
     description: "Profile still highlighting form, texture read and side silhouette.",
-    src: "../assets/gallery/renders/render-04-character-profile.jpg",
+    src: "../assets/gallery/renders/render-04-character-profile.png",
     placeholder: "Character profile render"
   },
   {
     type: "image",
     title: "Prop Render — Diving Helmet",
     description: "Prop-focused render showing material finish, shape detail and surface wear.",
-    src: "../assets/gallery/renders/render-05-diving-helmet.jpg",
+    src: "../assets/gallery/renders/render-05-diving-helmet.png",
     placeholder: "Prop render"
   },
   {
     type: "image",
     title: "Scene Render — Underwater Bell",
     description: "A still focused on industrial underwater storytelling and environmental tension.",
-    src: "../assets/gallery/renders/render-06-underwater-bell.jpg",
+    src: "../assets/gallery/renders/render-06-underwater-bell.png",
     placeholder: "Scene render"
   },
   {
     type: "image",
     title: "Material Study — Wet Metal",
     description: "Surface and shader study testing reflection, roughness and wet material response.",
-    src: "../assets/gallery/renders/render-07-wet-metal-study.jpg",
+    src: "../assets/gallery/renders/render-07-wet-metal-study.png",
     placeholder: "Material study"
   },
   {
     type: "image",
     title: "Stylised Frame — Blue Grade",
     description: "A graded still exploring stronger stylisation, contrast and cooler tonal control.",
-    src: "../assets/gallery/renders/render-08-blue-grade.jpg",
+    src: "../assets/gallery/renders/render-08-blue-grade.png",
     placeholder: "Stylised frame"
   },
   {
     type: "image",
     title: "Composition Still — Wide Shot",
     description: "A wider framing pass focused on layout, foreground depth and readability.",
-    src: "../assets/gallery/renders/render-09-wide-composition.jpg",
+    src: "../assets/gallery/renders/render-09-wide-composition.png",
     placeholder: "Composition still"
   },
   {
     type: "image",
     title: "Final Beauty Render",
     description: "A polished final render intended as one of the strongest stills in the set.",
-    src: "../assets/gallery/renders/render-10-final-beauty.jpg",
+    src: "../assets/gallery/renders/render-10-final-beauty.png",
     placeholder: "Final beauty render"
   }
 ];
