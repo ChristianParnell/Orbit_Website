@@ -11,12 +11,10 @@ renderPage({
     {
       title: "Who I am",
       body: [
-          "Hi, I’m Christian Parnell, a South African-born creative now based in New Zealand. I moved here at 18 to pursue my dream of working professionally in animation, and I feel incredibly lucky to now call this place home. I am currently studying Animation, Visual Effects, and Media Design under a Bachelor of Design Innovation, where I continue to grow my skills across storytelling, design, and digital production."
-          "My passion for animation has also led me into game development, opening up a wider creative world of coding, design, and interactive experiences. With four games completed, one published and another on the way, I feel closer than ever to building a professional career doing what I love."
+        "Hi, I’m Christian Parnell, a South African-born creative now based in New Zealand. I moved here at 18 to pursue my dream of working professionally in animation, and I feel incredibly lucky to now call this place home. I am currently studying Animation, Visual Effects, and Media Design under a Bachelor of Design Innovation, where I continue to grow my skills across storytelling, design, and digital production.",
+        "My passion for animation has also led me into game development, opening up a wider creative world of coding, design, and interactive experiences. With four games completed, one published and another on the way, I feel closer than ever to building a professional career doing what I love."
       ]
-    }
-     
-
+    },
     {
       title: "What this site is for",
       body: [
@@ -30,8 +28,8 @@ renderPage({
   timeline: [
     {
       year: "2026",
-      title: "What I'm working on at the moment'",
-      description: "Thylassaphobia & Animation Intro For OblixStudio."
+      title: "What I'm working on at the moment",
+      description: "Thylassaphobia & Animation Intro for OblixStudio."
     },
     {
       year: "Next",
