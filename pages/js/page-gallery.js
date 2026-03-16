@@ -1,14 +1,12 @@
 import { renderPage } from "./render-page.js";
 
-const videoPoster = "../assets/covers/gallery.png";
-
 const videoItems = [
   {
     type: "video",
     title: "Portfolio Showreel 2026",
     description: "Main edited reel featuring motion, design, game work, 3D and final presentation shots.",
     src: "../assets/gallery/videos/video-01-showreel.mp4",
-    poster: videoPoster,
+    thumbTime: 2.2,
     placeholder: "Showreel video"
   },
   {
@@ -16,31 +14,31 @@ const videoItems = [
     title: "22 Minutes — Gameplay Trailer",
     description: "Trailer-style edit showing gameplay beats, environment tension and pacing from the project.",
     src: "../assets/gallery/videos/video-02-22-minutes-trailer.mp4",
-    poster: videoPoster,
+    thumbTime: 3.0,
     placeholder: "Gameplay trailer"
   },
   {
     type: "video",
-    title: "Orbit Website — Interaction Pass",
-    description: "A screen capture showing the orbit navigation, hover effects and transitions working together.",
+    title: "Fun Animation",
+    description: "An animation-focused piece showing movement, timing and visual energy.",
     src: "../assets/gallery/videos/Video-03-Fun-Animation.mp4",
-    poster: videoPoster,
-    placeholder: "Website interaction video"
+    thumbTime: 1.8,
+    placeholder: "Fun animation video"
   },
   {
     type: "video",
-    title: "Environment Flythrough",
-    description: "A cinematic flythrough focused on mood, composition and scene pacing through a finished environment.",
+    title: "Woe — Intro",
+    description: "An introduction sequence with a more cinematic and stylised presentation.",
     src: "../assets/gallery/videos/video-04-Woe-Intro.mp4",
-    poster: videoPoster,
-    placeholder: "Environment flythrough"
+    thumbTime: 2.4,
+    placeholder: "Intro video"
   },
   {
     type: "video",
     title: "Character Animation Test",
     description: "Character motion study showing timing, posing, movement arcs and polish in a short animation pass.",
     src: "../assets/gallery/videos/video-05-character-animation.mp4",
-    poster: videoPoster,
+    thumbTime: 1.6,
     placeholder: "Character animation test"
   },
   {
@@ -48,7 +46,7 @@ const videoItems = [
     title: "Underwater Horror Prototype",
     description: "Prototype footage focused on atmosphere, underwater movement and tension-building visual language.",
     src: "../assets/gallery/videos/video-06-underwater-prototype.mp4",
-    poster: videoPoster,
+    thumbTime: 2.8,
     placeholder: "Underwater prototype"
   },
   {
@@ -56,7 +54,7 @@ const videoItems = [
     title: "VFX Breakdown",
     description: "Effect layers, pass breakdowns and composited results presented in a single before-and-after edit.",
     src: "../assets/gallery/videos/video-07-vfx-breakdown.mp4",
-    poster: videoPoster,
+    thumbTime: 2.0,
     placeholder: "VFX breakdown"
   },
   {
@@ -64,7 +62,7 @@ const videoItems = [
     title: "UI Motion Graphics Pass",
     description: "Motion design experiments for title cards, user interfaces and graphic transitions.",
     src: "../assets/gallery/videos/video-08-ui-motion-pass.mp4",
-    poster: videoPoster,
+    thumbTime: 1.5,
     placeholder: "UI motion pass"
   },
   {
@@ -72,7 +70,7 @@ const videoItems = [
     title: "Lighting Study Sequence",
     description: "A mood-driven sequence comparing different lighting grades and cinematic scene treatment.",
     src: "../assets/gallery/videos/video-09-lighting-study.mp4",
-    poster: videoPoster,
+    thumbTime: 2.6,
     placeholder: "Lighting study"
   },
   {
@@ -80,7 +78,7 @@ const videoItems = [
     title: "Turntable Presentation",
     description: "A clean turntable render showing off modelling, surfacing and overall silhouette from all angles.",
     src: "../assets/gallery/videos/video-10-turntable.mp4",
-    poster: videoPoster,
+    thumbTime: 1.2,
     placeholder: "Turntable presentation"
   }
 ];
@@ -194,7 +192,7 @@ renderPage({
         "Use the quick navigation buttons at the top to jump straight to videos or renders.",
         "Each card has a proper title and description so the page reads like a curated portfolio, not a file dump.",
         "Videos open in a large overlay player, while renders open in the same viewer for a more focused look.",
-        "Keep your strongest work in the first three slots of each section because that is what people usually see first."
+        "Video thumbnails should now be generated from a frame inside each MP4 rather than using one shared cover image."
       ]
     }
   ],
@@ -206,5 +204,5 @@ renderPage({
     }
   ],
   footerNote:
-    "Place your files inside ../assets/gallery/videos/ and ../assets/gallery/renders/. You can rename the paths here to match your actual filenames whenever you are ready."
+    "Place your files inside ../assets/gallery/videos/ and ../assets/gallery/renders/. Video cards are set up to use a captured frame from each MP4 as the preview image."
 });
