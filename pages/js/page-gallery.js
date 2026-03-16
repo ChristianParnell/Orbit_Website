@@ -23,7 +23,7 @@ const videoItems = [
     type: "video",
     title: "Orbit Website — Interaction Pass",
     description: "A screen capture showing the orbit navigation, hover effects and transitions working together.",
-    src: "../assets/gallery/videos/video-03-orbit-website.mp4",
+    src: "../assets/gallery/videos/Video-03-Fun-Animation.mp4",
     poster: videoPoster,
     placeholder: "Website interaction video"
   },
@@ -31,7 +31,7 @@ const videoItems = [
     type: "video",
     title: "Environment Flythrough",
     description: "A cinematic flythrough focused on mood, composition and scene pacing through a finished environment.",
-    src: "../assets/gallery/videos/video-04-environment-flythrough.mp4",
+    src: "../assets/gallery/videos/video-04-Woe-Intro.mp4",
     poster: videoPoster,
     placeholder: "Environment flythrough"
   },
