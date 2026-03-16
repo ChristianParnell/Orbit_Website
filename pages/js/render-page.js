@@ -161,6 +161,7 @@ export function renderPage(config) {
   `;
 
   wireLightbox(shell);
+  initVideoThumbnails(shell);
 }
 
 function renderMediaGroup(group) {
@@ -239,6 +240,7 @@ function renderMediaPreview(item) {
   const src = item.src || "";
   const poster = item.poster || "";
   const placeholder = item.placeholder || "Add media here";
+  const thumbTime = Number.isFinite(Number(item.thumbTime)) ? Number(item.thumbTime) : 1.5;
 
   if (type === "video") {
     if (poster) {
@@ -251,9 +253,26 @@ function renderMediaPreview(item) {
     }
 
     return `
-      <div class="media-card__frame media-card__frame--placeholder">
+      <div
+        class="media-card__frame js-video-thumb"
+        data-video-src="${escapeAttr(src)}"
+        data-video-title="${escapeAttr(title)}"
+        data-thumb-time="${escapeAttr(thumbTime)}"
+      >
+        <img
+          class="media-card__thumb-image"
+          alt="${escapeAttr(title)} thumbnail"
+          loading="lazy"
+          hidden
+          style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;"
+        />
+        <div
+          class="media-card__thumb-fallback"
+          style="display:grid; place-items:center; width:100%; height:100%; padding:24px; text-align:center; color:rgba(237,245,255,0.62); letter-spacing:0.08em; text-transform:uppercase; font-size:0.85rem;"
+        >
+          <span>${escapeHtml(placeholder)}</span>
+        </div>
         <span class="media-card__icon">▶</span>
-        <span>${escapeHtml(placeholder)}</span>
       </div>
     `;
   }
@@ -347,6 +366,95 @@ function wireLightbox(shell) {
     if (event.key === "Escape" && !lightbox.hidden) {
       closeLightbox();
     }
+  });
+}
+
+function initVideoThumbnails(shell) {
+  const thumbFrames = shell.querySelectorAll(".js-video-thumb");
+
+  thumbFrames.forEach((frame) => {
+    const src = frame.dataset.videoSrc || "";
+    const title = frame.dataset.videoTitle || "Video thumbnail";
+    const requestedTime = Number(frame.dataset.thumbTime || 1.5);
+    const image = frame.querySelector(".media-card__thumb-image");
+    const fallback = frame.querySelector(".media-card__thumb-fallback");
+
+    if (!src || !image) return;
+
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.crossOrigin = "anonymous";
+
+    let cleanedUp = false;
+
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      video.removeAttribute("src");
+      video.load();
+    };
+
+    const fail = () => {
+      if (fallback) fallback.hidden = false;
+      image.hidden = true;
+      cleanup();
+    };
+
+    const captureFrame = () => {
+      try {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+
+        if (!width || !height) {
+          fail();
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          fail();
+          return;
+        }
+
+        ctx.drawImage(video, 0, 0, width, height);
+
+        image.src = canvas.toDataURL("image/jpeg", 0.86);
+        image.alt = `${title} thumbnail`;
+        image.hidden = false;
+
+        if (fallback) fallback.hidden = true;
+
+        cleanup();
+      } catch (error) {
+        fail();
+      }
+    };
+
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        const duration = Number(video.duration);
+        const maxSeek = Number.isFinite(duration) && duration > 0
+          ? Math.max(0, duration - 0.15)
+          : requestedTime;
+
+        const safeTime = Math.max(0.1, Math.min(requestedTime, maxSeek || requestedTime));
+        video.currentTime = safeTime;
+      },
+      { once: true }
+    );
+
+    video.addEventListener("seeked", captureFrame, { once: true });
+    video.addEventListener("error", fail, { once: true });
+
+    video.src = src;
+    video.load();
   });
 }
 

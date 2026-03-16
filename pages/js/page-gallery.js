@@ -4,7 +4,7 @@ const videoItems = [
   {
     type: "video",
     title: "Portfolio Showreel 2026",
-    description: "Main edited reel featuring a collection of Animations I have done",
+    description: "Main edited reel featuring a collection of animations I have created.",
     src: "../assets/gallery/videos/video-01-showreel.mp4",
     thumbTime: 2.2,
     placeholder: "Showreel video"
@@ -12,7 +12,7 @@ const videoItems = [
   {
     type: "video",
     title: "22 Minutes — Gameplay Trailer",
-    description: "22 Minutes Showcase, Huge Spoiler if you haven't played it yet ;)",
+    description: "A showcase of 22 Minutes. Huge spoiler if you have not played it yet ;)",
     src: "../assets/gallery/videos/video-02-22-minutes-trailer.mp4",
     thumbTime: 3.0,
     placeholder: "Gameplay trailer"
@@ -20,7 +20,7 @@ const videoItems = [
   {
     type: "video",
     title: "Fun Animation",
-    description: "A fun Animation featuring movement, timing and visual energy.",
+    description: "A fun animation featuring movement, timing and visual energy.",
     src: "../assets/gallery/videos/Video-03-Fun-Animation.mp4",
     thumbTime: 1.8,
     placeholder: "Fun animation video"
@@ -28,7 +28,7 @@ const videoItems = [
   {
     type: "video",
     title: "Woe — Intro",
-    description: "Woe intro, Unpublished game introducing the premise.",
+    description: "Woe intro for an unpublished game, introducing the premise.",
     src: "../assets/gallery/videos/video-04-Woe-Intro.mp4",
     thumbTime: 2.4,
     placeholder: "Intro video"
@@ -36,10 +36,10 @@ const videoItems = [
   {
     type: "video",
     title: "Space Ship Animation",
-    description: "Character motion study showing timing, posing, movement arcs and polish in a short animation pass.",
+    description: "An animation study focused on timing, motion, posing and overall polish.",
     src: "../assets/gallery/videos/video-05-character-animation.mp4",
     thumbTime: 1.6,
-    placeholder: "Character animation test"
+    placeholder: "Space ship animation"
   },
   {
     type: "video",
@@ -52,7 +52,7 @@ const videoItems = [
   {
     type: "video",
     title: "Old Woe",
-    description: "In 2021 I designed this game, but couldn't finish it as it was too massive of a project, I kept the name and started a new project Woe again, following simiular world design.'",
+    description: "In 2021 I designed this game, but could not finish it because the scope became too massive. I kept the name and later began a new version of Woe, following a similar world design.",
     src: "../assets/gallery/videos/video-07-vfx-breakdown.mp4",
     thumbTime: 2.0,
     placeholder: "Old Woe"
@@ -68,18 +68,18 @@ const videoItems = [
   {
     type: "video",
     title: "Stop Motion Animation",
-    description: "Illustration of the illusion of movement by taking individual, sequential photos.",
+    description: "An illustration of the illusion of movement created through individual sequential photographs.",
     src: "../assets/gallery/videos/video-09-lighting-study.mp4",
     thumbTime: 2.6,
-    placeholder: "Stop Motion Animation"
+    placeholder: "Stop motion animation"
   },
   {
     type: "video",
     title: "Spider Motion Capture",
-    description: "A clean turntable render showing off modelling, as well as inserting CGI into Real life footage.",
+    description: "A project combining CGI with real-life footage, focused on motion and visual integration.",
     src: "../assets/gallery/videos/video-10-turntable.mp4",
     thumbTime: 1.2,
-    placeholder: "Spider Motion Capture"
+    placeholder: "Spider motion capture"
   }
 ];
 
@@ -87,72 +87,72 @@ const renderItems = [
   {
     type: "image",
     title: "Hero Render Orbit Portrait",
-    description: "Experimenting with Swamp and Nature Aesthetics through blender and Through a Sci-Fi Lens",
+    description: "Experimenting with swamp and nature aesthetics through Blender and through a sci-fi lens.",
     src: "../assets/gallery/renders/render-01-orbit-portrait.png",
     placeholder: "Hero render"
   },
   {
     type: "image",
     title: "22 Minutes Reactor Core",
-    description: "Wide environmental frame focused depth and spatial composition for my game 22 Minutes.",
+    description: "A wide environmental frame focused on depth and spatial composition for my game 22 Minutes.",
     src: "../assets/gallery/renders/render-02-dusk-environment.png",
     placeholder: "Environment render"
   },
   {
     type: "image",
     title: "WW2 Render",
-    description: "Front-Facing Render Featuring Procedural Clouds and Lighting.",
+    description: "A front-facing render featuring procedural clouds and dramatic lighting.",
     src: "../assets/gallery/renders/render-03-character-front.png",
-    placeholder: "Character front render"
+    placeholder: "WW2 render"
   },
   {
     type: "image",
-    title: "All Blacks PhotoBooth Concept",
-    description: "Contracted to Develop an Initial Concept for an All Blacks Photobooth Arcade.",
+    title: "All Blacks Photobooth Concept",
+    description: "An initial concept developed for an All Blacks photobooth arcade experience.",
     src: "../assets/gallery/renders/render-04-character-profile.png",
-    placeholder: "Character profile render"
+    placeholder: "All Blacks concept"
   },
   {
     type: "image",
     title: "Ocean Render",
-    description: "Experimental Water Physics with High-Pace Animation — Render Still in Progress",
+    description: "Experimental water physics with high-paced animation — render still in progress.",
     src: "../assets/gallery/renders/render-05-diving-helmet.png",
-    placeholder: "Prop render"
+    placeholder: "Ocean render"
   },
   {
     type: "image",
     title: "Asteroid Belt",
-    description: "Early Production Render for a University Capstone Featuring a Space Battle Across an Asteroid Belt",
+    description: "Early production render for a university capstone featuring a space battle across an asteroid belt.",
     src: "../assets/gallery/renders/render-06-underwater-bell.png",
-    placeholder: "Scene render"
+    placeholder: "Asteroid belt render"
   },
   {
     type: "image",
     title: "Motion Design Animation Render",
-    description: "Experimental Motion Animation with Hand-Drawn 2D Photoshop Assets.",
+    description: "Experimental motion animation created with hand-drawn 2D Photoshop assets.",
     src: "../assets/gallery/renders/render-07-wet-metal-study.png",
-    placeholder: "Material study"
+    placeholder: "Motion design render"
   },
   {
     type: "image",
     title: "Woe 2.0",
-    description: "Woe 2.0 — Under Production, Featuring the Opening Scene Inside the Spaceship.",
+    description: "Woe 2.0 — currently in production, featuring the opening scene inside the spaceship.",
     src: "../assets/gallery/renders/render-08-blue-grade.png",
-    placeholder: "Stylised frame"
+    placeholder: "Woe 2.0 render"
   },
   {
     type: "image",
     title: "Character Animation Render",
-    description: "Frame Captured from an Emotion Driven Animation",
+    description: "A frame captured from an emotion-driven animation.",
     src: "../assets/gallery/renders/render-09-wide-composition.png",
-    placeholder: "Composition still"
+    placeholder: "Character animation render"
   },
   {
     type: "image",
-    title: "Woe 2.0",
-    description: "Render Still from Woe 2.0 Featuring One of the Hidden Bunkers.",
+    title: "Woe 2.0 Bunker",
+    description: "A render still from Woe 2.0 featuring one of the hidden bunkers.",
     src: "../assets/gallery/renders/render-10-final-beauty.png",
-    placeholder: "Woe 2.0"
+    placeholder: "Woe 2.0 bunker render"
   }
 ];
 
@@ -160,10 +160,9 @@ renderPage({
   title: "Gallery",
   kicker: "Selected Work",
   intro:
-    "A navigable archive of video work and render stills. Click any card to open it in a larger semi full-screen viewer, making this page your main visual showcase hub.",
+    "A navigable archive of my video work and render stills. Click any card to expand it into a larger, near full-screen viewer, turning this page into a central visual showcase.",
   heroImage: "../assets/covers/gallery.png",
-  heroCaption:
-    "Designed as a clean portfolio gallery with quick navigation, titled sections and large media viewing.",
+  heroCaption: "Designed as a clean portfolio gallery.",
   tags: ["Showreel", "Animation", "Video", "Renders", "3D", "Games"],
   quickNav: [
     { id: "video-work", label: "Video Work" },
@@ -173,26 +172,23 @@ renderPage({
     {
       id: "video-work",
       title: "Video Work",
-      intro:
-        "Ten video slots for reels, gameplay captures, motion tests, breakdowns and presentation edits.",
+      intro: "A selection of reels, gameplay captures, motion tests and presentation edits.",
       items: videoItems
     },
     {
       id: "render-stills",
       title: "Render Stills",
-      intro:
-        "Ten render slots for hero images, environments, materials, props and polished final beauty shots.",
+      intro: "A collection of stills including environments, concepts, experiments and production renders.",
       items: renderItems
     }
   ],
   sections: [
     {
-      title: "How this gallery is organised",
+      title: "Hey! Welcome to my Gallery Page.",
       body: [
         "Use the quick navigation buttons at the top to jump straight to videos or renders.",
-        "Each card has a proper title and description so the page reads like a curated portfolio, not a file dump.",
-        "Videos open in a large overlay player, while renders open in the same viewer for a more focused look.",
-        "Video thumbnails should now be generated from a frame inside each MP4 rather than using one shared cover image."
+        "I really hope you enjoy this selection. It is not my full collection, but rather 20 pieces from my ongoing projects.",
+        "Unfortunately, some of my latest work is still under development and not ready to be shown yet, but I hope the pieces included here provide a strong impression of my work so far."
       ]
     }
   ],
@@ -203,6 +199,5 @@ renderPage({
       href: "./twenty-two-minutes.html"
     }
   ],
-  footerNote:
-    "Heyy, you have reached the end of the Gallery :)"
+  footerNote: "Heyy, you have reached the end of the Gallery :)"
 });
