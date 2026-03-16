@@ -11,7 +11,7 @@ const videoItems = [
   },
   {
     type: "video",
-    title: "22 Minutes — Gameplay Trailer",
+    title: "22 Minutes Trailer",
     description: "A showcase of 22 Minutes. Huge spoiler if you have not played it yet ;)",
     src: "../assets/gallery/videos/video-02-22-minutes-trailer.mp4",
     thumbTime: 3.0,
@@ -27,7 +27,7 @@ const videoItems = [
   },
   {
     type: "video",
-    title: "Woe — Intro",
+    title: "Woe Intro",
     description: "Woe intro for an unpublished game, introducing the premise.",
     src: "../assets/gallery/videos/video-04-Woe-Intro.mp4",
     thumbTime: 2.4,
