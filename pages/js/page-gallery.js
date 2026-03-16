@@ -4,7 +4,7 @@ const videoItems = [
   {
     type: "video",
     title: "Portfolio Showreel 2026",
-    description: "Main edited reel featuring motion, design, game work, 3D and final presentation shots.",
+    description: "Main edited reel featuring a collection of Animations I have done",
     src: "../assets/gallery/videos/video-01-showreel.mp4",
     thumbTime: 2.2,
     placeholder: "Showreel video"
@@ -12,7 +12,7 @@ const videoItems = [
   {
     type: "video",
     title: "22 Minutes — Gameplay Trailer",
-    description: "Trailer-style edit showing gameplay beats, environment tension and pacing from the project.",
+    description: "22 Minutes Showcase, Huge Spoiler if you haven't played it yet ;)",
     src: "../assets/gallery/videos/video-02-22-minutes-trailer.mp4",
     thumbTime: 3.0,
     placeholder: "Gameplay trailer"
@@ -20,7 +20,7 @@ const videoItems = [
   {
     type: "video",
     title: "Fun Animation",
-    description: "An animation-focused piece showing movement, timing and visual energy.",
+    description: "A fun Animation featuring movement, timing and visual energy.",
     src: "../assets/gallery/videos/Video-03-Fun-Animation.mp4",
     thumbTime: 1.8,
     placeholder: "Fun animation video"
@@ -28,14 +28,14 @@ const videoItems = [
   {
     type: "video",
     title: "Woe — Intro",
-    description: "An introduction sequence with a more cinematic and stylised presentation.",
+    description: "Woe intro, Unpublished game introducing the premise.",
     src: "../assets/gallery/videos/video-04-Woe-Intro.mp4",
     thumbTime: 2.4,
     placeholder: "Intro video"
   },
   {
     type: "video",
-    title: "Character Animation Test",
+    title: "Space Ship Animation",
     description: "Character motion study showing timing, posing, movement arcs and polish in a short animation pass.",
     src: "../assets/gallery/videos/video-05-character-animation.mp4",
     thumbTime: 1.6,
@@ -51,11 +51,11 @@ const videoItems = [
   },
   {
     type: "video",
-    title: "VFX Breakdown",
-    description: "Effect layers, pass breakdowns and composited results presented in a single before-and-after edit.",
+    title: "Old Woe",
+    description: "In 2021 I designed this game, but couldn't finish it as it was too massive of a project, I kept the name and started a new project Woe again, following simiular world design.'",
     src: "../assets/gallery/videos/video-07-vfx-breakdown.mp4",
     thumbTime: 2.0,
-    placeholder: "VFX breakdown"
+    placeholder: "Old Woe"
   },
   {
     type: "video",
@@ -67,92 +67,92 @@ const videoItems = [
   },
   {
     type: "video",
-    title: "Lighting Study Sequence",
-    description: "A mood-driven sequence comparing different lighting grades and cinematic scene treatment.",
+    title: "Stop Motion Animation",
+    description: "Illustration of the illusion of movement by taking individual, sequential photos.",
     src: "../assets/gallery/videos/video-09-lighting-study.mp4",
     thumbTime: 2.6,
-    placeholder: "Lighting study"
+    placeholder: "Stop Motion Animation"
   },
   {
     type: "video",
-    title: "Turntable Presentation",
-    description: "A clean turntable render showing off modelling, surfacing and overall silhouette from all angles.",
+    title: "Spider Motion Capture",
+    description: "A clean turntable render showing off modelling, as well as inserting CGI into Real life footage.",
     src: "../assets/gallery/videos/video-10-turntable.mp4",
     thumbTime: 1.2,
-    placeholder: "Turntable presentation"
+    placeholder: "Spider Motion Capture"
   }
 ];
 
 const renderItems = [
   {
     type: "image",
-    title: "Hero Render — Orbit Portrait",
-    description: "Primary hero still for the portfolio, designed to feel cinematic and strong at a glance.",
+    title: "Hero Render Orbit Portrait",
+    description: "Experimenting with Swamp and Nature Aesthetics through blender and Through a Sci-Fi Lens",
     src: "../assets/gallery/renders/render-01-orbit-portrait.png",
     placeholder: "Hero render"
   },
   {
     type: "image",
-    title: "Environment Render — Dusk Scene",
-    description: "Wide environmental frame focused on mood, depth and spatial composition.",
+    title: "22 Minutes Reactor Core",
+    description: "Wide environmental frame focused depth and spatial composition for my game 22 Minutes.",
     src: "../assets/gallery/renders/render-02-dusk-environment.png",
     placeholder: "Environment render"
   },
   {
     type: "image",
-    title: "Character Render — Front View",
-    description: "Front-facing presentation render with a clean pose and readable lighting.",
+    title: "WW2 Render",
+    description: "Front-Facing Render Featuring Procedural Clouds and Lighting.",
     src: "../assets/gallery/renders/render-03-character-front.png",
     placeholder: "Character front render"
   },
   {
     type: "image",
-    title: "Character Render — Profile View",
-    description: "Profile still highlighting form, texture read and side silhouette.",
+    title: "All Blacks PhotoBooth Concept",
+    description: "Contracted to Develop an Initial Concept for an All Blacks Photobooth Arcade.",
     src: "../assets/gallery/renders/render-04-character-profile.png",
     placeholder: "Character profile render"
   },
   {
     type: "image",
-    title: "Prop Render — Diving Helmet",
-    description: "Prop-focused render showing material finish, shape detail and surface wear.",
+    title: "Ocean Render",
+    description: "Experimental Water Physics with High-Pace Animation — Render Still in Progress",
     src: "../assets/gallery/renders/render-05-diving-helmet.png",
     placeholder: "Prop render"
   },
   {
     type: "image",
-    title: "Scene Render — Underwater Bell",
-    description: "A still focused on industrial underwater storytelling and environmental tension.",
+    title: "Asteroid Belt",
+    description: "Early Production Render for a University Capstone Featuring a Space Battle Across an Asteroid Belt",
     src: "../assets/gallery/renders/render-06-underwater-bell.png",
     placeholder: "Scene render"
   },
   {
     type: "image",
-    title: "Material Study — Wet Metal",
-    description: "Surface and shader study testing reflection, roughness and wet material response.",
+    title: "Motion Design Animation Render",
+    description: "Experimental Motion Animation with Hand-Drawn 2D Photoshop Assets.",
     src: "../assets/gallery/renders/render-07-wet-metal-study.png",
     placeholder: "Material study"
   },
   {
     type: "image",
-    title: "Stylised Frame — Blue Grade",
-    description: "A graded still exploring stronger stylisation, contrast and cooler tonal control.",
+    title: "Woe 2.0",
+    description: "Woe 2.0 — Under Production, Featuring the Opening Scene Inside the Spaceship.",
     src: "../assets/gallery/renders/render-08-blue-grade.png",
     placeholder: "Stylised frame"
   },
   {
     type: "image",
-    title: "Composition Still — Wide Shot",
-    description: "A wider framing pass focused on layout, foreground depth and readability.",
+    title: "Character Animation Render",
+    description: "Frame Captured from an Emotion Driven Animation",
     src: "../assets/gallery/renders/render-09-wide-composition.png",
     placeholder: "Composition still"
   },
   {
     type: "image",
-    title: "Final Beauty Render",
-    description: "A polished final render intended as one of the strongest stills in the set.",
+    title: "Woe 2.0",
+    description: "Render Still from Woe 2.0 Featuring One of the Hidden Bunkers.",
     src: "../assets/gallery/renders/render-10-final-beauty.png",
-    placeholder: "Final beauty render"
+    placeholder: "Woe 2.0"
   }
 ];
 
@@ -204,5 +204,5 @@ renderPage({
     }
   ],
   footerNote:
-    "Place your files inside ../assets/gallery/videos/ and ../assets/gallery/renders/. Video cards are set up to use a captured frame from each MP4 as the preview image."
+    "Heyy, you have reached the end of the Gallery :)"
 });
