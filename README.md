@@ -37,3 +37,6 @@
 ·	focusTunnelParticles: 180
 ·	pixel ratio 1.5
 ·	60 FPS cap
+
+**14/03**-> Worked on some of the internal pages, giving about, contact and achivments content fulled. I worked on the gallery getting it organised better, and added 10 videos and 10 pictues. I had to compress them all to be under 100mg as git doesn't upload over 100mg. I got my Pages Js to cast a front cover of each video and loads that, the render stills where fine. 
+
