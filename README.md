@@ -40,4 +40,4 @@
 
 **14/03**-> Worked on some of the internal pages, giving about, contact and achivments content fulled. I worked on the gallery getting it organised better, and added 10 videos and 10 pictues. I had to compress them all to be under 100mg as git doesn't upload over 100mg. I got my Pages Js to cast a front cover of each video and loads that, the render stills where fine. 
 
-**FeedBack: 19/03** -> Sub Websites eg, About, Contact, Gallery are not consistanct with the design theme. Controld the header  
+**FeedBack: 19/03** -> Sub Websites eg, About, Contact, Gallery are not consistanct with the design theme. change color header for the binary code color (Rainbow) to suit the ongoing theme. Maybe could see what Chatgpt could do for some (arc Radiers theme as this is what comes to mind) for the asthetics. Possibly get the subheaders to carry on the blue, or possibly getting the glitch effect into the headers or play some role witht eh sub websites. With the main page create a slow rotation for the helix to start. if the user doesn't scroll after 10 seconds maybe have a help rpompt saying scroll and press on covers to opne? 
