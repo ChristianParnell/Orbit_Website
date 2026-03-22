@@ -58,3 +58,4 @@ Each page now has its own subtle accent personality while still matching the sam
 The gallery interactions were pushed further with binary particle hover effects and more alive media-card behavior, while the hero areas now have a low-opacity code-rain layer so they feel active without becoming messy. Overall, the result is more colorful, more technical, more polished, and more consistent with the main website’s visual language.
 
 Spent time on the contents of the Sub Pages. 
+Added a Idle Orbit after 8 seconds, And quick acess tabs to jump ahead to the page you want
