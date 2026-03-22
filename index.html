@@ -27,6 +27,7 @@
 
     <div class="bg-tint" aria-hidden="true"></div>
     <canvas id="webgl" aria-label="3D orbit portfolio"></canvas>
+    <svg id="labelConnectors" class="label-connectors" aria-hidden="true"></svg>
 
     <div class="scanlines" aria-hidden="true"></div>
     <div class="glitch-frame" aria-hidden="true"></div>
@@ -83,8 +84,14 @@
       </div>
     </div>
 
+    <nav id="quickNav" class="quick-nav" aria-label="Quick access nodes"></nav>
+
     <div id="focusHint" class="focus-hint">
       binary orbit active • hover to resolve • click to open
+    </div>
+
+    <div id="idlePrompt" class="idle-prompt" aria-live="polite">
+      scroll to orbit
     </div>
 
     <div id="folderLabels" class="folder-labels" aria-hidden="true"></div>
