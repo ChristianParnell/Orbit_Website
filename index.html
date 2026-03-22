@@ -7,7 +7,7 @@
   <meta name="description" content="Interactive orbit portfolio by Christian Parnell." />
   <link
     rel="icon"
-    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E🌊%3C/text%3E%3C/svg%3E"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%3C/text%3E%3C/svg%3E"
   />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -26,7 +26,6 @@
     ></video>
 
     <div class="bg-tint" aria-hidden="true"></div>
-
     <canvas id="webgl" aria-label="3D orbit portfolio"></canvas>
 
     <div class="scanlines" aria-hidden="true"></div>
@@ -35,15 +34,23 @@
     <div id="loader" class="overlay" aria-live="polite">
       <div class="overlay__inner">
         <p class="eyebrow">SYSTEM BOOT</p>
+
         <h1>Christian Parnell</h1>
+
         <p class="overlay__copy">
-          Digital orbit portfolio. Scroll to move through project nodes.
+          Interactive orbit portfolio. Best experienced on desktop.
+        </p>
+
+        <p class="overlay__warning">
+          This website is not suitable for mobile devices.
+          Please use a desktop or laptop for the intended experience.
         </p>
 
         <div class="progress">
           <div class="progress__bar">
             <span id="progressFill"></span>
           </div>
+
           <p id="progressText">Loading assets… 0%</p>
         </div>
 
@@ -52,7 +59,7 @@
         </button>
 
         <p class="overlay__hint">
-          Scroll to orbit · hover to resolve a cover · click to open
+          Desktop experience recommended · scroll to orbit · hover to resolve a cover · click to open
         </p>
       </div>
     </div>
@@ -82,11 +89,12 @@
 
     <div id="folderLabels" class="folder-labels" aria-hidden="true"></div>
 
-    <div id="debugTerminal" class="debug-terminal" aria-hidden="true">
+    <div id="debugTerminal" class="debug-terminal" aria-hidden="true" hidden>
       <div class="debug-terminal__header">
         <span>diagnostics</span>
         <span>live</span>
       </div>
+
       <div id="debugTerminalLog" class="debug-terminal__log"></div>
     </div>
 
