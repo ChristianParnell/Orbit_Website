@@ -64,4 +64,4 @@ Made changes to the center modles, animation loop, if the user orbits too fast t
 Added some quick tabs  to skip to pages/covers.
 
 Added a connection between the headers and the page Covers, made it look like its connected still with sa network feel.
-
+chnages the force orbit scroll input for the animation triping effect. was too gentle to get a trip
