@@ -53,7 +53,12 @@ const CFG = {
   breachDuration: 4.25,
 
   relationMaxLines: 5,
-  relationLinePoints: 26
+  relationLinePoints: 26,
+
+  idleDelay: 8.0,
+  idleOrbitSpeed: 0.018,
+  idleBobAmount: 0.055,
+  idlePromptDelay: 8.0
 };
 
 const COLORS = {
@@ -88,6 +93,9 @@ const progressText = document.getElementById("progressText");
 const enterButton = document.getElementById("enterButton");
 const labelsRoot = document.getElementById("folderLabels");
 const focusHint = document.getElementById("focusHint");
+const idlePrompt = document.getElementById("idlePrompt");
+const quickNav = document.getElementById("quickNav");
+const labelConnectors = document.getElementById("labelConnectors");
 const muteButton = document.getElementById("muteButton");
 const ambientAudio = document.getElementById("ambientAudio");
 const activeNodeTitle = document.getElementById("activeNodeTitle");
@@ -152,6 +160,9 @@ let hoveredEntry = null;
 let activeEntry = null;
 let dragActive = false;
 let lastTouchY = 0;
+let lastInteractionAt = 0;
+let idleMode = false;
+let idleDirection = 1;
 
 let centralModel = null;
 let centralModelMixer = null;
@@ -211,6 +222,7 @@ const tempColor = new THREE.Color();
 const tempMatrix3 = new THREE.Matrix3();
 
 const flagEntries = [];
+const quickNavButtons = [];
 const fogSprites = [];
 const missingAssets = [];
 
@@ -309,6 +321,7 @@ function initScene() {
   createGroundSystem();
   createFog();
   createFlags(textureLoader);
+  buildQuickNav();
   buildRelationSystem();
   loadCenterModel();
 }
@@ -659,6 +672,15 @@ function createFlags(loader) {
     labelNode.style.transformOrigin = "top left";
     labelsRoot?.appendChild(labelNode);
 
+    const connectorLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    connectorLine.setAttribute("class", "label-connector");
+    connectorLine.setAttribute("x1", "0");
+    connectorLine.setAttribute("y1", "0");
+    connectorLine.setAttribute("x2", "0");
+    connectorLine.setAttribute("y2", "0");
+    connectorLine.style.opacity = "0";
+    labelConnectors?.appendChild(connectorLine);
+
     flagEntries.push({
       item,
       group,
@@ -666,9 +688,73 @@ function createFlags(loader) {
       material: mat,
       labelAnchor,
       labelNode,
+      connectorLine,
       hoverValue: 0,
       breachValue: 0
     });
+  });
+}
+
+
+function setIdlePromptVisible(visible) {
+  if (!idlePrompt) return;
+  idlePrompt.classList.toggle("is-visible", visible);
+}
+
+function registerInteraction() {
+  lastInteractionAt = clock.elapsedTime;
+  idleMode = false;
+  setIdlePromptVisible(false);
+}
+
+function focusEntryByIndex(index) {
+  if (!flagEntries.length) return;
+  const clampedIndex = THREE.MathUtils.clamp(index, 0, flagEntries.length - 1);
+  const total = Math.max(flagEntries.length - 1, 1);
+  targetProgress = clampedIndex / total;
+  registerInteraction();
+}
+
+function buildQuickNav() {
+  if (!quickNav) return;
+
+  quickNav.innerHTML = "";
+  quickNavButtons.length = 0;
+
+  ORBIT_ITEMS.forEach((item, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quick-nav__item";
+    button.dataset.index = String(index);
+    button.setAttribute("aria-label", `Focus ${item.title}`);
+    button.innerHTML = `
+      <span class="quick-nav__index">${String(index + 1).padStart(2, "0")}</span>
+      <span class="quick-nav__title">${item.title}</span>
+    `;
+
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      focusEntryByIndex(index);
+    });
+
+    quickNav.appendChild(button);
+    quickNavButtons.push(button);
+  });
+}
+
+function updateQuickNav() {
+  if (!quickNavButtons.length) return;
+
+  const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
+  const activeIndex = activeEntry ? flagEntries.indexOf(activeEntry) : -1;
+
+  quickNavButtons.forEach((button, index) => {
+    const isHovered = index === hoveredIndex;
+    const isActive = index === activeIndex;
+    button.classList.toggle("is-hovered", isHovered);
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-current", isActive ? "true" : "false");
   });
 }
 
@@ -1471,6 +1557,7 @@ function attachEvents() {
     "wheel",
     (event) => {
       if (!hasEntered) return;
+      registerInteraction();
       targetProgress += event.deltaY * CFG.scrollSpeed;
       targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
     },
@@ -1481,10 +1568,25 @@ function attachEvents() {
     const bounds = renderer.domElement.getBoundingClientRect();
     pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
     pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+
+    if (hasEntered) {
+      registerInteraction();
+    }
+  });
+
+  window.addEventListener("pointerdown", () => {
+    if (!hasEntered) return;
+    registerInteraction();
+  });
+
+  window.addEventListener("keydown", () => {
+    if (!hasEntered) return;
+    registerInteraction();
   });
 
   window.addEventListener("click", () => {
     if (!hasEntered) return;
+    registerInteraction();
     if (hoveredEntry) {
       window.location.href = hoveredEntry.item.href;
     }
@@ -1494,6 +1596,7 @@ function attachEvents() {
     "touchstart",
     (event) => {
       if (!hasEntered) return;
+      registerInteraction();
       dragActive = true;
       lastTouchY = event.touches[0].clientY;
     },
@@ -1504,6 +1607,7 @@ function attachEvents() {
     "touchmove",
     (event) => {
       if (!hasEntered || !dragActive) return;
+      registerInteraction();
       const currentY = event.touches[0].clientY;
       const delta = lastTouchY - currentY;
       lastTouchY = currentY;
@@ -1532,6 +1636,7 @@ function attachEvents() {
     hasEntered = true;
     document.body.classList.add("is-entered");
     loaderOverlay?.setAttribute("aria-hidden", "true");
+    registerInteraction();
 
     if (backgroundVideo) {
       backgroundVideo.play().catch(() => {});
@@ -1689,12 +1794,36 @@ function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+
+function updateIdleState(elapsed, delta) {
+  if (!hasEntered) return;
+
+  const idleTime = elapsed - lastInteractionAt;
+  const shouldIdle = idleTime >= CFG.idleDelay;
+
+  idleMode = shouldIdle;
+  setIdlePromptVisible(idleTime >= CFG.idlePromptDelay);
+
+  if (!idleMode) return;
+
+  targetProgress += CFG.idleOrbitSpeed * delta * idleDirection;
+
+  if (targetProgress >= 1) {
+    targetProgress = 1;
+    idleDirection = -1;
+  } else if (targetProgress <= 0) {
+    targetProgress = 0;
+    idleDirection = 1;
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
 
   const delta = clock.getDelta();
   const elapsed = clock.elapsedTime;
 
+  updateIdleState(elapsed, delta);
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
 
   updateSystemBreach(elapsed);
@@ -1704,6 +1833,7 @@ function animate() {
   updateCoverWorldData();
   updateIntersections();
   updateLabels();
+  updateQuickNav();
   updateRelationLines(elapsed);
   updateFog(elapsed);
   updateBinaryModel(delta, elapsed);
@@ -1751,10 +1881,11 @@ function updateAudioReactive(elapsed) {
 
 function updateCamera(elapsed) {
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
+  const idleLift = idleMode ? CFG.idleBobAmount : 0.03;
 
   camera.position.set(
     Math.cos(orbitTheta) * CFG.cameraRadius,
-    CFG.lookY + Math.sin(elapsed * 0.48) * 0.03,
+    CFG.lookY + Math.sin(elapsed * 0.48) * idleLift,
     Math.sin(orbitTheta) * CFG.cameraRadius
   );
 
@@ -1894,11 +2025,17 @@ function updateLabels() {
 
     if (!visible) {
       if (entry.labelNode) entry.labelNode.style.opacity = "0";
+      if (entry.connectorLine) entry.connectorLine.style.opacity = "0";
       return;
     }
 
     const x = (working.vB.x * 0.5 + 0.5) * width;
     const y = (-working.vB.y * 0.5 + 0.5) * height;
+
+    entry.group.getWorldPosition(working.vC);
+    working.vC.project(camera);
+    const coverX = (working.vC.x * 0.5 + 0.5) * width;
+    const coverY = (-working.vC.y * 0.5 + 0.5) * height;
 
     if (entry.labelNode) {
       const breachBonus = entry.breachValue * 0.95;
@@ -1916,6 +2053,14 @@ function updateLabels() {
       } else {
         entry.labelNode.classList.remove("is-resolved");
       }
+    }
+
+    if (entry.connectorLine) {
+      entry.connectorLine.setAttribute("x1", coverX.toFixed(2));
+      entry.connectorLine.setAttribute("y1", coverY.toFixed(2));
+      entry.connectorLine.setAttribute("x2", x.toFixed(2));
+      entry.connectorLine.setAttribute("y2", y.toFixed(2));
+      entry.connectorLine.style.opacity = `${Math.min(0.92, titleFade * (0.34 + entry.hoverValue * 0.42 + entry.breachValue * 0.20))}`;
     }
 
     if (breachState.active && breachState.index === index) {
