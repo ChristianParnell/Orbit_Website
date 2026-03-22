@@ -48,3 +48,9 @@
 - Gives media/link/timeline cards a stronger illuminated hover state.
 - Adds subtle grid / scanline overlays to make the pages feel more networked.
 - Keeps the existing HTML and JS structure intact, so no template rewrite is required.
+
+I updated the sub-pages so they feel much closer to the main Orbit site instead of looking like darker separate pages. The About, Achievements, Gallery, and Contact pages now share a stronger coded-network identity with brighter accent colors, animated data sweeps, glitch-style heading details, and active “node” styling on cards and panels.
+
+Each page now has its own subtle accent personality while still matching the same system, so About feels more cyan, Gallery leans more violet, Contact has a lime-blue signal tone, and Achievements feels more certified/system-log inspired. I also added hero status badges, sticky side navigation on larger screens, better hover feedback, animated scan brackets, and a more terminal-like lightbox treatment.
+
+The gallery interactions were pushed further with binary particle hover effects and more alive media-card behavior, while the hero areas now have a low-opacity code-rain layer so they feel active without becoming messy. Overall, the result is more colorful, more technical, more polished, and more consistent with the main website’s visual language.
