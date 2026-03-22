@@ -49,6 +49,8 @@
 - Adds subtle grid / scanline overlays to make the pages feel more networked.
 - Keeps the existing HTML and JS structure intact, so no template rewrite is required.
 
+I Removed the diagnostics tab on the main page, as well as added a webiste is inteded for laptop or PC use only.
+
 I updated the sub-pages so they feel much closer to the main Orbit site instead of looking like darker separate pages. The About, Achievements, Gallery, and Contact pages now share a stronger coded-network identity with brighter accent colors, animated data sweeps, glitch-style heading details, and active “node” styling on cards and panels.
 
 Each page now has its own subtle accent personality while still matching the same system, so About feels more cyan, Gallery leans more violet, Contact has a lime-blue signal tone, and Achievements feels more certified/system-log inspired. I also added hero status badges, sticky side navigation on larger screens, better hover feedback, animated scan brackets, and a more terminal-like lightbox treatment.
