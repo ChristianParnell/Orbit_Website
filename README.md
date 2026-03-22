@@ -59,3 +59,7 @@ The gallery interactions were pushed further with binary particle hover effects 
 
 Spent time on the contents of the Sub Pages. 
 Added a Idle Orbit after 8 seconds, And quick acess tabs to jump ahead to the page you want
+
+Made changes to the center modles, animation loop, if the user orbits too fast this will cause them to trip.
+Added some quick tabs  to skip to pages/covers.
+
