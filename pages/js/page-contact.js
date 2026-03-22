@@ -50,7 +50,7 @@ renderPage({
   ],
   sections: [
     {
-      title: "Say kia ora",
+      title: "kia ora",
       body: [
         "I’m currently based in Wellington 7010, New Zealand.",
         "The easiest way to reach me is by email, especially for project discussions, freelance work, portfolio feedback, and creative collaboration.",
