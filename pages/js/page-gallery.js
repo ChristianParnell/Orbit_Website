@@ -1,3 +1,4 @@
+
 import { renderPage } from "./render-page.js";
 
 const videoItems = [
@@ -115,7 +116,7 @@ const renderItems = [
   {
     type: "image",
     title: "Ocean Render",
-    description: "Experimental water physics with high-paced animation — render still in progress.",
+    description: "Experimental water physics with high-paced animation â€” render still in progress.",
     src: "../assets/gallery/renders/render-05-diving-helmet.png",
     placeholder: "Ocean render"
   },
@@ -136,7 +137,7 @@ const renderItems = [
   {
     type: "image",
     title: "Woe 2.0",
-    description: "Woe 2.0 — currently in production, featuring the opening scene inside the spaceship.",
+    description: "Woe 2.0 â€” currently in production, featuring the opening scene inside the spaceship.",
     src: "../assets/gallery/renders/render-08-blue-grade.png",
     placeholder: "Woe 2.0 render"
   },
@@ -159,12 +160,20 @@ const renderItems = [
 renderPage({
   title: "Gallery",
   kicker: "Selected Work",
+  theme: "gallery",
+  status: {
+    label: "Stream",
+    value: "VISUAL ARCHIVE // LIVE",
+    note: "Video work and render stills are being indexed in real time.",
+    strength: 5
+  },
   intro:
     "A navigable archive of my video work and render stills. Click any card to expand it into a larger, near full-screen viewer, turning this page into a central visual showcase.",
   heroImage: "../assets/covers/gallery.png",
   heroCaption: "Designed as a clean portfolio gallery.",
   tags: ["Showreel", "Animation", "Video", "Renders", "3D", "Games"],
   quickNav: [
+    { id: "hey-welcome-to-my-gallery-page", label: "Overview" },
     { id: "video-work", label: "Video Work" },
     { id: "render-stills", label: "Render Stills" }
   ],
