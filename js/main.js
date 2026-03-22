@@ -62,10 +62,12 @@ const CFG = {
 
   modelIdleSwapMin: 5.4,
   modelIdleSwapMax: 8.6,
-  fastOrbitInputWindow: 0.32,
-  fastOrbitInputThreshold: 0.028,
-  fastOrbitVelocityThreshold: 0.22,
-  fastOrbitCooldown: 1.3
+  fastOrbitInputWindow: 0.24,
+  fastOrbitInputThreshold: 0.095,
+  fastOrbitVelocityThreshold: 0.9,
+  fastOrbitWheelRawThreshold: 180,
+  fastOrbitTouchRawThreshold: 54,
+  fastOrbitCooldown: 1.8
 };
 
 const COLORS = {
@@ -184,6 +186,8 @@ let nextModelIdleSwapAt = 0;
 let modelReactionCooldownUntil = 0;
 let recentOrbitInputAt = -Infinity;
 let recentOrbitInputStrength = 0;
+let recentOrbitInputRaw = 0;
+let recentOrbitInputKind = "wheel";
 let previousOrbitProgress = 0;
 
 let modelPointCloud = null;
@@ -1227,9 +1231,11 @@ function playNextIdleAnimation(immediate = false) {
   playIdleAnimationByCursor(immediate);
 }
 
-function noteOrbitInput(intensity = 0) {
+function noteOrbitInput(intensity = 0, rawIntensity = 0, kind = "wheel") {
   recentOrbitInputAt = clock.elapsedTime;
-  recentOrbitInputStrength = Math.min(0.18, recentOrbitInputStrength + Math.abs(intensity));
+  recentOrbitInputKind = kind;
+  recentOrbitInputRaw = Math.max(Math.abs(rawIntensity), recentOrbitInputRaw * 0.72);
+  recentOrbitInputStrength = Math.min(0.24, recentOrbitInputStrength + Math.abs(intensity));
 }
 
 function triggerFastOrbitReaction() {
@@ -1267,13 +1273,23 @@ function updateModelAnimationState(elapsed, delta) {
     0,
     Math.min(1, delta * 6)
   );
+  recentOrbitInputRaw = THREE.MathUtils.lerp(
+    recentOrbitInputRaw,
+    0,
+    Math.min(1, delta * 7)
+  );
 
   const orbitVelocity =
     delta > 0 ? Math.abs(currentProgress - previousOrbitProgress) / delta : 0;
   const recentUserOrbit = elapsed - recentOrbitInputAt <= CFG.fastOrbitInputWindow;
+  const rawThreshold =
+    recentOrbitInputKind === "touch"
+      ? CFG.fastOrbitTouchRawThreshold
+      : CFG.fastOrbitWheelRawThreshold;
 
   if (
     recentUserOrbit &&
+    recentOrbitInputRaw >= rawThreshold &&
     recentOrbitInputStrength >= CFG.fastOrbitInputThreshold &&
     orbitVelocity >= CFG.fastOrbitVelocityThreshold
   ) {
@@ -1815,7 +1831,11 @@ function attachEvents() {
       const before = targetProgress;
       targetProgress += event.deltaY * CFG.scrollSpeed;
       targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-      noteOrbitInput(Math.abs(targetProgress - before));
+      noteOrbitInput(
+        Math.abs(targetProgress - before),
+        Math.abs(event.deltaY),
+        "wheel"
+      );
     },
     { passive: true }
   );
@@ -1871,7 +1891,11 @@ function attachEvents() {
       const before = targetProgress;
       targetProgress += delta * CFG.touchSpeed;
       targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
-      noteOrbitInput(Math.abs(targetProgress - before));
+      noteOrbitInput(
+        Math.abs(targetProgress - before),
+        Math.abs(delta),
+        "touch"
+      );
     },
     { passive: true }
   );
