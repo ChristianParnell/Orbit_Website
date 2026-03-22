@@ -1,8 +1,16 @@
+
 import { renderPage } from "./render-page.js";
 
 renderPage({
   title: "Achievements",
   kicker: "Highlights",
+  theme: "achievements",
+  status: {
+    label: "Verification",
+    value: "CERTIFIED // TRACKING",
+    note: "Milestone records surfaced as active proof points.",
+    strength: 5
+  },
   intro: "Hey, Here is the page im still working on.",
   heroImage: "../assets/covers/achievements.jpg",
   heroCaption: "A page for the moments, wins, and milestones worth surfacing clearly.",
