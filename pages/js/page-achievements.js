@@ -1,4 +1,3 @@
-
 import { renderPage } from "./render-page.js";
 
 renderPage({
@@ -8,43 +7,84 @@ renderPage({
   status: {
     label: "Verification",
     value: "CERTIFIED // TRACKING",
-    note: "Milestone records surfaced as active proof points.",
+    note: "Milestone records surfaced as academic, creative, and professional proof points.",
     strength: 5
   },
-  intro: "Hey, Here is the page im still working on.",
+  intro:
+    "A selection of the milestones that best show my growth across creative practice, public exhibition, independent project work, and professional responsibility.",
   heroImage: "../assets/covers/achievements.jpg",
-  heroCaption: "A page for the moments, wins, and milestones worth surfacing clearly.",
-  tags: ["Milestones", "Experience", "Study", "Recognition"],
+  heroCaption:
+    "Creative wins, public-facing work, and the steps that helped shape my direction.",
+  tags: ["Milestones", "Exhibition", "Released Work", "Leadership"],
   timeline: [
     {
-      year: "Add Date",
-      title: "22 Minutes",
-      description: "22 Minutes is published on Steam!"
+      year: "2019",
+      title: "Distinctions in Visual Art",
+      description:
+        "My final Visual Art examination projects included an animated short film and two interactive video games. The work received distinctions from the external moderator at Westville Boys High School."
     },
     {
-      year: "Add Date",
-      title: "Thylassaphobia",
-      description: "Will be published on Steam in June."
+      year: "2022",
+      title: "Te Aro Virtual Reality Exhibit",
+      description:
+        "Exhibited two virtual reality simulations at Victoria University of Wellington’s Te Aro Campus, giving my work a public audience in an exhibition setting."
     },
     {
-      year: "Add Date",
-      title: "Professional step",
-      description: "Add work experience, leadership, or a moment that helped shape your direction."
+      year: "2024",
+      title: "First commercial game release",
+      description:
+        "Released 22 Minutes on Steam as an Alpha 0.1 solo indie project, marking my first commercial game launch and a major step in turning personal development work into a public release."
+    },
+    {
+      year: "Recent",
+      title: "Leadership progression",
+      description:
+        "Progressed from Team Lead into Assistant Store Manager, building on years of customer-facing experience with stronger responsibility in team support, administration, and day-to-day operations."
     }
   ],
   sections: [
     {
-      title: "What belongs here",
+      title: "Creative and academic milestones",
       body: [
-        "Academic achievements that matter to your portfolio.",
-        "Industry or freelance wins.",
-        "Public-facing releases.",
-        "Anything that builds trust or shows growth."
+        "Distinctions in Visual Art and Business Studies gave me an early foundation in both creative thinking and practical problem-solving.",
+        "Exhibiting virtual reality work at Te Aro showed that my practice could function in a public and experiential setting, not just as coursework.",
+        "Releasing 22 Minutes on Steam marked a shift from student and personal experimentation into published independent work."
       ]
     },
     {
-      title: "Keep it focused",
-      body: "This page works best when it feels selective. Put the strongest and most relevant milestones here rather than everything you’ve ever done."
+      title: "Professional growth",
+      body: [
+        "My experience also includes more than five years of customer service across retail and hospitality, where I built strong communication, organisation, and follow-through.",
+        "Roles involving independent store operation, stock and cash handling, order processing, and team support helped me develop trust, adaptability, and leadership under pressure.",
+        "That professional background matters here because it shows consistency and responsibility alongside the creative work."
+      ]
+    },
+    {
+      title: "What these milestones show",
+      body:
+        "Taken together, these achievements show a mix of creativity, technical growth, public presentation, and real-world reliability. They reflect someone building toward a professional creative career with both practical work ethic and strong personal drive."
     }
-  ]
+  ],
+  links: [
+    {
+      title: "About",
+      description:
+        "Read the broader story behind my background, studies, and creative direction.",
+      href: "./about.html"
+    },
+    {
+      title: "Open Gallery",
+      description:
+        "See the work that sits behind these milestones and ongoing projects.",
+      href: "./gallery.html"
+    },
+    {
+      title: "Contact",
+      description:
+        "Open the contact page for collaboration, work, or project enquiries.",
+      href: "./contact.html"
+    }
+  ],
+  footerNote:
+    "This page now focuses on proof points that build trust: distinctions, exhibition work, a public game release, and clear leadership growth."
 });
