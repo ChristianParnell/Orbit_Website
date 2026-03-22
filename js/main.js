@@ -58,7 +58,14 @@ const CFG = {
   idleDelay: 8.0,
   idleOrbitSpeed: 0.018,
   idleBobAmount: 0.055,
-  idlePromptDelay: 8.0
+  idlePromptDelay: 8.0,
+
+  modelIdleSwapMin: 5.4,
+  modelIdleSwapMax: 8.6,
+  fastOrbitInputWindow: 0.32,
+  fastOrbitInputThreshold: 0.028,
+  fastOrbitVelocityThreshold: 0.22,
+  fastOrbitCooldown: 1.3
 };
 
 const COLORS = {
@@ -75,13 +82,13 @@ const PALETTE = [
   new THREE.Color("#ffe166")
 ];
 
-const MODEL_ANIMATION_SEQUENCE = [
+const MODEL_REACTION_ANIMATION = "Search Pockets";
+const MODEL_IDLE_ANIMATION_PREFERENCES = [
   "Look Hands",
   "Dance",
-  "Search Pockets",
   "Search"
 ];
-
+const MODEL_MAX_IDLE_ANIMATIONS = 2;
 const MODEL_ANIMATION_FADE = 0.30;
 const MODEL_NORMAL_SAMPLE_OFFSET = 0.01;
 
@@ -169,6 +176,15 @@ let centralModelMixer = null;
 let centralModelAnimationClips = [];
 let centralModelAnimationActions = [];
 let currentModelAnimationIndex = -1;
+let currentModelAnimationRole = "none";
+let modelIdleAnimationIndices = [];
+let modelReactionAnimationIndex = -1;
+let modelIdleAnimationCursor = 0;
+let nextModelIdleSwapAt = 0;
+let modelReactionCooldownUntil = 0;
+let recentOrbitInputAt = -Infinity;
+let recentOrbitInputStrength = 0;
+let previousOrbitProgress = 0;
 
 let modelPointCloud = null;
 let modelGlyphMaterial = null;
@@ -998,6 +1014,15 @@ function resetModelAnimationState() {
   centralModelAnimationClips = [];
   centralModelAnimationActions = [];
   currentModelAnimationIndex = -1;
+  currentModelAnimationRole = "none";
+  modelIdleAnimationIndices = [];
+  modelReactionAnimationIndex = -1;
+  modelIdleAnimationCursor = 0;
+  nextModelIdleSwapAt = 0;
+  modelReactionCooldownUntil = 0;
+  recentOrbitInputAt = -Infinity;
+  recentOrbitInputStrength = 0;
+  previousOrbitProgress = currentProgress;
 }
 
 function normalizeAnimationName(name) {
@@ -1018,8 +1043,12 @@ function sortModelAnimationClips(clips) {
 
   const ordered = [];
   const used = new Set();
+  const preferredOrder = [
+    ...MODEL_IDLE_ANIMATION_PREFERENCES,
+    MODEL_REACTION_ANIMATION
+  ];
 
-  MODEL_ANIMATION_SEQUENCE.forEach((targetName) => {
+  preferredOrder.forEach((targetName) => {
     const target = normalizeAnimationName(targetName);
     const matchIndex = safeClips.findIndex((clip, idx) => {
       if (used.has(idx)) return false;
@@ -1032,7 +1061,42 @@ function sortModelAnimationClips(clips) {
     }
   });
 
+  safeClips.forEach((clip, idx) => {
+    if (!used.has(idx)) ordered.push(clip);
+  });
+
   return ordered.length ? ordered : safeClips;
+}
+
+function pickAnimationIndicesByPreference(clips, names, excludeIndices = []) {
+  const excludes = new Set(excludeIndices);
+  const result = [];
+  const used = new Set();
+
+  names.forEach((name) => {
+    const target = normalizeAnimationName(name);
+    const idx = clips.findIndex((clip, clipIndex) => {
+      if (excludes.has(clipIndex) || used.has(clipIndex)) return false;
+      return normalizeAnimationName(clip.name).includes(target);
+    });
+
+    if (idx !== -1) {
+      result.push(idx);
+      used.add(idx);
+    }
+  });
+
+  clips.forEach((clip, idx) => {
+    if (excludes.has(idx) || used.has(idx)) return;
+    result.push(idx);
+  });
+
+  return result;
+}
+
+function scheduleNextIdleAnimationSwap(elapsed = clock.elapsedTime) {
+  nextModelIdleSwapAt =
+    elapsed + THREE.MathUtils.randFloat(CFG.modelIdleSwapMin, CFG.modelIdleSwapMax);
 }
 
 function initModelAnimations(modelRoot, animations = []) {
@@ -1051,26 +1115,48 @@ function initModelAnimations(modelRoot, animations = []) {
     action.clampWhenFinished = true;
     action.zeroSlopeAtStart = true;
     action.zeroSlopeAtEnd = true;
-    action.setLoop(THREE.LoopOnce, 1);
+    action.paused = false;
     return action;
   });
 
-  if (centralModelAnimationActions.length === 1) {
-    const single = centralModelAnimationActions[0];
-    single.reset();
-    single.clampWhenFinished = false;
-    single.setLoop(THREE.LoopRepeat, Infinity);
-    single.play();
-    currentModelAnimationIndex = 0;
-    return;
+  modelReactionAnimationIndex = clips.findIndex((clip) =>
+    normalizeAnimationName(clip.name).includes(normalizeAnimationName(MODEL_REACTION_ANIMATION))
+  );
+
+  modelIdleAnimationIndices = pickAnimationIndicesByPreference(
+    clips,
+    MODEL_IDLE_ANIMATION_PREFERENCES,
+    modelReactionAnimationIndex >= 0 ? [modelReactionAnimationIndex] : []
+  ).slice(0, MODEL_MAX_IDLE_ANIMATIONS);
+
+  if (!modelIdleAnimationIndices.length && clips.length) {
+    modelIdleAnimationIndices = clips
+      .map((_, idx) => idx)
+      .filter((idx) => idx !== modelReactionAnimationIndex)
+      .slice(0, MODEL_MAX_IDLE_ANIMATIONS);
   }
 
+  if (!modelIdleAnimationIndices.length && modelReactionAnimationIndex >= 0) {
+    modelIdleAnimationIndices = [modelReactionAnimationIndex];
+  }
+
+  if (!modelIdleAnimationIndices.length) return;
+
   centralModelMixer.addEventListener("finished", onModelAnimationFinished);
-  playModelAnimationByIndex(0, true);
+
+  modelIdleAnimationCursor = 0;
+  playIdleAnimationByCursor(true);
 }
 
-function playModelAnimationByIndex(index, immediate = false) {
+function playModelAction(index, options = {}) {
   if (!centralModelAnimationActions.length) return;
+
+  const {
+    immediate = false,
+    role = "idle",
+    loopMode = THREE.LoopRepeat,
+    repetitions = Infinity
+  } = options;
 
   const count = centralModelAnimationActions.length;
   const nextIndex = ((index % count) + count) % count;
@@ -1080,11 +1166,23 @@ function playModelAnimationByIndex(index, immediate = false) {
       ? centralModelAnimationActions[currentModelAnimationIndex]
       : null;
 
+  if (
+    currentAction === nextAction &&
+    currentModelAnimationRole === role &&
+    currentAction?.isRunning()
+  ) {
+    if (loopMode === THREE.LoopRepeat) {
+      currentAction.setLoop(loopMode, repetitions);
+      currentAction.clampWhenFinished = false;
+    }
+    return;
+  }
+
   nextAction.reset();
   nextAction.enabled = true;
   nextAction.paused = false;
-  nextAction.clampWhenFinished = true;
-  nextAction.setLoop(THREE.LoopOnce, 1);
+  nextAction.setLoop(loopMode, repetitions);
+  nextAction.clampWhenFinished = loopMode !== THREE.LoopRepeat;
   nextAction.setEffectiveTimeScale(1);
   nextAction.setEffectiveWeight(1);
 
@@ -1092,22 +1190,125 @@ function playModelAnimationByIndex(index, immediate = false) {
     if (currentAction && currentAction !== nextAction) {
       currentAction.stop();
     }
-    nextAction.fadeIn(0.12).play();
+    nextAction.fadeIn(immediate ? 0.12 : MODEL_ANIMATION_FADE).play();
   } else {
     nextAction.play();
     nextAction.crossFadeFrom(currentAction, MODEL_ANIMATION_FADE, false);
   }
 
   currentModelAnimationIndex = nextIndex;
+  currentModelAnimationRole = role;
+}
+
+function playIdleAnimationByCursor(immediate = false) {
+  if (!modelIdleAnimationIndices.length) return;
+
+  const index = modelIdleAnimationIndices[
+    ((modelIdleAnimationCursor % modelIdleAnimationIndices.length) + modelIdleAnimationIndices.length) %
+      modelIdleAnimationIndices.length
+  ];
+
+  playModelAction(index, {
+    immediate,
+    role: "idle",
+    loopMode: THREE.LoopRepeat,
+    repetitions: Infinity
+  });
+
+  scheduleNextIdleAnimationSwap(clock.elapsedTime);
+}
+
+function playNextIdleAnimation(immediate = false) {
+  if (!modelIdleAnimationIndices.length) return;
+
+  if (modelIdleAnimationIndices.length > 1) {
+    modelIdleAnimationCursor =
+      (modelIdleAnimationCursor + 1) % modelIdleAnimationIndices.length;
+  }
+
+  playIdleAnimationByCursor(immediate);
+}
+
+function noteOrbitInput(intensity = 0) {
+  recentOrbitInputAt = clock.elapsedTime;
+  recentOrbitInputStrength = Math.min(0.18, recentOrbitInputStrength + Math.abs(intensity));
+}
+
+function triggerFastOrbitReaction() {
+  if (
+    modelReactionAnimationIndex === -1 ||
+    !centralModelAnimationActions.length ||
+    currentModelAnimationRole === "reaction" ||
+    clock.elapsedTime < modelReactionCooldownUntil
+  ) {
+    return false;
+  }
+
+  const reactionClip = centralModelAnimationClips[modelReactionAnimationIndex];
+  const cooldownBase = reactionClip?.duration || CFG.fastOrbitCooldown;
+
+  modelReactionCooldownUntil =
+    clock.elapsedTime + Math.max(CFG.fastOrbitCooldown, cooldownBase * 0.75);
+
+  playModelAction(modelReactionAnimationIndex, {
+    immediate: false,
+    role: "reaction",
+    loopMode: THREE.LoopOnce,
+    repetitions: 1
+  });
+
+  pushDebugEvent("orbit overspeed :: search pockets", "WARN");
+  return true;
+}
+
+function updateModelAnimationState(elapsed, delta) {
+  if (!centralModelAnimationActions.length) return;
+
+  recentOrbitInputStrength = THREE.MathUtils.lerp(
+    recentOrbitInputStrength,
+    0,
+    Math.min(1, delta * 6)
+  );
+
+  const orbitVelocity =
+    delta > 0 ? Math.abs(currentProgress - previousOrbitProgress) / delta : 0;
+  const recentUserOrbit = elapsed - recentOrbitInputAt <= CFG.fastOrbitInputWindow;
+
+  if (
+    recentUserOrbit &&
+    recentOrbitInputStrength >= CFG.fastOrbitInputThreshold &&
+    orbitVelocity >= CFG.fastOrbitVelocityThreshold
+  ) {
+    triggerFastOrbitReaction();
+  }
+
+  previousOrbitProgress = currentProgress;
+
+  if (
+    currentModelAnimationRole !== "reaction" &&
+    modelIdleAnimationIndices.length > 1 &&
+    elapsed >= nextModelIdleSwapAt
+  ) {
+    playNextIdleAnimation(false);
+  }
+
+  if (currentModelAnimationRole === "none" && modelIdleAnimationIndices.length) {
+    playIdleAnimationByCursor(true);
+  }
 }
 
 function onModelAnimationFinished(event) {
-  if (!centralModelAnimationActions.length || centralModelAnimationActions.length === 1) return;
+  if (!centralModelAnimationActions.length) return;
 
   const finishedIndex = centralModelAnimationActions.indexOf(event.action);
   if (finishedIndex === -1) return;
 
-  playModelAnimationByIndex(finishedIndex + 1, false);
+  if (
+    currentModelAnimationRole === "reaction" &&
+    finishedIndex === modelReactionAnimationIndex
+  ) {
+    playNextIdleAnimation(false);
+  }
 }
 
 function extractModelSampleData(model, maxPoints) {
@@ -1612,8 +1813,11 @@ function attachEvents() {
     (event) => {
       if (!hasEntered) return;
       registerInteraction();
+
+      const before = targetProgress;
       targetProgress += event.deltaY * CFG.scrollSpeed;
       targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+      noteOrbitInput(Math.abs(targetProgress - before));
     },
     { passive: true }
   );
@@ -1665,8 +1869,11 @@ function attachEvents() {
       const currentY = event.touches[0].clientY;
       const delta = lastTouchY - currentY;
       lastTouchY = currentY;
+
+      const before = targetProgress;
       targetProgress += delta * CFG.touchSpeed;
       targetProgress = THREE.MathUtils.clamp(targetProgress, 0, 1);
+      noteOrbitInput(Math.abs(targetProgress - before));
     },
     { passive: true }
   );
@@ -1879,6 +2086,7 @@ function animate() {
 
   updateIdleState(elapsed, delta);
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
+  updateModelAnimationState(elapsed, delta);
 
   updateSystemBreach(elapsed);
   updateAudioReactive(elapsed);
