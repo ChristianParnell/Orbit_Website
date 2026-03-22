@@ -769,19 +769,18 @@ function buildQuickNav() {
   if (!quickNav) return;
 
   quickNav.innerHTML = `
-    <div class="quick-nav__frame">
+    <div class="quick-nav__dock">
       <div class="quick-nav__header">
         <span class="quick-nav__eyebrow">quick access</span>
-        <span class="quick-nav__status">network jump rail</span>
+        <span class="quick-nav__status">node dock</span>
       </div>
-      <div class="quick-nav__rail"></div>
-      <div class="quick-nav__hint">click a node to pull its cover into focus</div>
+      <div class="quick-nav__grid"></div>
+      <div class="quick-nav__hint">click a node to focus its cover</div>
     </div>
   `;
 
   quickNavButtons.length = 0;
-  const rail = quickNav.querySelector(".quick-nav__rail");
-  const navShifts = [0, 14, -8, 18, 4, -12, 10];
+  const grid = quickNav.querySelector(".quick-nav__grid");
 
   ORBIT_ITEMS.forEach((item, index) => {
     const button = document.createElement("button");
@@ -790,7 +789,6 @@ function buildQuickNav() {
     button.dataset.index = String(index);
     button.setAttribute("aria-label", `Focus ${item.title}`);
     button.style.setProperty("--nav-accent", PALETTE[index % PALETTE.length].getStyle());
-    button.style.setProperty("--nav-shift", `${navShifts[index % navShifts.length]}px`);
     button.innerHTML = `
       <span class="quick-nav__node">
         <span class="quick-nav__dot"></span>
@@ -808,7 +806,7 @@ function buildQuickNav() {
       focusEntryByIndex(index);
     });
 
-    rail?.appendChild(button);
+    grid?.appendChild(button);
     quickNavButtons.push(button);
   });
 }
@@ -2252,6 +2250,62 @@ function updateCoverWorldData() {
   }
 }
 
+function projectWorldPointToScreen(worldPoint, width, height, target = { x: 0, y: 0, visible: false }) {
+  working.vD.copy(worldPoint).project(camera);
+  target.x = (working.vD.x * 0.5 + 0.5) * width;
+  target.y = (-working.vD.y * 0.5 + 0.5) * height;
+  target.visible = working.vD.z > -1 && working.vD.z < 1;
+  return target;
+}
+
+function getCoverEdgeAnchorScreen(data, targetX, targetY, width, height) {
+  const halfW = CFG.flagWidth * 0.5;
+  const halfH = CFG.flagHeight * 0.5;
+
+  projectWorldPointToScreen(data.position, width, height, working.screenCenter ?? (working.screenCenter = { x: 0, y: 0, visible: false }));
+
+  working.vE.copy(data.position).addScaledVector(data.right, halfW);
+  projectWorldPointToScreen(working.vE, width, height, working.screenRight ?? (working.screenRight = { x: 0, y: 0, visible: false }));
+
+  working.vF.copy(data.position).addScaledVector(data.up, halfH);
+  projectWorldPointToScreen(working.vF, width, height, working.screenUp ?? (working.screenUp = { x: 0, y: 0, visible: false }));
+
+  const centerX = working.screenCenter.x;
+  const centerY = working.screenCenter.y;
+  const rightX = working.screenRight.x - centerX;
+  const rightY = working.screenRight.y - centerY;
+  const upX = working.screenUp.x - centerX;
+  const upY = working.screenUp.y - centerY;
+  const deltaX = targetX - centerX;
+  const deltaY = targetY - centerY;
+  const det = rightX * upY - rightY * upX;
+
+  if (Math.abs(det) < 0.0001) {
+    const fallbackAngle = Math.atan2(deltaY, deltaX);
+    return {
+      x: centerX + Math.cos(fallbackAngle) * 20,
+      y: centerY + Math.sin(fallbackAngle) * 20
+    };
+  }
+
+  const localX = (deltaX * upY - upX * deltaY) / det;
+  const localY = (rightX * deltaY - deltaX * rightY) / det;
+  const scale = 1 / Math.max(Math.abs(localX), Math.abs(localY), 1);
+  const edgeLocalX = localX * scale;
+  const edgeLocalY = localY * scale;
+
+  let edgeX = centerX + rightX * edgeLocalX + upX * edgeLocalY;
+  let edgeY = centerY + rightY * edgeLocalX + upY * edgeLocalY;
+
+  const outwardX = edgeX - centerX;
+  const outwardY = edgeY - centerY;
+  const outwardLength = Math.hypot(outwardX, outwardY) || 1;
+  edgeX += (outwardX / outwardLength) * 8;
+  edgeY += (outwardY / outwardLength) * 8;
+
+  return { x: edgeX, y: edgeY };
+}
+
 function updateActiveNode(entry) {
   if (!entry) return;
 
@@ -2321,15 +2375,16 @@ function updateLabels() {
       const labelRect = entry.labelNode?.getBoundingClientRect();
       const labelExitX = labelRect ? labelRect.right - 10 : x - 12;
       const labelExitY = labelRect ? labelRect.top + labelRect.height * 0.5 : y;
-      const direction = Math.sign(labelExitX - coverX) || -1;
       const hoverBoost = entry.hoverValue * 12 + entry.breachValue * 8;
-
-      const startX = coverX;
-      const startY = coverY;
-      const elbowAX = coverX + direction * (26 + hoverBoost * 0.34);
-      const elbowAY = coverY + (labelExitY - coverY) * 0.16 - (14 + hoverBoost * 0.18);
-      const elbowBX = labelExitX - direction * (22 + hoverBoost * 0.26);
-      const elbowBY = labelExitY;
+      const coverAnchor = getCoverEdgeAnchorScreen(coverWorldData[index], labelExitX, labelExitY, width, height);
+      const startX = coverAnchor.x;
+      const startY = coverAnchor.y;
+      const direction = Math.sign(labelExitX - startX) || -1;
+      const verticalDirection = Math.sign(labelExitY - startY) || -1;
+      const elbowAX = startX + direction * (22 + hoverBoost * 0.30);
+      const elbowAY = startY + verticalDirection * (10 + hoverBoost * 0.14);
+      const elbowBX = labelExitX - direction * (18 + hoverBoost * 0.22);
+      const elbowBY = labelExitY + verticalDirection * 1.5;
       const pathData = `M ${startX.toFixed(2)} ${startY.toFixed(2)} L ${elbowAX.toFixed(2)} ${elbowAY.toFixed(2)} L ${elbowBX.toFixed(2)} ${elbowBY.toFixed(2)} L ${labelExitX.toFixed(2)} ${labelExitY.toFixed(2)}`;
       const connectorOpacity = Math.min(
         0.96,
