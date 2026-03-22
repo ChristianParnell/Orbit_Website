@@ -48,8 +48,9 @@ body.is-entered .focus-hint {
 }
 
 body.is-entered .debug-terminal {
-  opacity: 0.74;
-  transform: translateY(0);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
 }
 
 #app {
@@ -212,6 +213,24 @@ body.is-entered .debug-terminal {
   max-width: 54ch;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.overlay__copy {
+  margin-bottom: 14px;
+}
+
+.overlay__warning {
+  max-width: 54ch;
+  margin: 0 0 22px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 225, 102, 0.18);
+  border-left: 3px solid rgba(255, 225, 102, 0.95);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 225, 102, 0.10), rgba(255, 139, 45, 0.08));
+  color: rgba(255, 244, 194, 0.96);
+  line-height: 1.6;
+  box-shadow: 0 0 24px rgba(255, 225, 102, 0.08);
 }
 
 .progress {
@@ -536,26 +555,12 @@ body.is-entered .debug-terminal {
   text-transform: uppercase;
 }
 
-.debug-terminal {
-  left: 24px;
-  bottom: 24px;
-  width: min(390px, calc(100vw - 40px));
-  border: 1px solid rgba(86, 179, 255, 0.14);
-  background:
-    linear-gradient(180deg, rgba(10, 24, 38, 0.82), rgba(10, 24, 38, 0.68));
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 0 calc(10px + var(--audio-flicker) * 24px) rgba(47, 228, 255, 0.08),
-    var(--shadow);
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.36s ease, transform 0.36s ease, border-color 0.36s ease;
-  pointer-events: none;
-  overflow: hidden;
-}
-
+.debug-terminal,
 .debug-terminal.is-live {
-  border-color: rgba(47, 228, 255, 0.22);
+  display: none !important;
+  opacity: 0 !important;
+  transform: translateY(10px) !important;
+  pointer-events: none !important;
 }
 
 .debug-terminal__header {
@@ -660,6 +665,16 @@ body.is-entered .debug-terminal {
     min-width: 124px;
     max-width: 184px;
   }
+
+  .overlay__warning {
+    font-size: 0.98rem;
+    padding: 14px 16px;
+    background:
+      linear-gradient(180deg, rgba(255, 225, 102, 0.14), rgba(255, 139, 45, 0.12));
+    box-shadow:
+      0 0 32px rgba(255, 225, 102, 0.10),
+      0 10px 30px rgba(0, 0, 0, 0.22);
+  }
 }
 
 @media (max-width: 640px) {
@@ -693,5 +708,14 @@ body.is-entered .debug-terminal {
   .debug-terminal__line {
     grid-template-columns: 52px 42px 1fr;
     font-size: 0.68rem;
+  }
+
+  .overlay__warning {
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+
+  .overlay__hint {
+    max-width: 40ch;
   }
 }
