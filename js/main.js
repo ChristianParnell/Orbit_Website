@@ -672,14 +672,42 @@ function createFlags(loader) {
     labelNode.style.transformOrigin = "top left";
     labelsRoot?.appendChild(labelNode);
 
-    const connectorLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    connectorLine.setAttribute("class", "label-connector");
-    connectorLine.setAttribute("x1", "0");
-    connectorLine.setAttribute("y1", "0");
-    connectorLine.setAttribute("x2", "0");
-    connectorLine.setAttribute("y2", "0");
-    connectorLine.style.opacity = "0";
-    labelConnectors?.appendChild(connectorLine);
+    const connectorGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    connectorGroup.setAttribute("class", "label-connector-group");
+    connectorGroup.style.opacity = "0";
+    connectorGroup.style.setProperty("--connector-color", PALETTE[index % PALETTE.length].getStyle());
+
+    const connectorGlow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    connectorGlow.setAttribute("class", "label-connector label-connector--glow");
+
+    const connectorCore = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    connectorCore.setAttribute("class", "label-connector label-connector--core");
+
+    const connectorStartNode = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    connectorStartNode.setAttribute("class", "label-connector__node label-connector__node--cover");
+    connectorStartNode.setAttribute("r", "2.6");
+
+    const connectorMidNode = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    connectorMidNode.setAttribute("class", "label-connector__node label-connector__node--junction");
+    connectorMidNode.setAttribute("r", "1.9");
+
+    const connectorEndNode = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    connectorEndNode.setAttribute("class", "label-connector__node label-connector__node--label");
+    connectorEndNode.setAttribute("r", "2.2");
+
+    const connectorPulse = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    connectorPulse.setAttribute("class", "label-connector__pulse");
+    connectorPulse.setAttribute("r", "2.1");
+
+    connectorGroup.append(
+      connectorGlow,
+      connectorCore,
+      connectorStartNode,
+      connectorMidNode,
+      connectorEndNode,
+      connectorPulse
+    );
+    labelConnectors?.appendChild(connectorGroup);
 
     flagEntries.push({
       item,
@@ -688,7 +716,13 @@ function createFlags(loader) {
       material: mat,
       labelAnchor,
       labelNode,
-      connectorLine,
+      connectorGroup,
+      connectorGlow,
+      connectorCore,
+      connectorStartNode,
+      connectorMidNode,
+      connectorEndNode,
+      connectorPulse,
       hoverValue: 0,
       breachValue: 0
     });
@@ -718,8 +752,20 @@ function focusEntryByIndex(index) {
 function buildQuickNav() {
   if (!quickNav) return;
 
-  quickNav.innerHTML = "";
+  quickNav.innerHTML = `
+    <div class="quick-nav__frame">
+      <div class="quick-nav__header">
+        <span class="quick-nav__eyebrow">quick access</span>
+        <span class="quick-nav__status">network jump rail</span>
+      </div>
+      <div class="quick-nav__rail"></div>
+      <div class="quick-nav__hint">click a node to pull its cover into focus</div>
+    </div>
+  `;
+
   quickNavButtons.length = 0;
+  const rail = quickNav.querySelector(".quick-nav__rail");
+  const navShifts = [0, 14, -8, 18, 4, -12, 10];
 
   ORBIT_ITEMS.forEach((item, index) => {
     const button = document.createElement("button");
@@ -727,9 +773,17 @@ function buildQuickNav() {
     button.className = "quick-nav__item";
     button.dataset.index = String(index);
     button.setAttribute("aria-label", `Focus ${item.title}`);
+    button.style.setProperty("--nav-accent", PALETTE[index % PALETTE.length].getStyle());
+    button.style.setProperty("--nav-shift", `${navShifts[index % navShifts.length]}px`);
     button.innerHTML = `
-      <span class="quick-nav__index">${String(index + 1).padStart(2, "0")}</span>
-      <span class="quick-nav__title">${item.title}</span>
+      <span class="quick-nav__node">
+        <span class="quick-nav__dot"></span>
+        <span class="quick-nav__index">${String(index + 1).padStart(2, "0")}</span>
+      </span>
+      <span class="quick-nav__copy">
+        <span class="quick-nav__title">${item.title}</span>
+        <span class="quick-nav__subtitle">${item.theme || item.subtitle || "portfolio node"}</span>
+      </span>
     `;
 
     button.addEventListener("click", (event) => {
@@ -738,7 +792,7 @@ function buildQuickNav() {
       focusEntryByIndex(index);
     });
 
-    quickNav.appendChild(button);
+    rail?.appendChild(button);
     quickNavButtons.push(button);
   });
 }
@@ -2025,7 +2079,7 @@ function updateLabels() {
 
     if (!visible) {
       if (entry.labelNode) entry.labelNode.style.opacity = "0";
-      if (entry.connectorLine) entry.connectorLine.style.opacity = "0";
+      if (entry.connectorGroup) entry.connectorGroup.style.opacity = "0";
       return;
     }
 
@@ -2055,12 +2109,51 @@ function updateLabels() {
       }
     }
 
-    if (entry.connectorLine) {
-      entry.connectorLine.setAttribute("x1", coverX.toFixed(2));
-      entry.connectorLine.setAttribute("y1", coverY.toFixed(2));
-      entry.connectorLine.setAttribute("x2", x.toFixed(2));
-      entry.connectorLine.setAttribute("y2", y.toFixed(2));
-      entry.connectorLine.style.opacity = `${Math.min(0.92, titleFade * (0.34 + entry.hoverValue * 0.42 + entry.breachValue * 0.20))}`;
+    if (entry.connectorGroup && entry.connectorCore && entry.connectorGlow) {
+      const labelRect = entry.labelNode?.getBoundingClientRect();
+      const labelExitX = labelRect ? labelRect.right - 10 : x - 12;
+      const labelExitY = labelRect ? labelRect.top + labelRect.height * 0.5 : y;
+      const direction = Math.sign(labelExitX - coverX) || -1;
+      const hoverBoost = entry.hoverValue * 12 + entry.breachValue * 8;
+
+      const startX = coverX;
+      const startY = coverY;
+      const elbowAX = coverX + direction * (26 + hoverBoost * 0.34);
+      const elbowAY = coverY + (labelExitY - coverY) * 0.16 - (14 + hoverBoost * 0.18);
+      const elbowBX = labelExitX - direction * (22 + hoverBoost * 0.26);
+      const elbowBY = labelExitY;
+      const pathData = `M ${startX.toFixed(2)} ${startY.toFixed(2)} L ${elbowAX.toFixed(2)} ${elbowAY.toFixed(2)} L ${elbowBX.toFixed(2)} ${elbowBY.toFixed(2)} L ${labelExitX.toFixed(2)} ${labelExitY.toFixed(2)}`;
+      const connectorOpacity = Math.min(
+        0.96,
+        titleFade * (0.40 + entry.hoverValue * 0.34 + entry.breachValue * 0.20)
+      );
+
+      entry.connectorGroup.style.opacity = `${connectorOpacity}`;
+      entry.connectorGroup.style.setProperty(
+        "--connector-strength",
+        (0.30 + entry.hoverValue * 0.46 + entry.breachValue * 0.20).toFixed(3)
+      );
+      entry.connectorCore.setAttribute("d", pathData);
+      entry.connectorGlow.setAttribute("d", pathData);
+
+      entry.connectorStartNode.setAttribute("cx", startX.toFixed(2));
+      entry.connectorStartNode.setAttribute("cy", startY.toFixed(2));
+      entry.connectorMidNode.setAttribute("cx", elbowAX.toFixed(2));
+      entry.connectorMidNode.setAttribute("cy", elbowAY.toFixed(2));
+      entry.connectorEndNode.setAttribute("cx", labelExitX.toFixed(2));
+      entry.connectorEndNode.setAttribute("cy", labelExitY.toFixed(2));
+
+      try {
+        const pathLength = entry.connectorCore.getTotalLength();
+        const pulseOffset = ((clock.elapsedTime * 120) + index * 36) % Math.max(pathLength, 1);
+        const pulsePoint = entry.connectorCore.getPointAtLength(pulseOffset);
+        entry.connectorPulse.setAttribute("cx", pulsePoint.x.toFixed(2));
+        entry.connectorPulse.setAttribute("cy", pulsePoint.y.toFixed(2));
+        entry.connectorPulse.setAttribute("r", `${(1.7 + entry.hoverValue * 1.1 + entry.breachValue * 0.6).toFixed(2)}`);
+      } catch (error) {
+        entry.connectorPulse.setAttribute("cx", labelExitX.toFixed(2));
+        entry.connectorPulse.setAttribute("cy", labelExitY.toFixed(2));
+      }
     }
 
     if (breachState.active && breachState.index === index) {
