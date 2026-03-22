@@ -1,4 +1,3 @@
-
 function slugify(value) {
   return String(value)
     .toLowerCase()
@@ -22,14 +21,15 @@ function escapeAttr(value) {
 
 function fileNameFromPath(src) {
   const clean = String(src || "").split("?")[0].split("#")[0];
-  const file = clean.split("/").filter(Boolean).pop() || "asset";
-  return file;
+  return clean.split("/").filter(Boolean).pop() || "asset";
 }
 
 function buildStatusBars(strength = 3) {
-  return Array.from({ length: 5 }, (_, index) => {
-    const fill = index < strength ? "1" : "0.12";
-    return `<span class="hero-status__bar" style="--bar-fill:${fill}"></span>`;
+  const total = 5;
+  const safeStrength = Math.max(0, Math.min(total, Number(strength) || 0));
+  return Array.from({ length: total }, (_, index) => {
+    const active = index < safeStrength;
+    return `<span class="status-panel__bar${active ? " is-active" : ""}" aria-hidden="true"></span>`;
   }).join("");
 }
 
@@ -41,10 +41,11 @@ function renderSectionBlock(section) {
     : `<p>${escapeHtml(section.body || "")}</p>`;
 
   return `
-    <div class="section-block" id="${id}">
-      <h2 class="section-heading">${title}</h2>
+    <section class="section-block" id="${id}" data-observe-section>
+      <p class="section-label">Node</p>
+      <h2>${title}</h2>
       ${body}
-    </div>
+    </section>
   `;
 }
 
@@ -59,55 +60,28 @@ function renderMediaPreview(item) {
   if (type === "video") {
     if (poster) {
       return `
-        <div class="media-card__frame">
-          <span class="media-card__particle-layer" aria-hidden="true"></span>
-          <img src="${escapeAttr(poster)}" alt="${escapeAttr(title)} poster" loading="lazy" />
-          <span class="media-card__icon">▶</span>
-        </div>
+        <img src="${escapeAttr(poster)}" alt="${escapeAttr(title)} poster" />
       `;
     }
 
     return `
       <div
-        class="media-card__frame js-video-thumb"
+        class="media-card__thumb js-video-thumb"
         data-video-src="${escapeAttr(src)}"
         data-video-title="${escapeAttr(title)}"
         data-thumb-time="${escapeAttr(thumbTime)}"
       >
-        <span class="media-card__particle-layer" aria-hidden="true"></span>
-        <img
-          class="media-card__thumb-image"
-          alt="${escapeAttr(title)} thumbnail"
-          loading="lazy"
-          hidden
-          style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;"
-        />
-        <div
-          class="media-card__thumb-fallback"
-          style="display:grid; place-items:center; width:100%; height:100%; padding:24px; text-align:center; color:rgba(237,245,255,0.62); letter-spacing:0.08em; text-transform:uppercase; font-size:0.85rem;"
-        >
-          <span>${escapeHtml(placeholder)}</span>
-        </div>
-        <span class="media-card__icon">▶</span>
+        <img class="media-card__thumb-image" hidden alt="" />
+        <div class="media-card__thumb-fallback">${escapeHtml(placeholder)}</div>
       </div>
     `;
   }
 
   if ((type === "image" || type === "render") && src) {
-    return `
-      <div class="media-card__frame">
-        <span class="media-card__particle-layer" aria-hidden="true"></span>
-        <img src="${escapeAttr(src)}" alt="${escapeAttr(title)}" loading="lazy" />
-        <span class="media-card__icon media-card__icon--view">⤢</span>
-      </div>
-    `;
+    return `<img src="${escapeAttr(src)}" alt="${escapeAttr(title)}" />`;
   }
 
-  return `
-    <div class="media-card__frame media-card__frame--placeholder">
-      <span>${escapeHtml(placeholder)}</span>
-    </div>
-  `;
+  return `<div class="media-card__frame--placeholder">${escapeHtml(placeholder)}</div>`;
 }
 
 function renderMediaCard(item, groupTitle = "Collection") {
@@ -115,43 +89,47 @@ function renderMediaCard(item, groupTitle = "Collection") {
   const title = item.title || "Untitled";
   const description = item.description || "";
   const src = item.src || "";
-  const poster = item.poster || "";
   const badge = type === "video" ? "Video" : type === "embed" ? "Embed" : "Render";
   const hasOpenableMedia = Boolean(src);
   const filename = fileNameFromPath(src);
-  const cardClass = type === "video" ? "media-card--video" : "media-card--render";
+
+  const frame = `
+    <div class="media-card__frame">
+      ${renderMediaPreview(item)}
+      <div class="media-card__particle-layer" aria-hidden="true"></div>
+      <span class="media-card__action">${type === "video" ? "Play" : "View"}</span>
+      <span class="media-card__icon ${type === "video" ? "" : "media-card__icon--view"}">${type === "video" ? "▶" : "⤢"}</span>
+      <span class="media-card__filename">${escapeHtml(filename)}</span>
+    </div>
+  `;
+
+  const frameWrapper = hasOpenableMedia
+    ? `
+      <button
+        class="media-card__trigger js-open-media"
+        type="button"
+        data-media-type="${escapeAttr(type)}"
+        data-media-src="${escapeAttr(src)}"
+        data-media-poster="${escapeAttr(item.poster || "")}"
+        data-media-title="${escapeAttr(title)}"
+        data-media-description="${escapeAttr(description)}"
+        data-media-filename="${escapeAttr(filename)}"
+        data-media-group="${escapeAttr(groupTitle)}"
+      >
+        ${frame}
+      </button>
+    `
+    : `<div class="media-card__static">${frame}</div>`;
 
   return `
-    <article class="media-card media-card--gallery ${cardClass}">
-      ${
-        hasOpenableMedia
-          ? `
-            <button
-              class="media-card__trigger js-open-media"
-              type="button"
-              data-media-type="${escapeAttr(type)}"
-              data-media-src="${escapeAttr(src)}"
-              data-media-poster="${escapeAttr(poster)}"
-              data-media-title="${escapeAttr(title)}"
-              data-media-description="${escapeAttr(description)}"
-              data-media-filename="${escapeAttr(filename)}"
-              data-media-group="${escapeAttr(groupTitle)}"
-            >
-              ${renderMediaPreview(item)}
-              <span class="media-card__action">${type === "video" ? "Play" : "View"}</span>
-            </button>
-          `
-          : `
-            <div class="media-card__static">
-              ${renderMediaPreview(item)}
-            </div>
-          `
-      }
+    <article class="media-card media-card--gallery media-card--${escapeAttr(type)}">
+      ${frameWrapper}
       <div class="media-card__body">
         <div class="media-card__topline">
           <span class="media-badge">${escapeHtml(badge)}</span>
+          <span class="media-card__node">${escapeHtml(groupTitle)}</span>
         </div>
-        <h3 class="media-heading">${escapeHtml(title)}</h3>
+        <h3>${escapeHtml(title)}</h3>
         <p>${escapeHtml(description)}</p>
       </div>
     </article>
@@ -165,11 +143,11 @@ function renderMediaGroup(group) {
   const items = Array.isArray(group.items) ? group.items : [];
 
   return `
-    <section class="section-card media-section" id="${escapeAttr(groupId)}">
+    <section class="section-card media-section" id="${escapeAttr(groupId)}" data-observe-section>
       <div class="media-section__header">
         <div>
           <p class="section-label">Collection</p>
-          <h2 class="section-heading">${escapeHtml(groupTitle)}</h2>
+          <h2>${escapeHtml(groupTitle)}</h2>
         </div>
         ${groupIntro ? `<p class="media-section__intro">${escapeHtml(groupIntro)}</p>` : ""}
       </div>
@@ -217,7 +195,9 @@ function wireLightbox(shell) {
   const fileEl = shell.querySelector("#mediaLightboxFile");
   const labelEl = shell.querySelector("#mediaLightboxLabel");
 
-  if (!lightbox || !viewer || !titleEl || !typeEl || !descEl || !fileEl || !labelEl) return;
+  if (!lightbox || !viewer || !titleEl || !typeEl || !descEl || !fileEl || !labelEl) {
+    return;
+  }
 
   const closeLightbox = () => {
     lightbox.hidden = true;
@@ -241,32 +221,15 @@ function wireLightbox(shell) {
 
     if (!src) return;
 
-    viewer.innerHTML =
-      type === "video"
-        ? `
-          <video
-            class="media-lightbox__video"
-            src="${escapeAttr(src)}"
-            ${poster ? `poster="${escapeAttr(poster)}"` : ""}
-            controls
-            autoplay
-            playsinline
-          ></video>
-        `
-        : `
-          <img
-            class="media-lightbox__image"
-            src="${escapeAttr(src)}"
-            alt="${escapeAttr(title)}"
-          />
-        `;
+    viewer.innerHTML = type === "video"
+      ? `<video class="media-lightbox__video" controls playsinline ${poster ? `poster="${escapeAttr(poster)}"` : ""} src="${escapeAttr(src)}"></video>`
+      : `<img class="media-lightbox__image" src="${escapeAttr(src)}" alt="${escapeAttr(title)}" />`;
 
     titleEl.textContent = title;
     typeEl.textContent = type === "video" ? "Video" : "Render";
     descEl.textContent = description;
     fileEl.textContent = filename;
     labelEl.textContent = `${group.toLowerCase()}://active`;
-
     lightbox.hidden = false;
     document.body.classList.add("lightbox-open");
   };
@@ -338,8 +301,8 @@ function initVideoThumbnails(shell) {
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
-
         const ctx = canvas.getContext("2d");
+
         if (!ctx) {
           fail();
           return;
@@ -360,8 +323,9 @@ function initVideoThumbnails(shell) {
       "loadedmetadata",
       () => {
         const duration = Number(video.duration);
-        const maxSeek =
-          Number.isFinite(duration) && duration > 0 ? Math.max(0, duration - 0.15) : requestedTime;
+        const maxSeek = Number.isFinite(duration) && duration > 0
+          ? Math.max(0, duration - 0.15)
+          : requestedTime;
         const safeTime = Math.max(0.1, Math.min(requestedTime, maxSeek || requestedTime));
         video.currentTime = safeTime;
       },
@@ -370,7 +334,6 @@ function initVideoThumbnails(shell) {
 
     video.addEventListener("seeked", captureFrame, { once: true });
     video.addEventListener("error", fail, { once: true });
-
     video.src = src;
     video.load();
   });
@@ -382,12 +345,13 @@ function initSectionObserver(shell) {
 
   navLinks.forEach((link) => {
     const targetId = link.dataset.navTarget;
-    if (targetId) {
-      targetMap.set(targetId, link);
-    }
+    if (targetId) targetMap.set(targetId, link);
   });
 
-  const sections = Array.from(shell.querySelectorAll("[data-observe-section], .section-block[id], .media-section[id], #timeline, #related-projects"));
+  const sections = Array.from(
+    shell.querySelectorAll("[data-observe-section], .section-block[id], .media-section[id], #timeline, #related-projects")
+  );
+
   if (!sections.length || !navLinks.length) return;
 
   const observer = new IntersectionObserver(
@@ -400,17 +364,20 @@ function initSectionObserver(shell) {
         if (entry.isIntersecting) {
           navLinks.forEach((item) => item.classList.remove("is-active"));
           link.classList.add("is-active");
-          shell.querySelectorAll(`.quick-nav__link[href="#${CSS.escape(id)}"]`).forEach((item) => {
-            item.classList.add("is-active");
-          });
+          shell
+            .querySelectorAll(`.quick-nav__link[href="#${CSS.escape(id)}"]`)
+            .forEach((item) => item.classList.add("is-active"));
         } else {
-          shell.querySelectorAll(`.quick-nav__link[href="#${CSS.escape(id)}"]`).forEach((item) => {
-            item.classList.remove("is-active");
-          });
+          shell
+            .querySelectorAll(`.quick-nav__link[href="#${CSS.escape(id)}"]`)
+            .forEach((item) => item.classList.remove("is-active"));
         }
       });
     },
-    { rootMargin: "-35% 0px -45% 0px", threshold: 0.1 }
+    {
+      rootMargin: "-35% 0px -45% 0px",
+      threshold: 0.1
+    }
   );
 
   sections.forEach((section) => observer.observe(section));
@@ -461,18 +428,29 @@ function initGalleryParticles(shell) {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
   const cards = shell.querySelectorAll(".media-card--gallery");
-
   cards.forEach((card) => {
     const frame = card.querySelector(".media-card__frame");
     if (!frame) return;
 
-    card.addEventListener("mouseenter", () => {
-      spawnBinaryParticles(frame, document.body.dataset.pageTheme === "gallery" ? 10 : 6);
-    });
+    const density = () => (document.body.dataset.pageTheme === "gallery" ? 10 : 6);
+    card.addEventListener("mouseenter", () => spawnBinaryParticles(frame, density()));
+    card.addEventListener("focusin", () => spawnBinaryParticles(frame, 6));
+  });
+}
 
-    card.addEventListener("focusin", () => {
-      spawnBinaryParticles(frame, 6);
-    });
+function decorateHeadings(shell) {
+  const headingSelectors = ".hero-copy h1, .section-card h2, .section-card h3, .media-card h3, .timeline-card h3, .link-card h3";
+  shell.querySelectorAll(headingSelectors).forEach((heading) => {
+    const text = heading.textContent.trim();
+    if (!text) return;
+    heading.dataset.text = text;
+    heading.classList.add("fx-heading");
+  });
+
+  shell.querySelectorAll(".kicker, .section-label, .timeline-year, .media-lightbox__type").forEach((label) => {
+    const text = label.textContent.trim();
+    if (!text) return;
+    label.dataset.label = text;
   });
 }
 
@@ -501,6 +479,7 @@ export function renderPage(config) {
   } = config;
 
   document.body.dataset.pageTheme = theme;
+  shell.dataset.theme = theme;
 
   const normalizedSections = sections.map((section) => ({
     ...section,
@@ -536,201 +515,162 @@ export function renderPage(config) {
 
   const sideNavItems = autoNavItems.length ? autoNavItems : normalizedQuickNav;
 
-  const pageStatus =
-    status ||
-    {
-      label: "Signal",
-      value: `${title.toUpperCase()} // ACTIVE`,
-      note: "Sub-page uplink synced to the main orbit.",
-      strength: 4
-    };
+  const pageStatus = status || {
+    label: "Signal",
+    value: `${String(title).toUpperCase()} // ACTIVE`,
+    note: "Sub-page uplink synced to the main orbit.",
+    strength: 4
+  };
+
+  const navLinkMarkup = (item, extraClass = "") => {
+    const href = item.href || `#${item.id}`;
+    const targetId = item.id || href.replace(/^#/, "");
+    const external = Boolean(item.external || /^https?:|^mailto:|^tel:/i.test(href));
+    return `
+      <a
+        class="${extraClass}"
+        href="${escapeAttr(href)}"
+        ${targetId ? `data-nav-target="${escapeAttr(targetId)}"` : ""}
+        ${external ? 'target="_blank" rel="noreferrer noopener"' : ""}
+      >
+        <span>${escapeHtml(item.label || item.title || "Link")}</span>
+      </a>
+    `;
+  };
 
   shell.className = "page-shell";
   shell.innerHTML = `
+    <div class="page-shell__fx" aria-hidden="true"></div>
+
     <nav class="page-nav">
       <a class="back-link" href="${escapeAttr(backHref)}">← Back to orbit</a>
-      ${
-        externalLink
-          ? `
-            <a class="out-link" href="${escapeAttr(externalLink.href)}" target="_blank" rel="noreferrer">
-              ${escapeHtml(externalLink.label || "Open link")} ↗
-            </a>
-          `
-          : ""
-      }
+      ${externalLink
+        ? `<a class="out-link" href="${escapeAttr(externalLink.href || "#")}" target="_blank" rel="noreferrer noopener">${escapeHtml(externalLink.label || "Open link")} ↗</a>`
+        : ""}
     </nav>
 
     <header class="page-hero">
-      <section class="hero-copy card-node">
-        <div class="hero-copy__topline">
-          <div>
-            ${kicker ? `<p class="kicker">${escapeHtml(kicker)}</p>` : ""}
-            <h1 class="title-glitch">${escapeHtml(title)}</h1>
-          </div>
+      <div class="hero-copy">
+        ${kicker ? `<p class="kicker">${escapeHtml(kicker)}</p>` : ""}
+        <h1>${escapeHtml(title)}</h1>
 
-          <aside class="hero-status" aria-label="page status">
-            <span class="hero-status__eyebrow">${escapeHtml(pageStatus.label || "Signal")}</span>
-            <p class="hero-status__value">${escapeHtml(pageStatus.value || "ACTIVE")}</p>
-            <div class="hero-status__meta">
-              ${buildStatusBars(Number(pageStatus.strength) || 4)}
-            </div>
-            ${
-              pageStatus.note
-                ? `<p class="hero-status__note">${escapeHtml(pageStatus.note)}</p>`
-                : ""
-            }
-          </aside>
+        <div class="status-panel" aria-label="Page status">
+          <div class="status-panel__head">
+            <p class="status-panel__label">${escapeHtml(pageStatus.label || "Signal")}</p>
+            <p class="status-panel__value">${escapeHtml(pageStatus.value || "ACTIVE")}</p>
+          </div>
+          <div class="status-panel__bars">${buildStatusBars(Number(pageStatus.strength) || 4)}</div>
+          ${pageStatus.note ? `<p class="status-panel__note">${escapeHtml(pageStatus.note)}</p>` : ""}
         </div>
 
         ${intro ? `<p class="hero-intro">${escapeHtml(intro)}</p>` : ""}
 
-        ${
-          tags.length
-            ? `
-              <ul class="tags">
-                ${tags.map((tag) => `<li>${escapeHtml(tag)}</li>`).join("")}
-              </ul>
-            `
-            : ""
-        }
+        ${tags.length
+          ? `
+            <ul class="tags">
+              ${tags.map((tag) => `<li>${escapeHtml(tag)}</li>`).join("")}
+            </ul>
+          `
+          : ""}
 
-        ${
-          normalizedQuickNav.length
-            ? `
-              <div class="quick-nav">
-                ${normalizedQuickNav
-                  .map(
-                    (item) => `
-                      <a class="quick-nav__link" href="#${escapeAttr(item.id)}">${escapeHtml(item.label)}</a>
-                    `
-                  )
-                  .join("")}
-              </div>
-            `
-            : ""
-        }
-      </section>
+        ${normalizedQuickNav.length
+          ? `
+            <nav class="quick-nav" aria-label="Quick navigation">
+              ${normalizedQuickNav.map((item) => navLinkMarkup(item, "quick-nav__link")).join("")}
+            </nav>
+          `
+          : ""}
+      </div>
 
-      <aside class="hero-media card-node">
-        ${
-          heroImage
-            ? `<img src="${escapeAttr(heroImage)}" alt="${escapeAttr(title)} hero image" />`
-            : `<div class="hero-media__empty">Gallery preview</div>`
-        }
+      <div class="hero-media">
+        ${heroImage
+          ? `<img src="${escapeAttr(heroImage)}" alt="${escapeAttr(title)} hero image" />`
+          : `<div class="hero-media__empty">Gallery preview</div>`}
         ${heroCaption ? `<div class="hero-media__overlay">${escapeHtml(heroCaption)}</div>` : ""}
-      </aside>
+      </div>
     </header>
 
-    <div class="page-layout">
-      ${
-        sideNavItems.length
-          ? `
-            <aside class="page-side-nav card-node">
-              <p class="page-side-nav__label">Navigation</p>
-              <nav class="page-side-nav__list" aria-label="Sub-page sections">
-                ${sideNavItems
-                  .map(
-                    (item) => `
-                      <a class="page-side-nav__link" href="#${escapeAttr(item.id)}" data-nav-target="${escapeAttr(item.id)}">
-                        ${escapeHtml(item.label)}
-                      </a>
-                    `
-                  )
-                  .join("")}
-              </nav>
-              <p class="page-side-nav__meta">Sticky scan index for faster movement across the page.</p>
-            </aside>
-          `
-          : ""
-      }
+    ${sideNavItems.length
+      ? `
+        <aside class="side-nav" aria-label="Section navigation">
+          <div class="side-nav__inner">
+            <p class="section-label">Navigation</p>
+            <div class="side-nav__links">
+              ${sideNavItems.map((item) => navLinkMarkup(item, "side-nav__link")).join("")}
+            </div>
+            <p class="side-nav__note">Sticky scan index for faster movement across the page.</p>
+          </div>
+        </aside>
+      `
+      : ""}
 
-      <div class="page-grid">
-        ${
-          normalizedSections.length
-            ? `
-              <section class="section-card card-node" data-observe-section id="${escapeAttr(normalizedSections[0].id)}-anchor">
-                ${normalizedSections.map(renderSectionBlock).join("")}
-              </section>
-            `
-            : ""
-        }
+    <main class="page-grid">
+      ${normalizedSections.length
+        ? `<section class="section-card">${normalizedSections.map(renderSectionBlock).join("")}</section>`
+        : ""}
 
-        ${normalizedMediaGroups.map(renderMediaGroup).join("")}
+      ${normalizedMediaGroups.map(renderMediaGroup).join("")}
 
-        ${
-          timeline.length
-            ? `
-              <section class="section-card card-node" id="timeline" data-observe-section>
-                <h2 class="timeline-heading">Timeline</h2>
-                <div class="timeline-grid">
-                  ${timeline
-                    .map(
-                      (item) => `
-                        <article class="timeline-card card-node">
-                          <span class="timeline-year">${escapeHtml(item.year || "")}</span>
-                          <h3>${escapeHtml(item.title || "")}</h3>
-                          <p>${escapeHtml(item.description || "")}</p>
-                        </article>
-                      `
-                    )
-                    .join("")}
-                </div>
-              </section>
-            `
-            : ""
-        }
+      ${timeline.length
+        ? `
+          <section class="section-card" id="timeline" data-observe-section>
+            <p class="section-label">Signal log</p>
+            <h2>Timeline</h2>
+            <div class="timeline-grid">
+              ${timeline
+                .map(
+                  (item) => `
+                    <article class="timeline-card">
+                      <p class="timeline-year">${escapeHtml(item.year || "")}</p>
+                      <h3>${escapeHtml(item.title || "")}</h3>
+                      <p>${escapeHtml(item.description || "")}</p>
+                    </article>
+                  `
+                )
+                .join("")}
+            </div>
+          </section>
+        `
+        : ""}
 
-        ${
-          links.length
-            ? `
-              <section class="section-card card-node" id="related-projects" data-observe-section>
-                <h2 class="link-heading">Related Projects</h2>
-                <div class="links-grid">
-                  ${links
-                    .map(
-                      (item) => `
-                        <a
-                          class="link-card card-node"
-                          href="${escapeAttr(item.href || "#")}"
-                          ${item.external ? 'target="_blank" rel="noreferrer"' : ""}
-                        >
-                          <div class="link-card__body">
-                            <h3>${escapeHtml(item.title || "")}</h3>
-                            <p>${escapeHtml(item.description || "")}</p>
-                          </div>
-                        </a>
-                      `
-                    )
-                    .join("")}
-                </div>
-              </section>
-            `
-            : ""
-        }
-      </div>
-    </div>
+      ${links.length
+        ? `
+          <section class="section-card" id="related-projects" data-observe-section>
+            <p class="section-label">Links</p>
+            <h2>Related Projects</h2>
+            <div class="links-grid">
+              ${links
+                .map((item) => {
+                  const href = item.href || "#";
+                  const external = Boolean(item.external || /^https?:|^mailto:|^tel:/i.test(href));
+                  return `
+                    <a class="link-card" href="${escapeAttr(href)}" ${external ? 'target="_blank" rel="noreferrer noopener"' : ""}>
+                      <div class="link-card__body">
+                        <p class="section-label">Uplink</p>
+                        <h3>${escapeHtml(item.title || "Untitled")}</h3>
+                        <p>${escapeHtml(item.description || "")}</p>
+                      </div>
+                    </a>
+                  `;
+                })
+                .join("")}
+            </div>
+          </section>
+        `
+        : ""}
+    </main>
 
     ${footerNote ? `<p class="footer-note">${escapeHtml(footerNote)}</p>` : ""}
 
     <div class="media-lightbox" id="mediaLightbox" hidden>
       <div class="media-lightbox__backdrop" data-close-lightbox></div>
       <div class="media-lightbox__dialog" role="dialog" aria-modal="true" aria-labelledby="mediaLightboxTitle">
-        <button
-          class="media-lightbox__close"
-          type="button"
-          aria-label="Close viewer"
-          data-close-lightbox
-        >
-          ✕
-        </button>
-
-        <div class="media-lightbox__terminalbar">
-          <span class="media-lightbox__terminal-label" id="mediaLightboxLabel">terminal://standby</span>
-          <span class="media-lightbox__terminal-file" id="mediaLightboxFile">viewer://idle</span>
+        <button class="media-lightbox__close" type="button" data-close-lightbox aria-label="Close media viewer">✕</button>
+        <div class="media-lightbox__terminal">
+          <span id="mediaLightboxLabel">terminal://standby</span>
+          <span id="mediaLightboxFile">viewer://idle</span>
         </div>
-
         <div class="media-lightbox__viewer" id="mediaLightboxViewer"></div>
-
         <div class="media-lightbox__meta">
           <p class="media-lightbox__type" id="mediaLightboxType"></p>
           <h3 id="mediaLightboxTitle"></h3>
@@ -740,6 +680,7 @@ export function renderPage(config) {
     </div>
   `;
 
+  decorateHeadings(shell);
   wireLightbox(shell);
   initVideoThumbnails(shell);
   initSectionObserver(shell);
