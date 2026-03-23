@@ -1,67 +1,133 @@
-**Orbit_Profile_Website**
+# Orbit Profile Website — Development Log
 
+## Overview
+This document organises the development notes for the **Orbit Profile Website** into a cleaner markdown timeline.
 
+## Development Timeline
 
-**24/02** -> Spent a day working on figuring out how to do this website thing. What code? HTML?? I asked chat GPT, and has all the info i needed on creating a html file as well as coding it. I wasn’t used to using html and C+ so this was very cool! Love coding and got a new found love for this.
+### 24/02
+Spent the day learning how to build the website from scratch. I explored HTML and coding with help from ChatGPT, which gave me the information I needed to start creating the site. I was not used to HTML or C#, so this felt like a strong introduction and sparked a new interest in coding.
 
-**25/02** -> Got to lecture and needed help setting up pages! Chat GPT let me down on live server hosting though Visual studios, as there just isn’t anything like that. So using Github Pages is huge for launching the website and editing it.
+### 25/02
+Worked on setting up the pages during lecture time. I ran into issues with live server hosting through Visual Studio, so I shifted toward using **GitHub Pages** instead. This became an important solution for launching and editing the site online.
 
-**27/02** -> added some fog that broke the site. Worked on it alot, transparency issues with the opacity map seemeed to be the causing issue.
+### 27/02
+Added fog to the site, but it broke the visual result. After troubleshooting, it seemed the issue came from transparency and the opacity map.
 
-**28/03** -> came into problems with tiles being too far away from the modle, too wide and open space. Fixed brought all closer to the center. 
+### 28/02 *(possible date typo in source; originally written as 28/03)*
+Ran into layout problems where the tiles were too far away from the model, making the scene feel too wide and open. I adjusted the composition and brought everything closer to the centre.
 
-**1/03** -> fixed folder Helix effect. Speed and cork screw effect that orbit/spirals around modle was way too fase. Also made more space between folders so model is more visable.
+### 01/03
+Refined the folder helix effect. The speed and corkscrew spiral around the model were too fast, so I slowed and improved them. I also created more spacing between folders so the model would be more visible.
 
-**2/03** -> Huge lighting issues, light from the sky_sphere is casting addittional light to the folder covers. Fixed, but model has not lighting and currupted, the GL file cant be accesses to get textures. 
+### 02/03
+Worked through major lighting issues. Light from the sky sphere was casting additional light onto the folder covers. I fixed that problem, but the model was still unlit and corrupted because the GL file could not be accessed properly for textures.
 
+### 04/03
+Re-imported and resized the model. The rock base became larger and covered more of the bottom of the scene. This improved the overall flow of the helix folders moving up the website and made the composition feel more convincing.
 
+### 05/03
+The model still had no texture, and the issue could not be resolved at the time. I decided to stop pushing that problem for now and return to it later. I also adjusted folder title placement, since the titles were sitting too far away from the folders, and both the folder and title were fading too far from the camera.
 
+### 09/03
+Made the largest redesign so far. I completely reworked the website into a **code-breaking / corrupted files** visual style.
 
+Key changes included:
+- Introduced binary-style animated visuals inspired by a reference I found online.
+- Used ChatGPT to help modify the CSS and `main.js` for binary effects.
+- Made the centre model transparent and switched to a solid dark-blue background.
+- Built a colour ramp from Adobe Color palettes and used it to drive the binary visuals.
+- Fixed early issues where the binary numbers were too large.
+- Generated an AI code-flux background video with low transparency to support the blue palette.
+- Added binary streams escaping from the central model into the cover files, with numbers scaling up as they approach the covers.
+- Added a random “breach” event where a cover file appears infected and code gets sucked into it.
 
+These changes made the website feel much more active, chaotic, and visually complete.
 
-**5/03** -> the model still has no texture. Chat GPT cant resolve this issue either.  Took too long to resove stopped trying, will come back to this issue. Did amend some title text issues where the title of folders were too far away from the folder, and both folder and text fades away from camera. 
+### 10/03
+Added animations.
 
-**4/03** -> Re-imported model and resized it, the rock base is now bigger, covering most the bottom scene. The flow of the folders doing a helix up the website is better, and more convincing, with this model change. 
+### 12/03
+Worked on render performance to reduce strain on the GPU and CPU.
 
-**9/03** -> Made some Huge Changes! Biggest yet. I have completly re-done the website, I decided to go with a code breaking style, with corrupt files and effects. I found a cool image of a binary animation someone had done online, and thought would it be possible with Chat Gpt? And Yes! Its defentily. By making the model transparent and making a solid color background, there is a huge diffrence. I made a color ramp from adobe color pallets. Plugged it into the chat GPT to edit the styles and Js-Main and made some intresting color binary number effects. I had initally got some problemts with size of these binary numbers. But amended them now. I needed a video for the background and got Ai to generate a code flux background, its transparency is low and suits the color “blue” with background “dark Blue” this whole effect really completes the look. I added some binary flow exscaping the center model into the cover files, they get slightly bigger the closer they get to the cover. The website needed some more effect, and was too static, MORE CHAOS. So i added this random event were a cover file would get breached and code would get sucked into it. This works well! And you can see the binary effect better flowing out the character not just hovering over a file.
+Implemented the following limits:
+- `modelPointLimit: 8000`
+- `streamPerCover: 120`
+- `focusTunnelParticles: 180`
+- `pixel ratio: 1.5`
+- `60 FPS cap`
 
+### 14/03
+Focused on the internal pages and began filling out the **About**, **Contact**, and **Achievements** sections with proper content.
 
+I also:
+- Organised the gallery more effectively.
+- Added 10 videos and 10 images.
+- Compressed media to stay under GitHub’s 100 MB upload limit.
+- Adjusted `pages.js` so each video displays a front-cover preview image before loading.
+- Kept rendered still images working correctly.
 
-**10/03** -> Added Animations   
+## Feedback and Iteration
 
+### 19/03 — Feedback
+Feedback highlighted that the sub-pages such as **About**, **Contact**, and **Gallery** did not feel visually consistent with the main website.
 
- 
-**12/03** -> Worked on limiting render performance. With GPU and CPU struggling to keep up i have implemented verables:
-·	modelPointLimit: 8000
-·	streamPerCover: 120
-·	focusTunnelParticles: 180
-·	pixel ratio 1.5
-·	60 FPS cap
+Suggested improvements included:
+- Use the rainbow binary-code colour treatment in headers.
+- Push the sub-pages further into the same design language.
+- Explore an arc-radar / technical interface aesthetic.
+- Bring the glitch effect into the sub-page headings.
+- Add a slow automatic helix rotation on the main page.
+- Add a delayed prompt after 10 seconds of inactivity telling the user to scroll and click covers.
 
-**14/03**-> Worked on some of the internal pages, giving about, contact and achivments content fulled. I worked on the gallery getting it organised better, and added 10 videos and 10 pictues. I had to compress them all to be under 100mg as git doesn't upload over 100mg. I got my Pages Js to cast a front cover of each video and loads that, the render stills where fine. 
+### 22/03
+Updated the CSS for the website folders and sub-pages.
 
-**FeedBack: 19/03** -> Sub Websites eg, About, Contact, Gallery are not consistanct with the design theme. change color header for the binary code color (Rainbow) to suit the ongoing theme. Maybe could see what Chatgpt could do for some (arc Radiers theme as this is what comes to mind) for the asthetics. Possibly get the subheaders to carry on the blue, or possibly getting the glitch effect into the headers or play some role witht eh sub websites. With the main page create a slow rotation for the helix to start. if the user doesn't scroll after 10 seconds maybe have a help rpompt saying scroll and press on covers to opne? 
+This update:
+- Brightened the sub-pages while keeping the dark technical base.
+- Added code-colour gradients to headers, labels, and UI chips.
+- Gave media, link, and timeline cards a stronger illuminated hover state.
+- Added subtle grid and scanline overlays so the pages felt more networked.
+- Kept the existing HTML and JS structure intact, avoiding a full template rewrite.
+- Removed the diagnostics tab on the main page.
+- Added a note that the website is intended for laptop or PC use only.
 
-22/03 -> edited the CSS Pages. This is for the wubwesbite folders. What this update changes:
-- Brightens the sub pages while keeping the dark technical base.
-- Adds code-color gradients to headers, labels, and UI chips.
-- Gives media/link/timeline cards a stronger illuminated hover state.
-- Adds subtle grid / scanline overlays to make the pages feel more networked.
-- Keeps the existing HTML and JS structure intact, so no template rewrite is required.
+I also updated the sub-pages so they felt much closer to the main Orbit site rather than like separate darker pages.
 
-I Removed the diagnostics tab on the main page, as well as added a webiste is inteded for laptop or PC use only.
+### Expanded 22/03 Changes
+The **About**, **Achievements**, **Gallery**, and **Contact** pages were redesigned to share a stronger coded-network identity with:
+- Brighter accent colours
+- Animated data sweeps
+- Glitch-style heading details
+- Active “node” styling on cards and panels
 
-I updated the sub-pages so they feel much closer to the main Orbit site instead of looking like darker separate pages. The About, Achievements, Gallery, and Contact pages now share a stronger coded-network identity with brighter accent colors, animated data sweeps, glitch-style heading details, and active “node” styling on cards and panels.
+Each page now has its own subtle identity while remaining within the same system:
+- **About** leans cyan
+- **Gallery** leans violet
+- **Contact** uses a lime-blue signal tone
+- **Achievements** feels more certified / system-log inspired
 
-Each page now has its own subtle accent personality while still matching the same system, so About feels more cyan, Gallery leans more violet, Contact has a lime-blue signal tone, and Achievements feels more certified/system-log inspired. I also added hero status badges, sticky side navigation on larger screens, better hover feedback, animated scan brackets, and a more terminal-like lightbox treatment.
+Additional upgrades included:
+- Hero status badges
+- Sticky side navigation on larger screens
+- Better hover feedback
+- Animated scan brackets
+- A more terminal-like lightbox style
+- Low-opacity code-rain layers in hero areas
 
-The gallery interactions were pushed further with binary particle hover effects and more alive media-card behavior, while the hero areas now have a low-opacity code-rain layer so they feel active without becoming messy. Overall, the result is more colorful, more technical, more polished, and more consistent with the main website’s visual language.
+The gallery interactions were pushed further with binary particle hover effects and more responsive media-card behaviour. Overall, the site became more colourful, more technical, more polished, and more consistent with the main website’s visual language.
 
-Spent time on the contents of the Sub Pages. 
-Added a Idle Orbit after 8 seconds, And quick acess tabs to jump ahead to the page you want
+### Later 22/03 Adjustments
+Spent more time refining the sub-page content and interaction behaviour.
 
-Made changes to the center modles, animation loop, if the user orbits too fast this will cause them to trip.
-Added some quick tabs  to skip to pages/covers.
+Additional changes included:
+- Added an **idle orbit** after 8 seconds of inactivity.
+- Added **quick-access tabs** to jump directly to pages or covers.
+- Updated the centre model’s animation loop.
+- Made the model trip if the user orbits too aggressively.
+- Created a visual connection between the headers and page covers so they feel linked through the same network system.
+- Increased the force threshold for the trip/orbit scroll effect because it was previously too gentle.
 
-Added a connection between the headers and the page Covers, made it look like its connected still with sa network feel.
-chnages the force orbit scroll input for the animation triping effect. was too gentle to get a trip
+## Notes
+- The original source appears to contain one likely date typo: `28/03` appears between late February and early March entries, so it may have meant `28/02`.
+- Wording has been cleaned up for readability, but the original meaning has been preserved.
