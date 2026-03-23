@@ -97,7 +97,7 @@ function renderMediaCard(item, groupTitle = "Collection") {
     <div class="media-card__frame">
       ${renderMediaPreview(item)}
       <div class="media-card__particle-layer" aria-hidden="true"></div>
-      <span class="media-card__action">${type === "video" ? "Play" : "View"}</span>
+      <span class="media-card__action">${type === "video" ? "Video" : "Image"}</span>
       <span class="media-card__icon ${type === "video" ? "" : "media-card__icon--view"}">${type === "video" ? "▶" : "⤢"}</span>
       <span class="media-card__filename">${escapeHtml(filename)}</span>
     </div>
