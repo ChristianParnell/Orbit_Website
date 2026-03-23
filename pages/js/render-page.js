@@ -454,7 +454,7 @@ function decorateHeadings(shell) {
   });
 }
 
-export function renderPage(config = {}) {
+export function renderPage(config) {
   const shell = document.getElementById("pageShell");
   if (!shell) return;
 
@@ -476,7 +476,6 @@ export function renderPage(config = {}) {
     quickNav = [],
     theme = slugify(title)
   } = config;
-}
 
   document.body.dataset.pageTheme = theme;
   shell.dataset.theme = theme;
