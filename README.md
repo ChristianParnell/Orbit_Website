@@ -126,5 +126,4 @@ Additional changes included:
 - Increased the force threshold for the trip/orbit scroll effect because it was previously too gentle.
 
 ## Notes
-- The original source appears to contain one likely date typo: `28/03` appears between late February and early March entries, so it may have meant `28/02`.
-- Wording has been cleaned up for readability, but the original meaning has been preserved.
+
