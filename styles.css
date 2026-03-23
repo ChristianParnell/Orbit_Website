@@ -46,6 +46,21 @@ body.is-entered .focus-hint {
   transform: translate(-50%, 0);
 }
 
+body:not(.is-entered) .experience-ui,
+body:not(.is-entered) #labelConnectors,
+body:not(.is-entered) .folder-labels,
+body:not(.is-entered) .quick-nav,
+body:not(.is-entered) .hud,
+body:not(.is-entered) .focus-hint,
+body:not(.is-entered) .idle-prompt,
+body:not(.is-entered) .mute-button,
+body:not(.is-entered) .debug-terminal,
+body:not(.is-entered) .intro-prompt {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
 #app {
   --audio-flicker: 0.10;
   position: relative;
@@ -210,8 +225,9 @@ body.intro-active .experience-ui {
   place-items: center;
   padding: 32px;
   background:
-    linear-gradient(180deg, rgba(8, 31, 51, 0.68), rgba(8, 31, 51, 0.90)),
-    radial-gradient(circle at center, rgba(47, 228, 255, 0.05), transparent 34%);
+    linear-gradient(180deg, rgba(8, 31, 51, 0.82), rgba(8, 31, 51, 0.95)),
+    radial-gradient(circle at center, rgba(47, 228, 255, 0.04), transparent 34%);
+  backdrop-filter: blur(14px);
   transition: opacity 0.6s ease;
 }
 
