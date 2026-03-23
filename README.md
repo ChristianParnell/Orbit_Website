@@ -133,14 +133,15 @@ Additional changes included:
 - update the gallery page text so it no longer mentions quick navigation
 
 ** Further:
--Added a more cinematic landing experience with a camera fly-in intro.
--Several polish fixes were also made to restore the correct placement of UI elements like the quick access panel
--Brightened and strengthened cover/header visibility where they had become too dark.
--Updated gallery media labels from generic actions like “Play” and “View” toward clearer wording such as “Video” and “Image.”
--Removed Covers and pormpts of the main page untill intro finished.
--Cleaned up visual clutter on the main page.
--Increased the landing-page background blur for a cleaner, more focused first impression.
--Spent the latest pushes restoring and stabilizing render-page.js after shared subpage syntax errors appeared.
+- Added a more cinematic landing experience with a camera fly-in intro.
+- Several polish fixes were also made to restore the correct placement of UI elements like the quick access panel
+- Brightened and strengthened cover/header visibility where they had become too dark.
+- Updated gallery media labels from generic actions like “Play” and “View” toward clearer wording such as “Video” and “Image.”
+- Removed Covers and pormpts of the main page untill intro finished.
+- Cleaned up visual clutter on the main page.
+- Increased the landing-page background blur for a cleaner, more focused first impression.
+- Spent the latest pushes restoring and stabilizing render-page.js after shared subpage syntax errors appeared.
+- 
 ## Notes
 Addition to future futher changes-
 Inside the Gallery, when acessing a video lightbox, as the user hovers over the opened lightbox the border seems to spin. this was not deisered.
