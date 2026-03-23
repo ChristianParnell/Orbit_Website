@@ -42,6 +42,27 @@ body.is-entered .overlay {
   pointer-events: none;
 }
 
+.overlay.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.experience-ui {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.95s ease, transform 0.95s ease;
+}
+
+body.intro-active .experience-ui,
+body.intro-active #labelConnectors {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.intro-active .experience-ui {
+  transform: translateY(12px);
+}
+
 body.is-entered .focus-hint {
   opacity: 1;
   transform: translate(-50%, 0);
@@ -198,6 +219,114 @@ body.is-entered .debug-terminal {
   inset: 0;
   border: 1px solid rgba(47, 228, 255, 0.10);
   pointer-events: none;
+}
+
+.intro-prompt {
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.72s ease, transform 0.72s ease;
+}
+
+.intro-prompt.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.intro-prompt__title {
+  position: relative;
+  display: inline-block;
+  padding: 0.14em 0.22em;
+  font-size: clamp(2.8rem, 7.8vw, 6.4rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 0.92;
+  background: linear-gradient(
+    90deg,
+    var(--cyan) 0%,
+    var(--blue) 16%,
+    var(--purple) 34%,
+    var(--pink) 50%,
+    var(--orange) 68%,
+    var(--yellow) 84%,
+    var(--green) 100%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 24px rgba(47, 228, 255, 0.16));
+  animation: introSpectrumShift 7s linear infinite;
+}
+
+.intro-prompt__title::before,
+.intro-prompt__title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.intro-prompt__title::before {
+  color: rgba(47, 228, 255, 0.20);
+  transform: translate(-0.028em, 0.01em);
+  mix-blend-mode: screen;
+  animation: introGlitchA 2.4s steps(1, end) infinite;
+}
+
+.intro-prompt__title::after {
+  color: rgba(255, 87, 206, 0.18);
+  transform: translate(0.028em, -0.01em);
+  mix-blend-mode: screen;
+  animation: introGlitchB 2.1s steps(1, end) infinite;
+}
+
+@keyframes introSpectrumShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 260% 50%;
+  }
+}
+
+@keyframes introGlitchA {
+  0%,
+  88%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0.22;
+  }
+  89% {
+    clip-path: inset(8% 0 58% 0);
+    opacity: 0.38;
+  }
+  92% {
+    clip-path: inset(62% 0 10% 0);
+    opacity: 0.14;
+  }
+}
+
+@keyframes introGlitchB {
+  0%,
+  84%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0.16;
+  }
+  86% {
+    clip-path: inset(18% 0 42% 0);
+    opacity: 0.30;
+  }
+  91% {
+    clip-path: inset(66% 0 8% 0);
+    opacity: 0.12;
+  }
 }
 
 .eyebrow {
@@ -715,6 +844,114 @@ body.is-entered .debug-terminal {
   inset: 0;
   border: 1px solid rgba(47, 228, 255, 0.10);
   pointer-events: none;
+}
+
+.intro-prompt {
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.72s ease, transform 0.72s ease;
+}
+
+.intro-prompt.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.intro-prompt__title {
+  position: relative;
+  display: inline-block;
+  padding: 0.14em 0.22em;
+  font-size: clamp(2.8rem, 7.8vw, 6.4rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 0.92;
+  background: linear-gradient(
+    90deg,
+    var(--cyan) 0%,
+    var(--blue) 16%,
+    var(--purple) 34%,
+    var(--pink) 50%,
+    var(--orange) 68%,
+    var(--yellow) 84%,
+    var(--green) 100%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 24px rgba(47, 228, 255, 0.16));
+  animation: introSpectrumShift 7s linear infinite;
+}
+
+.intro-prompt__title::before,
+.intro-prompt__title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.intro-prompt__title::before {
+  color: rgba(47, 228, 255, 0.20);
+  transform: translate(-0.028em, 0.01em);
+  mix-blend-mode: screen;
+  animation: introGlitchA 2.4s steps(1, end) infinite;
+}
+
+.intro-prompt__title::after {
+  color: rgba(255, 87, 206, 0.18);
+  transform: translate(0.028em, -0.01em);
+  mix-blend-mode: screen;
+  animation: introGlitchB 2.1s steps(1, end) infinite;
+}
+
+@keyframes introSpectrumShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 260% 50%;
+  }
+}
+
+@keyframes introGlitchA {
+  0%,
+  88%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0.22;
+  }
+  89% {
+    clip-path: inset(8% 0 58% 0);
+    opacity: 0.38;
+  }
+  92% {
+    clip-path: inset(62% 0 10% 0);
+    opacity: 0.14;
+  }
+}
+
+@keyframes introGlitchB {
+  0%,
+  84%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0.16;
+  }
+  86% {
+    clip-path: inset(18% 0 42% 0);
+    opacity: 0.30;
+  }
+  91% {
+    clip-path: inset(66% 0 8% 0);
+    opacity: 0.12;
+  }
 }
 
 .eyebrow {
@@ -1586,5 +1823,12 @@ body.is-entered .debug-terminal {
 
   .overlay__hint {
     max-width: 40ch;
+  }
+}
+
+
+@media (max-width: 700px) {
+  .intro-prompt__title {
+    letter-spacing: 0.08em;
   }
 }
