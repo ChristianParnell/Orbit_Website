@@ -65,7 +65,12 @@
       </div>
     </div>
 
-    <div id="hud" class="hud">
+    <div id="introPrompt" class="intro-prompt" aria-live="polite" aria-hidden="true">
+      <div class="intro-prompt__title" data-text="Scroll to Orbit">Scroll to Orbit</div>
+    </div>
+
+    <div id="experienceUi" class="experience-ui">
+      <div id="hud" class="hud">
       <div class="hud__left">
         <p class="eyebrow">ORBIT // DIGITAL PORTFOLIO</p>
         <h2>Christian Parnell</h2>
@@ -108,6 +113,7 @@
     <button id="muteButton" class="mute-button" type="button" aria-label="Toggle audio">
       SOUND ON
     </button>
+    </div>
 
     <audio id="ambientAudio" src="./assets/audio/ambient.mp3" loop preload="auto"></audio>
   </div>
