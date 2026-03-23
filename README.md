@@ -132,7 +132,7 @@ Additional changes included:
 - added a moving spectrum border on hover for the cards and the opened lightbox dialog
 - update the gallery page text so it no longer mentions quick navigation
 
-** Further:
+### Further:
 - Added a more cinematic landing experience with a camera fly-in intro.
 - Several polish fixes were also made to restore the correct placement of UI elements like the quick access panel
 - Brightened and strengthened cover/header visibility where they had become too dark.
