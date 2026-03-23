@@ -502,18 +502,9 @@ export function renderPage(config) {
         ]
       : [];
 
-  const autoNavItems = createNavItems({
-    sections: normalizedSections,
-    mediaGroups: normalizedMediaGroups,
-    timeline,
-    links
-  });
-
-  const normalizedQuickNav = quickNav.length
-    ? quickNav
-    : autoNavItems.slice(0, Math.max(2, Math.min(autoNavItems.length, 5)));
-
-  const sideNavItems = autoNavItems.length ? autoNavItems : normalizedQuickNav;
+  const autoNavItems = [];
+  const normalizedQuickNav = [];
+  const sideNavItems = [];
 
   const pageStatus = status || {
     label: "Signal",
@@ -683,7 +674,5 @@ export function renderPage(config) {
   decorateHeadings(shell);
   wireLightbox(shell);
   initVideoThumbnails(shell);
-  initSectionObserver(shell);
   initGalleryParticles(shell);
-  initIdlePulse();
 }
