@@ -101,7 +101,7 @@ const INTRO_CFG = {
   holdDuration: 1.0,
   revealDuration: 1.05,
   promptAppearAt: 0.68,
-  modelFaceOffset: Math.PI
+  modelFaceOffset: 0
 };
 
 const canvas = document.getElementById("webgl");
