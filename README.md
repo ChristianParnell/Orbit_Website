@@ -152,6 +152,7 @@ Additional changes included:
 - Made the model trip if the user orbits too aggressively.
 - Created a visual connection between the headers and page covers so they feel linked through the same network system.
 - Increased the force threshold for the trip/orbit scroll effect because it was previously too gentle.
+<img width="337" height="242" alt="Screenshot 2026-03-24 003648" src="https://github.com/user-attachments/assets/7b1785d5-8d51-4ae4-ba50-c4bb6ff486be" />
 
 ### 23/03
 - remove the shared subpage navigation feature
