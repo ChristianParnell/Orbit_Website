@@ -473,7 +473,7 @@ export function renderPage(config) {
     timeline = [],
     links = [],
     footerNote = "",
-    quickNav = [],
+    quickNav = []
     theme = slugify(title)
   } = config;
 
