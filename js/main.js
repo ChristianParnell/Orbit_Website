@@ -2804,11 +2804,9 @@ function refreshAnimatedModelSampleData() {
 function updateBinaryModel(delta, elapsed) {
   if (!centralModel || !modelGlyphMaterial) return;
 
-  if (introState.active) {
-    orientModelToCamera();
-  } else {
-    centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
-  }
+  // Keep the center model facing the active camera for the intro and after it.
+  // This avoids the visible snap back to the old idle yaw when the intro ends.
+  orientModelToCamera();
 
   if (centralModelMixer) {
     centralModelMixer.update(delta);
