@@ -1,8 +1,5 @@
 # Orbit Profile Website — Development Log
 
-## Overview
-This document organises the development notes for the **Orbit Profile Website** into a cleaner markdown timeline.
-
 ## Development Timeline
 
 ### 24/02
@@ -14,7 +11,7 @@ Worked on setting up the pages during lecture time. I ran into issues with live 
 ### 27/02
 Added fog to the site, but it broke the visual result. After troubleshooting, it seemed the issue came from transparency and the opacity map.
 
-### 28/02 *(possible date typo in source; originally written as 28/03)*
+### 28/02
 Ran into layout problems where the tiles were too far away from the model, making the scene feel too wide and open. I adjusted the composition and brought everything closer to the centre.
 
 ### 01/03
