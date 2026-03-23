@@ -12,7 +12,7 @@ Worked on setting up the pages during lecture time. I ran into issues with live 
 Added fog to the site, but it broke the visual result. After troubleshooting, it seemed the issue came from transparency and the opacity map.
 
 ### 28/02
-Ran into layout problems where the tiles were too far away from the model, making the scene feel too wide and open. I adjusted the composition and brought everything closer to the centre.
+Ran into layout problems where the tiles were too far away from the model and at the wrong rotation, making the scene feel too wide and open. I adjusted the composition and agnles aswell as brought everything closer to the centre.
 <img width="2048" height="1422" alt="Screenshot 2026-03-05 185929" src="https://github.com/user-attachments/assets/a5dec10b-8707-422f-ba22-4476c0aa1c7e" />
 
 
