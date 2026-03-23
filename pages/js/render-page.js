@@ -473,9 +473,8 @@ export function renderPage(config) {
     timeline = [],
     links = [],
     footerNote = "",
-    quickNav = [],
-    theme = slugify(title),
-    status = null
+    quickNav = []
+    theme = slugify(title)
   } = config;
 
   document.body.dataset.pageTheme = theme;
@@ -506,12 +505,6 @@ export function renderPage(config) {
   const normalizedQuickNav = [];
   const sideNavItems = [];
 
-  const pageStatus = status || {
-    label: "Signal",
-    value: `${String(title).toUpperCase()} // ACTIVE`,
-    note: "Sub-page uplink synced to the main orbit.",
-    strength: 4
-  };
 
   const navLinkMarkup = (item, extraClass = "") => {
     const href = item.href || `#${item.id}`;
@@ -544,15 +537,6 @@ export function renderPage(config) {
       <div class="hero-copy">
         ${kicker ? `<p class="kicker">${escapeHtml(kicker)}</p>` : ""}
         <h1>${escapeHtml(title)}</h1>
-
-        <div class="status-panel" aria-label="Page status">
-          <div class="status-panel__head">
-            <p class="status-panel__label">${escapeHtml(pageStatus.label || "Signal")}</p>
-            <p class="status-panel__value">${escapeHtml(pageStatus.value || "ACTIVE")}</p>
-          </div>
-          <div class="status-panel__bars">${buildStatusBars(Number(pageStatus.strength) || 4)}</div>
-          ${pageStatus.note ? `<p class="status-panel__note">${escapeHtml(pageStatus.note)}</p>` : ""}
-        </div>
 
         ${intro ? `<p class="hero-intro">${escapeHtml(intro)}</p>` : ""}
 
