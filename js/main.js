@@ -268,7 +268,7 @@ const introState = {
   endPos: new THREE.Vector3()
 };
 
-let introCoverOpacity = 1;
+let introCoverOpacity = 0;
 let settledModelYaw = CFG.modelYaw;
 
 const coverWorldData = ORBIT_ITEMS.map(() => ({
@@ -910,6 +910,10 @@ function updatePortfolioIntro(elapsed) {
     if (introState.complete) {
       setIntroSceneVisibility(true);
       setIntroCoverReveal(1);
+    } else {
+      setIntroSceneVisibility(false);
+      setIntroCoverReveal(0);
+      setIntroPromptVisible(false);
     }
     return;
   }
