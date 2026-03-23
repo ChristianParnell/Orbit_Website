@@ -25,7 +25,7 @@ Worked through major lighting issues. Light from the sky sphere was casting addi
 <img width="1840" height="915" alt="dwwd" src="https://github.com/user-attachments/assets/ee187fad-306f-42bf-905f-f604451a8d39" />
 
 ### 04/03
-Re-imported and resized the model. The rock base became larger and covered more of the bottom of the scene. This improved the overall flow of the helix folders moving up the website and made the composition feel more convincing.
+Re-imported and resized the model. The rock base became larger and covered more of the bottom of the scene. This improved the overall flow of the helix folders moving up the website and made the composition feel more convincing. Futher I corrected alot of spacing issues with the folders and started getting the headers to work. 
 <img width="2048" height="1198" alt="wdwdw" src="https://github.com/user-attachments/assets/5c5470fd-6133-445e-b632-c5062d191603" />
 ### 05/03
 The model still had no texture, and the issue could not be resolved at the time. I decided to stop pushing that problem for now and return to it later. I also adjusted folder title placement, since the titles were sitting too far away from the folders, and both the folder and title were fading too far from the camera.
