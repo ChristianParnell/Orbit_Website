@@ -172,11 +172,6 @@ renderPage({
   heroImage: "../assets/covers/gallery.png",
   heroCaption: "Designed as a clean portfolio gallery.",
   tags: ["Showreel", "Animation", "Video", "Renders", "3D", "Games"],
-  quickNav: [
-    { id: "hey-welcome-to-my-gallery-page", label: "Overview" },
-    { id: "video-work", label: "Video Work" },
-    { id: "render-stills", label: "Render Stills" }
-  ],
   mediaGroups: [
     {
       id: "video-work",
@@ -195,7 +190,7 @@ renderPage({
     {
       title: "Hey! Welcome to my Gallery Page.",
       body: [
-        "Use the quick navigation buttons at the top to jump straight to videos or renders.",
+        "Scroll through the archive to move naturally between videos and renders.",
         "I really hope you enjoy this selection. It is not my full collection, but rather 20 pieces from my ongoing projects.",
         "Unfortunately, some of my latest work is still under development and not ready to be shown yet, but I hope the pieces included here provide a strong impression of my work so far."
       ]
