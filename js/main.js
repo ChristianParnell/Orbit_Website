@@ -94,12 +94,24 @@ const MODEL_MAX_IDLE_ANIMATIONS = 2;
 const MODEL_ANIMATION_FADE = 0.30;
 const MODEL_NORMAL_SAMPLE_OFFSET = 0.01;
 
+const INTRO_CFG = {
+  flyDistance: 3.9,
+  flyLift: 0.72,
+  flyDuration: 2.6,
+  holdDuration: 1.0,
+  revealDuration: 1.05,
+  promptAppearAt: 0.68,
+  modelFaceOffset: Math.PI
+};
+
 const canvas = document.getElementById("webgl");
 const appRoot = document.getElementById("app") || document.body;
 const loaderOverlay = document.getElementById("loader");
 const progressFill = document.getElementById("progressFill");
 const progressText = document.getElementById("progressText");
 const enterButton = document.getElementById("enterButton");
+const introPrompt = document.getElementById("introPrompt");
+const experienceUi = document.getElementById("experienceUi");
 const labelsRoot = document.getElementById("folderLabels");
 const focusHint = document.getElementById("focusHint");
 const idlePrompt = document.getElementById("idlePrompt");
@@ -245,6 +257,18 @@ const flagEntries = [];
 const quickNavButtons = [];
 const fogSprites = [];
 const missingAssets = [];
+
+const introState = {
+  active: false,
+  revealing: false,
+  complete: false,
+  startedAt: 0,
+  revealStartedAt: 0,
+  startPos: new THREE.Vector3(),
+  endPos: new THREE.Vector3()
+};
+
+let introCoverOpacity = 1;
 
 const coverWorldData = ORBIT_ITEMS.map(() => ({
   position: new THREE.Vector3(),
@@ -761,8 +785,193 @@ function registerInteraction() {
   setIdlePromptVisible(false);
 }
 
+function setIntroPromptVisible(visible) {
+  if (!introPrompt) return;
+  introPrompt.classList.toggle("is-visible", visible);
+  introPrompt.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+function setIntroSceneVisibility(visible) {
+  const resolved = Boolean(visible);
+
+  if (streamSystem.points) {
+    streamSystem.points.visible = resolved;
+  }
+
+  if (focusTunnelSystem.points) {
+    focusTunnelSystem.points.visible = resolved;
+  }
+
+  if (relationSystem.group) {
+    relationSystem.group.visible = resolved;
+  }
+}
+
+function orientModelToCamera(targetPosition = camera.position) {
+  if (!centralModel) return;
+
+  working.vF.copy(targetPosition);
+  working.vF.y = centralModel.position.y + 0.4;
+
+  centralModel.lookAt(working.vF);
+  centralModel.rotateY(INTRO_CFG.modelFaceOffset);
+}
+
+function setIntroCoverReveal(value) {
+  introCoverOpacity = THREE.MathUtils.clamp(value, 0, 1);
+}
+
+async function startExperienceSession() {
+  if (backgroundVideo) {
+    backgroundVideo.play().catch(() => {});
+  }
+
+  initAudioReactive();
+  scheduleNextBreach(clock.elapsedTime);
+  pushDebugEvent("diagnostic shell booted", "BOOT");
+  pushDebugEvent("ambient packet lattice online", "SYS");
+
+  try {
+    if (ambientAudio) {
+      ambientAudio.volume = 0.45;
+      ambientAudio.currentTime = 0;
+      if (soundEnabled) {
+        await ambientAudio.play();
+        if (audioContext && audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Audio did not start automatically.", error);
+    pushDebugEvent("ambient input unavailable :: using fallback pulse", "WARN");
+  }
+
+  if (focusHint) {
+    focusHint.style.opacity = "1";
+  }
+}
+
+async function beginPortfolioIntro() {
+  if (!isReady || introState.active || introState.complete) return;
+
+  hasEntered = true;
+  introState.active = true;
+  introState.revealing = false;
+  introState.startedAt = clock.elapsedTime;
+  introState.revealStartedAt = 0;
+
+  loaderOverlay?.setAttribute("aria-hidden", "true");
+  loaderOverlay?.classList.add("is-hidden");
+  document.body.classList.add("is-entered", "intro-active");
+
+  if (experienceUi) {
+    experienceUi.setAttribute("aria-hidden", "true");
+  }
+
+  registerInteraction();
+  setIntroPromptVisible(false);
+  setIntroCoverReveal(0);
+  setIntroSceneVisibility(false);
+
+  hoveredEntry = null;
+  activeEntry = null;
+  pointer.set(-10, -10);
+  renderer.domElement.style.cursor = "default";
+
+  introState.endPos.copy(camera.position);
+
+  working.vE.copy(introState.endPos).sub(ORBIT_CENTER);
+  const introEndY = introState.endPos.y;
+
+  working.vE.y = 0;
+  if (working.vE.lengthSq() < 1e-6) {
+    working.vE.set(0.001, 0, 1);
+  }
+
+  working.vE.normalize().multiplyScalar(CFG.cameraRadius + INTRO_CFG.flyDistance);
+
+  introState.startPos.set(
+    ORBIT_CENTER.x + working.vE.x,
+    introEndY + INTRO_CFG.flyLift,
+    ORBIT_CENTER.z + working.vE.z
+  );
+
+  camera.position.copy(introState.startPos);
+  camera.lookAt(ORBIT_CENTER);
+
+  await startExperienceSession();
+}
+
+function updatePortfolioIntro(elapsed) {
+  if (!introState.active) {
+    if (introState.complete) {
+      setIntroSceneVisibility(true);
+      setIntroCoverReveal(1);
+    }
+    return;
+  }
+
+  setIntroSceneVisibility(false);
+
+  const flyProgress = THREE.MathUtils.clamp(
+    (elapsed - introState.startedAt) / INTRO_CFG.flyDuration,
+    0,
+    1
+  );
+  const flyEase = 1 - Math.pow(1 - flyProgress, 3);
+
+  camera.position.lerpVectors(introState.startPos, introState.endPos, flyEase);
+  camera.lookAt(ORBIT_CENTER);
+
+  if (flyProgress >= INTRO_CFG.promptAppearAt) {
+    setIntroPromptVisible(true);
+  }
+
+  if (!introState.revealing && flyProgress >= 1) {
+    introState.revealing = true;
+    introState.revealStartedAt = elapsed + INTRO_CFG.holdDuration;
+  }
+
+  if (!introState.revealing) {
+    return;
+  }
+
+  if (elapsed < introState.revealStartedAt) {
+    return;
+  }
+
+  const revealProgress = THREE.MathUtils.clamp(
+    (elapsed - introState.revealStartedAt) / INTRO_CFG.revealDuration,
+    0,
+    1
+  );
+  const revealEase = 1 - Math.pow(1 - revealProgress, 3);
+
+  setIntroCoverReveal(revealEase);
+
+  if (revealProgress >= 0.05) {
+    document.body.classList.remove("intro-active");
+    if (experienceUi) {
+      experienceUi.setAttribute("aria-hidden", "false");
+    }
+  }
+
+  if (revealProgress >= 0.42) {
+    setIntroPromptVisible(false);
+  }
+
+  if (revealProgress >= 1) {
+    introState.active = false;
+    introState.complete = true;
+    setIntroPromptVisible(false);
+    setIntroCoverReveal(1);
+    setIntroSceneVisibility(true);
+  }
+}
+
 function focusEntryByIndex(index) {
-  if (!flagEntries.length) return;
+  if (!flagEntries.length || introState.active || !introState.complete) return;
   const clampedIndex = THREE.MathUtils.clamp(index, 0, flagEntries.length - 1);
   const total = Math.max(flagEntries.length - 1, 1);
   targetProgress = clampedIndex / total;
@@ -1825,7 +2034,7 @@ function attachEvents() {
   window.addEventListener(
     "wheel",
     (event) => {
-      if (!hasEntered) return;
+      if (!hasEntered || introState.active || !introState.complete) return;
       registerInteraction();
 
       const before = targetProgress;
@@ -1845,23 +2054,23 @@ function attachEvents() {
     pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
     pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
 
-    if (hasEntered) {
+    if (hasEntered && !introState.active && introState.complete) {
       registerInteraction();
     }
   });
 
   window.addEventListener("pointerdown", () => {
-    if (!hasEntered) return;
+    if (!hasEntered || introState.active || !introState.complete) return;
     registerInteraction();
   });
 
   window.addEventListener("keydown", () => {
-    if (!hasEntered) return;
+    if (!hasEntered || introState.active || !introState.complete) return;
     registerInteraction();
   });
 
   window.addEventListener("click", () => {
-    if (!hasEntered) return;
+    if (!hasEntered || introState.active || !introState.complete) return;
     registerInteraction();
     if (hoveredEntry) {
       window.location.href = hoveredEntry.item.href;
@@ -1871,7 +2080,7 @@ function attachEvents() {
   window.addEventListener(
     "touchstart",
     (event) => {
-      if (!hasEntered) return;
+      if (!hasEntered || introState.active || !introState.complete) return;
       registerInteraction();
       dragActive = true;
       lastTouchY = event.touches[0].clientY;
@@ -1882,7 +2091,7 @@ function attachEvents() {
   window.addEventListener(
     "touchmove",
     (event) => {
-      if (!hasEntered || !dragActive) return;
+      if (!hasEntered || introState.active || !introState.complete || !dragActive) return;
       registerInteraction();
       const currentY = event.touches[0].clientY;
       const delta = lastTouchY - currentY;
@@ -1901,6 +2110,11 @@ function attachEvents() {
   );
 
   window.addEventListener("touchend", () => {
+    if (introState.active || !introState.complete) {
+      dragActive = false;
+      return;
+    }
+
     dragActive = false;
   });
 
@@ -1914,41 +2128,7 @@ function attachEvents() {
   });
 
   enterButton?.addEventListener("click", async () => {
-    if (!isReady) return;
-
-    hasEntered = true;
-    document.body.classList.add("is-entered");
-    loaderOverlay?.setAttribute("aria-hidden", "true");
-    registerInteraction();
-
-    if (backgroundVideo) {
-      backgroundVideo.play().catch(() => {});
-    }
-
-    initAudioReactive();
-    scheduleNextBreach(clock.elapsedTime);
-    pushDebugEvent("diagnostic shell booted", "BOOT");
-    pushDebugEvent("ambient packet lattice online", "SYS");
-
-    try {
-      if (ambientAudio) {
-        ambientAudio.volume = 0.45;
-        ambientAudio.currentTime = 0;
-        if (soundEnabled) {
-          await ambientAudio.play();
-          if (audioContext && audioContext.state === "suspended") {
-            await audioContext.resume();
-          }
-        }
-      }
-    } catch (error) {
-      console.warn("Audio did not start automatically.", error);
-      pushDebugEvent("ambient input unavailable :: using fallback pulse", "WARN");
-    }
-
-    if (focusHint) {
-      focusHint.style.opacity = "1";
-    }
+    await beginPortfolioIntro();
   });
 
   muteButton?.addEventListener("click", async () => {
@@ -2106,6 +2286,7 @@ function animate() {
   const delta = clock.getDelta();
   const elapsed = clock.elapsedTime;
 
+  updatePortfolioIntro(elapsed);
   updateIdleState(elapsed, delta);
   currentProgress = THREE.MathUtils.lerp(currentProgress, targetProgress, 0.085);
   updateModelAnimationState(elapsed, delta);
@@ -2164,6 +2345,8 @@ function updateAudioReactive(elapsed) {
 }
 
 function updateCamera(elapsed) {
+  if (introState.active) return;
+
   const orbitTheta = currentProgress * Math.PI * 2 * CFG.cameraTurns;
   const idleLift = idleMode ? CFG.idleBobAmount : 0.03;
 
@@ -2230,7 +2413,11 @@ function updateFlags(elapsed) {
     );
 
     const visibility = Math.min(farVisibility, indexVisibility);
-    const finalOpacity = THREE.MathUtils.clamp(Math.pow(visibility, 0.65), 0, 1);
+    const finalOpacity = THREE.MathUtils.clamp(
+      Math.pow(visibility, 0.65) * introCoverOpacity,
+      0,
+      1
+    );
 
     entry.hoverValue = THREE.MathUtils.lerp(
       entry.hoverValue,
@@ -2253,6 +2440,11 @@ function updateFlags(elapsed) {
 
     entry.group.visible = finalOpacity > 0.02;
   });
+
+  if (!introState.complete || introCoverOpacity <= 0.02) {
+    activeEntry = null;
+    return;
+  }
 
   if (closest && closest !== activeEntry) {
     activeEntry = closest;
@@ -2450,7 +2642,11 @@ function updateLabels() {
 }
 
 function updateIntersections() {
-  if (!hasEntered) return;
+  if (!hasEntered || introState.active || !introState.complete) {
+    hoveredEntry = null;
+    renderer.domElement.style.cursor = "default";
+    return;
+  }
 
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(
@@ -2607,7 +2803,11 @@ function refreshAnimatedModelSampleData() {
 function updateBinaryModel(delta, elapsed) {
   if (!centralModel || !modelGlyphMaterial) return;
 
-  centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
+  if (introState.active) {
+    orientModelToCamera();
+  } else {
+    centralModel.rotation.y = CFG.modelYaw + Math.sin(elapsed * 0.30) * 0.018;
+  }
 
   if (centralModelMixer) {
     centralModelMixer.update(delta);
