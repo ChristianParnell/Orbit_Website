@@ -1015,3 +1015,344 @@ video {
     max-height: 62vh;
   }
 }
+
+
+/* === 2026 subpage refresh: remove shared nav and shift cards/lightbox into terminal network mode === */
+
+:root {
+  --loader-green: #33ff88;
+  --loader-cyan: #2fe4ff;
+  --loader-blue: #4b7dff;
+  --loader-purple: #b04dff;
+  --loader-pink: #ff57ce;
+  --loader-orange: #ff8b2d;
+  --loader-yellow: #ffe166;
+  --loader-spectrum:
+    linear-gradient(
+      90deg,
+      var(--loader-green),
+      var(--loader-cyan),
+      var(--loader-blue),
+      var(--loader-purple),
+      var(--loader-pink),
+      var(--loader-orange),
+      var(--loader-yellow),
+      var(--loader-green)
+    );
+}
+
+.quick-nav,
+.side-nav {
+  display: none !important;
+}
+
+.fx-heading {
+  color: transparent;
+  background-image: var(--loader-spectrum);
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: none;
+  animation: headerSpectrumFlow 6.2s linear infinite;
+}
+
+.fx-heading::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  background-image: var(--loader-spectrum);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  opacity: 0.18;
+  filter: blur(10px);
+  transform: none;
+  clip-path: inset(0 0 0 0);
+  animation: headerSpectrumFlow 7.4s linear infinite reverse;
+  pointer-events: none;
+}
+
+.fx-heading::after {
+  height: 3px;
+  border-radius: 999px;
+  background-image: var(--loader-spectrum);
+  background-size: 240% 100%;
+  box-shadow:
+    0 0 18px rgba(47, 228, 255, 0.16),
+    0 0 28px rgba(176, 77, 255, 0.10);
+  animation: headerSpectrumFlow 4.8s linear infinite;
+}
+
+.hero-copy h1::after {
+  height: 4px;
+}
+
+.media-card::before,
+.media-lightbox__dialog::before {
+  content: none;
+}
+
+.media-card__frame {
+  background:
+    linear-gradient(180deg, rgba(15, 29, 43, 0.96), rgba(5, 10, 17, 0.98));
+  isolation: isolate;
+}
+
+.media-card__frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(47, 228, 255, 0.18), rgba(75, 125, 255, 0.06)),
+    linear-gradient(90deg, rgba(47, 228, 255, 0.22), rgba(255, 255, 255, 0.04));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.72;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.media-card__frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(1, 5, 10, 0.02) 0%, rgba(1, 5, 10, 0.1) 48%, rgba(2, 6, 12, 0.82) 100%),
+    repeating-linear-gradient(
+      180deg,
+      rgba(123, 230, 255, 0.08) 0 1px,
+      transparent 1px 4px
+    ),
+    linear-gradient(
+      90deg,
+      transparent 0 11%,
+      rgba(47, 228, 255, 0.05) 11.2% 11.6%,
+      transparent 11.8% 48%,
+      rgba(176, 77, 255, 0.04) 48.2% 48.6%,
+      transparent 48.8% 86%,
+      rgba(51, 255, 136, 0.05) 86.2% 86.6%,
+      transparent 86.8% 100%
+    ),
+    radial-gradient(circle at 16% 18%, rgba(47, 228, 255, 0.12) 0 2px, transparent 3px),
+    radial-gradient(circle at 82% 24%, rgba(176, 77, 255, 0.12) 0 2px, transparent 3px),
+    radial-gradient(circle at 70% 78%, rgba(51, 255, 136, 0.11) 0 2px, transparent 3px);
+  background-size: 100% 100%, 100% 8px, 100% 100%, auto, auto, auto;
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 1;
+  animation: terminalGridDrift 12s linear infinite;
+}
+
+.media-card__frame > img,
+.media-card__thumb,
+.media-card__thumb-image,
+.media-card__thumb-fallback {
+  position: relative;
+  z-index: 0;
+}
+
+.media-card__trigger:hover .media-card__frame::before,
+.media-card__trigger:focus-visible .media-card__frame::before,
+.media-card:hover .media-card__frame::before,
+.media-card:focus-within .media-card__frame::before {
+  background: conic-gradient(
+    from 0deg,
+    var(--loader-green),
+    var(--loader-cyan),
+    var(--loader-blue),
+    var(--loader-purple),
+    var(--loader-pink),
+    var(--loader-orange),
+    var(--loader-yellow),
+    var(--loader-green)
+  );
+  opacity: 1;
+  animation: spectrumSpin 2.8s linear infinite;
+  box-shadow:
+    0 0 0 1px rgba(47, 228, 255, 0.18),
+    0 0 22px rgba(47, 228, 255, 0.22);
+}
+
+.media-card__trigger:hover .media-card__frame::after,
+.media-card__trigger:focus-visible .media-card__frame::after,
+.media-card:hover .media-card__frame::after,
+.media-card:focus-within .media-card__frame::after {
+  opacity: 0.92;
+}
+
+.media-card__filename,
+.media-card__action,
+.media-card__icon {
+  border-radius: 8px;
+  background: rgba(4, 11, 19, 0.82);
+  border-color: rgba(47, 228, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.media-card__filename,
+.media-card__action,
+.media-badge,
+.media-card__node,
+.media-lightbox__terminal,
+.media-lightbox__type {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.media-card__icon {
+  width: 40px;
+  height: 40px;
+}
+
+.media-lightbox__dialog {
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(47, 228, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(8, 18, 28, 0.96), rgba(2, 7, 13, 0.98));
+  box-shadow:
+    0 40px 120px rgba(0,0,0,0.62),
+    0 0 0 1px rgba(47, 228, 255, 0.06);
+}
+
+.media-lightbox__dialog::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(47, 228, 255, 0.16), rgba(255, 255, 255, 0.04)),
+    linear-gradient(90deg, rgba(47, 228, 255, 0.18), rgba(176, 77, 255, 0.12), rgba(51, 255, 136, 0.14));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.82;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.media-lightbox__dialog:hover::after {
+  background: conic-gradient(
+    from 0deg,
+    var(--loader-green),
+    var(--loader-cyan),
+    var(--loader-blue),
+    var(--loader-purple),
+    var(--loader-pink),
+    var(--loader-orange),
+    var(--loader-yellow),
+    var(--loader-green)
+  );
+  animation: spectrumSpin 4.4s linear infinite;
+  opacity: 1;
+}
+
+.media-lightbox__dialog > * {
+  position: relative;
+  z-index: 1;
+}
+
+.media-lightbox__terminal {
+  border-radius: 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(47, 228, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(5, 13, 21, 0.94), rgba(3, 8, 14, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.media-lightbox__viewer {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid rgba(47, 228, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(2, 7, 12, 0.96), rgba(1, 4, 8, 0.98));
+}
+
+.media-lightbox__viewer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(2, 6, 12, 0.18) 50%, rgba(2, 6, 12, 0.32) 100%),
+    repeating-linear-gradient(
+      180deg,
+      rgba(123, 230, 255, 0.06) 0 1px,
+      transparent 1px 4px
+    ),
+    linear-gradient(
+      90deg,
+      transparent 0 9%,
+      rgba(47, 228, 255, 0.05) 9.2% 9.6%,
+      transparent 9.8% 91%,
+      rgba(176, 77, 255, 0.04) 91.2% 91.6%,
+      transparent 91.8% 100%
+    );
+  opacity: 0.52;
+  animation: terminalGridDrift 14s linear infinite;
+}
+
+.media-lightbox__meta {
+  border-radius: 12px;
+  border: 1px solid rgba(47, 228, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(5, 12, 20, 0.92), rgba(3, 8, 14, 0.96));
+}
+
+.media-lightbox__close {
+  border-radius: 10px;
+  background: rgba(4, 11, 19, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: border-color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.media-lightbox__close:hover,
+.media-lightbox__close:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(47, 228, 255, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(47, 228, 255, 0.14),
+    0 0 16px rgba(47, 228, 255, 0.18);
+}
+
+@keyframes headerSpectrumFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 240% 50%;
+  }
+}
+
+@keyframes spectrumSpin {
+  0% {
+    transform: rotate(0turn);
+  }
+  100% {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes terminalGridDrift {
+  0% {
+    transform: translateY(-1.5%);
+    opacity: 0.54;
+  }
+  50% {
+    transform: translateY(1.5%);
+    opacity: 0.74;
+  }
+  100% {
+    transform: translateY(-1.5%);
+    opacity: 0.54;
+  }
+}
