@@ -45,7 +45,12 @@ Key changes included:
 <img width="1704" height="913" alt="Screenshot 2026-03-09 224551" src="https://github.com/user-attachments/assets/b182b163-a485-4532-839d-9ca406ba0492" />
 <img width="1698" height="871" alt="Screenshot 2026-03-09 144352" src="https://github.com/user-attachments/assets/fa1770a2-e483-4138-81f5-6d36b53270ba" />
 <img width="1715" height="911" alt="Screenshot 2026-03-09 140950" src="https://github.com/user-attachments/assets/37776f53-c735-4a03-bca7-54fc10c8e732" />
-![lines-code-software-several-colors-notebook-closeup-photo-front-end-applications-color-concept-developer-working-269120023 (1)](https://github.com/user-attachments/assets/8598ccf4-d27d-4529-9047-451202495c1a)
+![lines-code-software-several-colors-notebook-closeup-photo-front-end-applications-color-concept-developer-working-269120023 (1)](https://github.com/user-attachments/assets/4b69e12b-630d-4ba3-a0f7-b49ceabe9552)
+
+
+
+
+
 
 
 
@@ -89,6 +94,10 @@ Suggested improvements included:
 - Bring the glitch effect into the sub-page headings.
 - Add a slow automatic helix rotation on the main page.
 - Add a delayed prompt after 10 seconds of inactivity telling the user to scroll and click covers.
+
+
+
+<img width="900" height="600" alt="1038116 (1)" src="https://github.com/user-attachments/assets/c4425abb-7907-4fe8-bbd5-6b0cc365fb64" />
 
 ### 22/03
 Updated the CSS for the website folders and sub-pages.
