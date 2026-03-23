@@ -269,6 +269,7 @@ const introState = {
 };
 
 let introCoverOpacity = 1;
+let settledModelYaw = CFG.modelYaw;
 
 const coverWorldData = ORBIT_ITEMS.map(() => ({
   position: new THREE.Vector3(),
@@ -873,6 +874,7 @@ async function beginPortfolioIntro() {
   setIntroPromptVisible(false);
   setIntroCoverReveal(0);
   setIntroSceneVisibility(false);
+  settledModelYaw = centralModel ? centralModel.rotation.y : settledModelYaw;
 
   hoveredEntry = null;
   activeEntry = null;
@@ -962,6 +964,10 @@ function updatePortfolioIntro(elapsed) {
   }
 
   if (revealProgress >= 1) {
+    if (centralModel) {
+      settledModelYaw = centralModel.rotation.y;
+    }
+
     introState.active = false;
     introState.complete = true;
     setIntroPromptVisible(false);
@@ -2804,9 +2810,11 @@ function refreshAnimatedModelSampleData() {
 function updateBinaryModel(delta, elapsed) {
   if (!centralModel || !modelGlyphMaterial) return;
 
-  // Keep the center model facing the active camera for the intro and after it.
-  // This avoids the visible snap back to the old idle yaw when the intro ends.
-  orientModelToCamera();
+  if (introState.active) {
+    orientModelToCamera();
+  } else {
+    centralModel.rotation.y = settledModelYaw + Math.sin(elapsed * 0.30) * 0.018;
+  }
 
   if (centralModelMixer) {
     centralModelMixer.update(delta);
