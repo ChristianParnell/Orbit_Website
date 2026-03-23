@@ -159,6 +159,7 @@ Additional changes included:
 - add an idle terminal-network scan effect to the media cards
 - added a moving spectrum border on hover for the cards and the opened lightbox dialog
 - update the gallery page text so it no longer mentions quick navigation
+<img width="1037" height="798" alt="Screenshot 2026-03-24 003248" src="https://github.com/user-attachments/assets/98748ef6-d9e4-4df6-8493-e028c92a1ee9" />
 
 ### Further:
 - Added a more cinematic landing experience with a camera fly-in intro.
@@ -169,7 +170,9 @@ Additional changes included:
 - Cleaned up visual clutter on the main page.
 - Increased the landing-page background blur for a cleaner, more focused first impression.
 - Spent the latest pushes restoring and stabilizing render-page.js after shared subpage syntax errors appeared.
+<img width="954" height="696" alt="wd" src="https://github.com/user-attachments/assets/020ecaac-9763-47a3-a00f-011c19ff4488" />
 
   
 ## Final Product: 
+<img width="1898" height="944" alt="qsq" src="https://github.com/user-attachments/assets/4cce46fd-d649-4e3e-89fa-e865c04d86c7" />
 
