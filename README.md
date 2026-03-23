@@ -112,7 +112,7 @@ Additional upgrades included:
 - A more terminal-like lightbox style
 - Low-opacity code-rain layers in hero areas
 
-The gallery interactions were pushed further with binary particle hover effects and more responsive media-card behaviour. Overall, the site became more colourful, more technical, more polished, and more consistent with the main website’s visual language.
+The gallery interactions were pushed further with binary particle hover effects and more responsive media-card behaviour. Overall, the site became more colourful and polished and more consistent with the main website’s visual theme.
 
 ### Later 22/03 Adjustments
 Spent more time refining the sub-page content and interaction behaviour.
@@ -128,10 +128,19 @@ Additional changes included:
 ### 23/03
 - remove the shared subpage navigation feature
 - replace the header styling with a looping loader-spectrum effect based on your main-site loading bar colors
-- remove the moving shine sweep from the gallery cards/lightbox styling
-- add an idle terminal/network scan effect to the media cards
-- add a moving spectrum border on hover for the cards and the opened lightbox dialog
+- add an idle terminal-network scan effect to the media cards
+- added a moving spectrum border on hover for the cards and the opened lightbox dialog
 - update the gallery page text so it no longer mentions quick navigation
 
+** Further:
+-Added a more cinematic landing experience with a camera fly-in intro.
+-Several polish fixes were also made to restore the correct placement of UI elements like the quick access panel
+-Brightened and strengthened cover/header visibility where they had become too dark.
+-Updated gallery media labels from generic actions like “Play” and “View” toward clearer wording such as “Video” and “Image.”
+-Removed Covers and pormpts of the main page untill intro finished.
+-Cleaned up visual clutter on the main page.
+-Increased the landing-page background blur for a cleaner, more focused first impression.
+-Spent the latest pushes restoring and stabilizing render-page.js after shared subpage syntax errors appeared.
 ## Notes
-
+Addition to future futher changes-
+Inside the Gallery, when acessing a video lightbox, as the user hovers over the opened lightbox the border seems to spin. this was not deisered.
