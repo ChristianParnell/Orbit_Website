@@ -20,6 +20,9 @@ Refined the folder helix effect. The speed and corkscrew spiral around the model
 ### 02/03
 Worked through major lighting issues. Light from the sky sphere was casting additional light onto the folder covers. I fixed that problem, but the model was still unlit and corrupted because the GL file could not be accessed properly for textures.
 
+
+<img width="1870" height="899" alt="Screenshot 2026-03-09 122534" src="https://github.com/user-attachments/assets/a24d49d0-dbb8-437c-89cf-abfa05b766b9" />
+
 ### 04/03
 Re-imported and resized the model. The rock base became larger and covered more of the bottom of the scene. This improved the overall flow of the helix folders moving up the website and made the composition feel more convincing.
 
@@ -38,6 +41,13 @@ Key changes included:
 - Generated an AI code-flux background video with low transparency to support the blue palette.
 - Added binary streams escaping from the central model into the cover files, with numbers scaling up as they approach the covers.
 - Added a random “breach” event where a cover file appears infected and code gets sucked into it.
+
+<img width="1704" height="913" alt="Screenshot 2026-03-09 224551" src="https://github.com/user-attachments/assets/b182b163-a485-4532-839d-9ca406ba0492" />
+<img width="1698" height="871" alt="Screenshot 2026-03-09 144352" src="https://github.com/user-attachments/assets/fa1770a2-e483-4138-81f5-6d36b53270ba" />
+<img width="1715" height="911" alt="Screenshot 2026-03-09 140950" src="https://github.com/user-attachments/assets/37776f53-c735-4a03-bca7-54fc10c8e732" />
+![lines-code-software-several-colors-notebook-closeup-photo-front-end-applications-color-concept-developer-working-269120023 (1)](https://github.com/user-attachments/assets/8598ccf4-d27d-4529-9047-451202495c1a)
+
+
 
 These changes made the website feel much more active, chaotic, and visually complete.
 
