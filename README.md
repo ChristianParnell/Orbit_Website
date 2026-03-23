@@ -43,6 +43,8 @@ These changes made the website feel much more active, chaotic, and visually comp
 
 ### 10/03
 Made a model using Blender and animated it.
+
+
 <img width="607" height="624" alt="Screenshot 2026-03-09 224854" src="https://github.com/user-attachments/assets/6ce6480d-d007-4ca7-bed3-bec2955d0882" />
 
 ### 12/03
