@@ -42,7 +42,7 @@ Key changes included:
 These changes made the website feel much more active, chaotic, and visually complete.
 
 ### 10/03
-Made a model using Blender and animated it- and Added animations from Maximo to save time.
+Made a model using Blender and animated it.
 
 ### 12/03
 Worked on render performance to reduce strain on the GPU and CPU.
