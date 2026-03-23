@@ -45,6 +45,8 @@ Key changes included:
 <img width="1704" height="913" alt="Screenshot 2026-03-09 224551" src="https://github.com/user-attachments/assets/b182b163-a485-4532-839d-9ca406ba0492" />
 <img width="1698" height="871" alt="Screenshot 2026-03-09 144352" src="https://github.com/user-attachments/assets/fa1770a2-e483-4138-81f5-6d36b53270ba" />
 <img width="1715" height="911" alt="Screenshot 2026-03-09 140950" src="https://github.com/user-attachments/assets/37776f53-c735-4a03-bca7-54fc10c8e732" />
+
+
 ![lines-code-software-several-colors-notebook-closeup-photo-front-end-applications-color-concept-developer-working-269120023 (1)](https://github.com/user-attachments/assets/4b69e12b-630d-4ba3-a0f7-b49ceabe9552)
 
 
