@@ -13,6 +13,7 @@ Added fog to the site, but it broke the visual result. After troubleshooting, it
 
 ### 28/02
 Ran into layout problems where the tiles were too far away from the model, making the scene feel too wide and open. I adjusted the composition and brought everything closer to the centre.
+<img width="2048" height="1198" alt="wdwdw" src="https://github.com/user-attachments/assets/5c5470fd-6133-445e-b632-c5062d191603" />
 
 ### 01/03
 Refined the folder helix effect. The speed and corkscrew spiral around the model were too fast, so I slowed and improved them. I also created more spacing between folders so the model would be more visible.
@@ -28,6 +29,7 @@ Re-imported and resized the model. The rock base became larger and covered more 
 
 ### 05/03
 The model still had no texture, and the issue could not be resolved at the time. I decided to stop pushing that problem for now and return to it later. I also adjusted folder title placement, since the titles were sitting too far away from the folders, and both the folder and title were fading too far from the camera.
+<img width="1840" height="915" alt="dwwd" src="https://github.com/user-attachments/assets/ee187fad-306f-42bf-905f-f604451a8d39" />
 
 ### 09/03
 Made the largest redesign so far. I completely reworked the website into a **code-breaking / corrupted files** visual style.
@@ -42,13 +44,13 @@ Key changes included:
 - Added binary streams escaping from the central model into the cover files, with numbers scaling up as they approach the covers.
 - Added a random “breach” event where a cover file appears infected and code gets sucked into it.
 
-<img width="1704" height="913" alt="Screenshot 2026-03-09 224551" src="https://github.com/user-attachments/assets/b182b163-a485-4532-839d-9ca406ba0492" />
 <img width="1698" height="871" alt="Screenshot 2026-03-09 144352" src="https://github.com/user-attachments/assets/fa1770a2-e483-4138-81f5-6d36b53270ba" />
 <img width="1715" height="911" alt="Screenshot 2026-03-09 140950" src="https://github.com/user-attachments/assets/37776f53-c735-4a03-bca7-54fc10c8e732" />
 
 
 ![lines-code-software-several-colors-notebook-closeup-photo-front-end-applications-color-concept-developer-working-269120023 (1)](https://github.com/user-attachments/assets/4b69e12b-630d-4ba3-a0f7-b49ceabe9552)
 
+<img width="1704" height="913" alt="Screenshot 2026-03-09 224551" src="https://github.com/user-attachments/assets/da61d6b0-8280-499a-a588-56bce8453fcf" />
 
 
 
@@ -59,10 +61,13 @@ Key changes included:
 These changes made the website feel much more active, chaotic, and visually complete.
 
 ### 10/03
-Made a model using Blender and animated it.
+Made Animations.
+
 
 
 <img width="607" height="624" alt="Screenshot 2026-03-09 224854" src="https://github.com/user-attachments/assets/6ce6480d-d007-4ca7-bed3-bec2955d0882" />
+
+<img width="556" height="679" alt="Screenshot 2026-03-09 224746" src="https://github.com/user-attachments/assets/95e72f65-162e-4162-9538-84264cdacc7b" />
 
 ### 12/03
 Worked on render performance to reduce strain on the GPU and CPU.
