@@ -813,8 +813,7 @@ function orientModelToCamera(targetPosition = camera.position) {
   const dx = targetPosition.x - centralModel.position.x;
   const dz = targetPosition.z - centralModel.position.z;
 
-  centralModel.rotation.x = 0;
-  centralModel.rotation.z = 0;
+  // Keep the model's original upright pose and only adjust horizontal yaw.
   centralModel.rotation.y = Math.atan2(dx, dz) + INTRO_CFG.modelFaceOffset;
 }
 
@@ -2575,7 +2574,8 @@ function updateLabels() {
       const glitchMix =
         (1 - entry.hoverValue) * (0.55 + audioReactiveLevel * 0.90) + breachBonus;
 
-      entry.labelNode.style.opacity = `${titleFade}`;
+      const labelOpacity = THREE.MathUtils.clamp(Math.pow(titleFade, 0.72), 0, 1);
+      entry.labelNode.style.opacity = `${labelOpacity}`;
       entry.labelNode.style.transform =
         `translate(calc(${x}px - 100%), calc(${y}px - 50%)) scale(${titleScale})`;
       entry.labelNode.style.setProperty("--label-glitch", glitchMix.toFixed(3));
@@ -2605,7 +2605,7 @@ function updateLabels() {
       const pathData = `M ${startX.toFixed(2)} ${startY.toFixed(2)} L ${elbowAX.toFixed(2)} ${elbowAY.toFixed(2)} L ${elbowBX.toFixed(2)} ${elbowBY.toFixed(2)} L ${labelExitX.toFixed(2)} ${labelExitY.toFixed(2)}`;
       const connectorOpacity = Math.min(
         0.96,
-        titleFade * (0.40 + entry.hoverValue * 0.34 + entry.breachValue * 0.20)
+        Math.pow(titleFade, 0.76) * (0.46 + entry.hoverValue * 0.34 + entry.breachValue * 0.20)
       );
 
       entry.connectorGroup.style.opacity = `${connectorOpacity}`;
