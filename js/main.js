@@ -810,11 +810,12 @@ function setIntroSceneVisibility(visible) {
 function orientModelToCamera(targetPosition = camera.position) {
   if (!centralModel) return;
 
-  working.vF.copy(targetPosition);
-  working.vF.y = centralModel.position.y + 0.4;
+  const dx = targetPosition.x - centralModel.position.x;
+  const dz = targetPosition.z - centralModel.position.z;
 
-  centralModel.lookAt(working.vF);
-  centralModel.rotateY(INTRO_CFG.modelFaceOffset);
+  centralModel.rotation.x = 0;
+  centralModel.rotation.z = 0;
+  centralModel.rotation.y = Math.atan2(dx, dz) + INTRO_CFG.modelFaceOffset;
 }
 
 function setIntroCoverReveal(value) {
