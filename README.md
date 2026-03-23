@@ -18,7 +18,7 @@ Ran into layout problems where the tiles were too far away from the model, makin
 
 ### 01/03
 Refined the folder helix effect. The speed and corkscrew spiral around the model were too fast, so I slowed and improved them. I also created more spacing between folders so the model would be more visible.
-<img width="2048" height="1198" alt="wdwdw" src="https://github.com/user-attachments/assets/5c5470fd-6133-445e-b632-c5062d191603" />
+
 ### 02/03
 Worked through major lighting issues. Light from the sky sphere was casting additional light onto the folder covers. I fixed that problem, but the model was still unlit and corrupted because the GL file could not be accessed properly for textures.
 
@@ -26,7 +26,7 @@ Worked through major lighting issues. Light from the sky sphere was casting addi
 
 ### 04/03
 Re-imported and resized the model. The rock base became larger and covered more of the bottom of the scene. This improved the overall flow of the helix folders moving up the website and made the composition feel more convincing.
-
+<img width="2048" height="1198" alt="wdwdw" src="https://github.com/user-attachments/assets/5c5470fd-6133-445e-b632-c5062d191603" />
 ### 05/03
 The model still had no texture, and the issue could not be resolved at the time. I decided to stop pushing that problem for now and return to it later. I also adjusted folder title placement, since the titles were sitting too far away from the folders, and both the folder and title were fading too far from the camera.
 
