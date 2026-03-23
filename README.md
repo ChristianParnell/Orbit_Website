@@ -21,16 +21,15 @@ Refined the folder helix effect. The speed and corkscrew spiral around the model
 ### 02/03
 Worked through major lighting issues. Light from the sky sphere was casting additional light onto the folder covers. I fixed that problem, but the model was still unlit and corrupted because the GL file could not be accessed properly for textures.
 
-
-<img width="1870" height="899" alt="Screenshot 2026-03-09 122534" src="https://github.com/user-attachments/assets/a24d49d0-dbb8-437c-89cf-abfa05b766b9" />
+<img width="1840" height="915" alt="dwwd" src="https://github.com/user-attachments/assets/ee187fad-306f-42bf-905f-f604451a8d39" />
 
 ### 04/03
 Re-imported and resized the model. The rock base became larger and covered more of the bottom of the scene. This improved the overall flow of the helix folders moving up the website and made the composition feel more convincing.
 
 ### 05/03
 The model still had no texture, and the issue could not be resolved at the time. I decided to stop pushing that problem for now and return to it later. I also adjusted folder title placement, since the titles were sitting too far away from the folders, and both the folder and title were fading too far from the camera.
-<img width="1840" height="915" alt="dwwd" src="https://github.com/user-attachments/assets/ee187fad-306f-42bf-905f-f604451a8d39" />
 
+<img width="1870" height="899" alt="Screenshot 2026-03-09 122534" src="https://github.com/user-attachments/assets/a24d49d0-dbb8-437c-89cf-abfa05b766b9" />
 ### 09/03
 Made the largest redesign so far. I completely reworked the website into a **code-breaking / corrupted files** visual style.
 
