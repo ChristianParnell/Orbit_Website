@@ -125,5 +125,13 @@ Additional changes included:
 - Created a visual connection between the headers and page covers so they feel linked through the same network system.
 - Increased the force threshold for the trip/orbit scroll effect because it was previously too gentle.
 
+### 23/03
+- remove the shared subpage navigation feature
+- replace the header styling with a looping loader-spectrum effect based on your main-site loading bar colors
+- remove the moving shine sweep from the gallery cards/lightbox styling
+- add an idle terminal/network scan effect to the media cards
+- add a moving spectrum border on hover for the cards and the opened lightbox dialog
+- update the gallery page text so it no longer mentions quick navigation
+
 ## Notes
 
