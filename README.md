@@ -13,11 +13,12 @@ Added fog to the site, but it broke the visual result. After troubleshooting, it
 
 ### 28/02
 Ran into layout problems where the tiles were too far away from the model, making the scene feel too wide and open. I adjusted the composition and brought everything closer to the centre.
-<img width="2048" height="1198" alt="wdwdw" src="https://github.com/user-attachments/assets/5c5470fd-6133-445e-b632-c5062d191603" />
+<img width="2048" height="1422" alt="Screenshot 2026-03-05 185929" src="https://github.com/user-attachments/assets/a5dec10b-8707-422f-ba22-4476c0aa1c7e" />
+
 
 ### 01/03
 Refined the folder helix effect. The speed and corkscrew spiral around the model were too fast, so I slowed and improved them. I also created more spacing between folders so the model would be more visible.
-
+<img width="2048" height="1198" alt="wdwdw" src="https://github.com/user-attachments/assets/5c5470fd-6133-445e-b632-c5062d191603" />
 ### 02/03
 Worked through major lighting issues. Light from the sky sphere was casting additional light onto the folder covers. I fixed that problem, but the model was still unlit and corrupted because the GL file could not be accessed properly for textures.
 
