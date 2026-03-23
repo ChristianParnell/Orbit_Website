@@ -165,7 +165,7 @@ Additional changes included:
 - Cleaned up visual clutter on the main page.
 - Increased the landing-page background blur for a cleaner, more focused first impression.
 - Spent the latest pushes restoring and stabilizing render-page.js after shared subpage syntax errors appeared.
-- 
-## Notes
-Addition to future futher changes-
-Inside the Gallery, when acessing a video lightbox, as the user hovers over the opened lightbox the border seems to spin. this was not deisered.
+
+  
+## Final Product: 
+
