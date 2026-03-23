@@ -1161,22 +1161,13 @@ video {
 .media-card__trigger:focus-visible .media-card__frame::before,
 .media-card:hover .media-card__frame::before,
 .media-card:focus-within .media-card__frame::before {
-  background: conic-gradient(
-    from 0deg,
-    var(--loader-green),
-    var(--loader-cyan),
-    var(--loader-blue),
-    var(--loader-purple),
-    var(--loader-pink),
-    var(--loader-orange),
-    var(--loader-yellow),
-    var(--loader-green)
-  );
-  opacity: 1;
-  animation: spectrumSpin 2.8s linear infinite;
+  background:
+    linear-gradient(180deg, rgba(47, 228, 255, 0.18), rgba(75, 125, 255, 0.06)),
+    linear-gradient(90deg, rgba(47, 228, 255, 0.22), rgba(255, 255, 255, 0.04));
+  opacity: 0.9;
   box-shadow:
-    0 0 0 1px rgba(47, 228, 255, 0.18),
-    0 0 22px rgba(47, 228, 255, 0.22);
+    0 0 0 1px rgba(47, 228, 255, 0.14),
+    0 0 14px rgba(47, 228, 255, 0.12);
 }
 
 .media-card__trigger:hover .media-card__frame::after,
