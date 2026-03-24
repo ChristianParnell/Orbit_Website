@@ -74,7 +74,7 @@ Made Animations.
 ### 12/03
 Worked on render performance to reduce strain on the GPU and CPU.
 
-Implemented the following limits:
+Implemented the following limits to the Js.main script:
 - `modelPointLimit: 8000`
 - `streamPerCover: 120`
 - `focusTunnelParticles: 180`
