@@ -36,7 +36,8 @@ Made the largest redesign so far. I completely reworked the website into a **cod
 
 Key changes included:
 - Introduced binary-style animated visuals inspired by a reference I found online.
-  Refrence: https://www.pond5.com/stock-footage/item/311123919-binary-code-human-face-disintegrating-animation?dd_referrer=https%3A%2F%2Fwww.google.com%2F
+- 
+  Refrence: [https://www.pond5.com/stock-footage/item/311123919-binary-code-human-face-disintegrating-animation?dd_referrer=https%3A%2F%2Fwww.google.com%2F](https://www.vecteezy.com/video/66877641-binary-code-human-face-disintegrating-animation)
 - Used ChatGPT to help modify the CSS and `main.js` for binary effects.
 - Made the centre model transparent and switched to a solid dark-blue background.
 - Built a colour ramp from Adobe Color palettes and used it to drive the binary visuals.
