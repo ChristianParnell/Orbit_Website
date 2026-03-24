@@ -179,6 +179,6 @@ Additional changes included:
 
   
 ## Final Product: 
-Overall, I am very pleased with the outcome of this project. My design goal was to create a website that resembled a digital network or matrix-like system, and I feel I came close to achieving that vision. This is most evident on the main page, where the network aesthetic is strongest. In contrast, the subpages act as a kind of sanctuary from the chaos of the homepage. I believe this works well for their purpose, as they function more like professional portfolio pages, with a cleaner and more corporate feel, while still retaining elements of design and subtle colour.
+Overall, I am very pleased with the outcome of this project. My design goal was to create a website that resembled a digital network or matrix-like system, and I feel I came close to achieving that vision. This is most evident on the main page, where the network aesthetic is strongest. In contrast, the subpages act as a kind of sanctuary from the chaos of the homepage. I believe this works well for their purpose, as they function more like professional portfolio pages, with a cleaner and more corporate feel, while still retaining elements of design and subtle colour. In relation to this website, these themes i felt resembled my portfolio as I do alot of coding with C++, probably more than any other design or modeling work. Which brough me to this matrix effect theme.
 <img width="1898" height="944" alt="qsq" src="https://github.com/user-attachments/assets/4cce46fd-d649-4e3e-89fa-e865c04d86c7" />
 
