@@ -6,8 +6,8 @@
 Spent the day learning how to build the website from scratch. I explored HTML and coding with help from ChatGPT, which gave me the information I needed to start creating the site. I was not used to HTML or C#, so this felt like a strong introduction and sparked a new interest in coding.
 
 ### 25/02
-Worked on setting up the pages during lecture time. I ran into issues with live server hosting through Visual Studio, so I shifted toward using **GitHub Pages** instead. This became an important solution for launching and editing the site online. Went and worked on the foundations of the website, primaryly collecting inspiration most notably: https://paperplanes.world/
-Paper planes website has a center model which I want to use as a model of my self instead and instead of planes maybe profiles. Included these to make a base for this website. 
+Worked on setting up the pages during lecture time. I ran into issues with live server hosting through Visual Studio, so I shifted toward using **GitHub Pages** instead. This became an important solution for launching and editing the site online. Went and worked on the foundations of the website, primarly collecting inspiration, most notably from: https://paperplanes.world/
+Paper planes website has a center model which I want to use as a model of my self instead and instead of planes maybe profiles. Included these to make a base for this website. Possibly work on API if there is time in future. 
 
 ### 27/02
 Added fog to the site, but it broke the visual result. After troubleshooting, it seemed the issue came from transparency and the opacity map.
