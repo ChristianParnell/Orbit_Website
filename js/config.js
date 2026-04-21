@@ -64,18 +64,7 @@ export const ASSETS = {
 };
 
 export const MOTH_ASSETS = {
-  modelFBX: "./assets/models/moth/moth.fbx",
-  modelGLB: "",
-  modelGLTF: "",
-  motions: {
-    fly: "./assets/models/moth/F_Fly.fbx",
-    flySad: "./assets/models/moth/F_Fly_Sad.fbx",
-    land: "./assets/models/moth/F_Land.fbx",
-    perch: "./assets/models/moth/F_Land_Idle.fbx",
-    takeoff: "./assets/models/moth/F_Land_to_TakeOff.fbx",
-    feed: "./assets/models/moth/F_Void_Inspect.fbx",
-    backflip: "./assets/models/moth/F_Backflip.fbx"
-  }
+  modelFBX: "./assets/models/moth/moth.fbx"
 };
 
 export const SCENE_CONFIG = {
