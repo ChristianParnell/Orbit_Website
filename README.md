@@ -194,6 +194,24 @@ This Spectral Moth will feed off of code corruption within the website, The moth
 
 Additional: the Spectral Moth feeds of Glitch voids that can be created by the User, These glitch voids are made but left clicking in an open space, this will attract the spectral moth to that location to feed off the corription, if not fed in a while the spectral moth will become hungry and slow down, and possibly show sadness.
 
+### 15/04
+Created The Moth Model, Rigged the model. 
+<img width="1102" height="600" alt="Screenshot 2026-04-21 125534" src="https://github.com/user-attachments/assets/6edbc467-0066-45cb-85b0-f2370f0bc615" />
+
+### 19/04
+Added Animations to Moth Model- Comprised of :
+        -F_Fly
+        -F_Fly_Sad
+        -F_Land
+        -F_Land_Idle
+        -F_Land_to_TakeOff
+        -F_Void_Inspect
+        -F_Backflip
+
+Anmiation for behaviours within the website, May still make changed easily as its only an FBX file. 
+<img width="540" height="854" alt="Animations_Stored" src="https://github.com/user-attachments/assets/228b4b76-6eea-4b82-b85f-ea6e157de440" />
+<img width="954" height="571" alt="Screenshot 2026-04-21 125454" src="https://github.com/user-attachments/assets/66face92-1d7c-4319-b7a4-a19d49a4d779" />
+
 
 
 
