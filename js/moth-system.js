@@ -17,7 +17,7 @@ const DEFAULT_CONFIG = {
   pointLimit: 680,
   outlinePointLimit: 420,
   sizeRatioToModelHeight: 0.0936,
-  modelYawOffset: Math.PI / 2,
+  modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   shellMotionStrength: 1.25,
@@ -41,21 +41,21 @@ const DEFAULT_CONFIG = {
   trailPointSizeMax: 1.3,
   trailAlpha: 0.78,
 
-  patrolRadiusMin: 1.75,
-  patrolRadiusMax: 3.40,
-  patrolHeightMin: -0.10,
-  patrolHeightMax: 1.55,
-  patrolFrontMin: 0.35,
-  patrolFrontMax: 1.35,
-  patrolSideSpan: 1.25,
-  patrolViewMargin: 0.78,
+  patrolRadiusMin: 3.0,
+  patrolRadiusMax: 8.8,
+  patrolHeightMin: -0.25,
+  patrolHeightMax: 1.35,
+  patrolFrontMin: 0.65,
+  patrolFrontMax: 2.75,
+  patrolSideSpan: 2.35,
+  patrolViewMargin: 0.88,
   patrolViewYMin: -0.48,
-  patrolViewYMax: 0.46,
+  patrolViewYMax: 0.30,
   patrolRepickMin: 1.8,
   patrolRepickMax: 3.4,
-  patrolRecoveryMargin: 0.96,
+  patrolRecoveryMargin: 0.92,
   patrolRecoverySpeedScale: 1.2,
-  patrolCenterPull: 0.12,
+  patrolCenterPull: 0.06,
 
 
   flySpeed: 1.55,
@@ -652,7 +652,7 @@ export class MothSystem {
       screen: new THREE.Vector3()
     };
 
-    this.root.position.copy(this.orbitCenter).add(new THREE.Vector3(0.25, 0.95, 0.55));
+    this.root.position.copy(interest).add(new THREE.Vector3(0.25, 0.95, 0.55));
 
     this.initVoidVisuals();
     this.restoreNests();
@@ -1317,6 +1317,19 @@ export class MothSystem {
     this.voidGroup.visible = this.visible;
   }
 
+  getInterestCenter(out = new THREE.Vector3()) {
+    if (!this.centralModel) return out.copy(this.orbitCenter);
+
+    this.temp.bbox.setFromObject(this.centralModel);
+    if (this.temp.bbox.isEmpty()) return out.copy(this.orbitCenter);
+
+    this.temp.bbox.getCenter(out);
+    this.temp.bbox.getSize(this.temp.size);
+
+    out.y = this.temp.bbox.min.y + this.temp.size.y * 0.52;
+    return out;
+  }
+
   worldPointComfortablyVisible(world, margin = this.cfg.patrolViewMargin) {
     this.temp.screen.copy(world).project(this.camera);
     return (
@@ -1329,7 +1342,8 @@ export class MothSystem {
   }
 
   clampPointNearCenter(point) {
-    const offset = this.temp.b.copy(point).sub(this.orbitCenter);
+    const interest = this.getInterestCenter(this.temp.d);
+    const offset = this.temp.b.copy(point).sub(interest);
     const horizontal = this.temp.c.set(offset.x, 0, offset.z);
     const horizontalLen = horizontal.length();
 
@@ -1340,21 +1354,22 @@ export class MothSystem {
       else horizontal.setLength(this.cfg.patrolRadiusMin);
     }
 
-    point.x = this.orbitCenter.x + horizontal.x;
-    point.z = this.orbitCenter.z + horizontal.z;
-    point.y = THREE.MathUtils.clamp(point.y, this.orbitCenter.y + this.cfg.patrolHeightMin, this.orbitCenter.y + this.cfg.patrolHeightMax);
+    point.x = interest.x + horizontal.x;
+    point.z = interest.z + horizontal.z;
+    point.y = THREE.MathUtils.clamp(point.y, interest.y + this.cfg.patrolHeightMin, interest.y + this.cfg.patrolHeightMax);
     return point;
   }
 
   getRecoveryPatrolPoint() {
+    const interest = this.getInterestCenter(this.temp.e);
     const camForward = this.temp.a.set(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
     const camRight = this.temp.b.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
 
     const p = new THREE.Vector3()
-      .copy(this.orbitCenter)
-      .addScaledVector(camForward, 0.46)
-      .addScaledVector(camRight, THREE.MathUtils.clamp(this.temp.screen.x * 0.42, -0.34, 0.34));
-    p.y = this.orbitCenter.y + 0.46;
+      .copy(interest)
+      .addScaledVector(camForward, Math.max(0.7, this.cfg.patrolFrontMin * 0.85))
+      .addScaledVector(camRight, THREE.MathUtils.clamp(this.temp.screen.x * 0.55, -0.65, 0.65));
+    p.y = interest.y + 0.18;
     return this.clampPointNearCenter(p);
   }
 
@@ -1406,12 +1421,14 @@ export class MothSystem {
     if (camRight.lengthSq() < 0.0001) camRight.set(1, 0, 0);
     camRight.normalize();
 
+    const interest = this.getInterestCenter(this.temp.e);
+
     let candidate = null;
     for (let i = 0; i < 28; i += 1) {
       const front = randomFromRange(this.cfg.patrolFrontMin, this.cfg.patrolFrontMax);
       const side = randomFromRange(-this.cfg.patrolSideSpan, this.cfg.patrolSideSpan);
       const verticalT = Math.pow(Math.random(), 1.65);
-      const y = this.orbitCenter.y + THREE.MathUtils.lerp(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax, verticalT);
+      const y = interest.y + THREE.MathUtils.lerp(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax, verticalT);
 
       const p = new THREE.Vector3()
         .copy(this.orbitCenter)
@@ -1421,7 +1438,7 @@ export class MothSystem {
       p.y = y;
       this.clampPointNearCenter(p);
 
-      const centerBlend = this.temp.c.copy(this.orbitCenter).lerp(p, 1.0 - this.cfg.patrolCenterPull);
+      const centerBlend = this.temp.c.copy(interest).lerp(p, 1.0 - this.cfg.patrolCenterPull);
       p.copy(centerBlend);
 
       if (this.worldPointComfortablyVisible(p) || i === 27) {
