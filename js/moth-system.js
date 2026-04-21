@@ -620,7 +620,7 @@ export class MothSystem {
 
     this.modelRoot.traverse((child) => {
       if (!child.isMesh) return;
-      child.visible = true;
+      child.visible = false;
       child.frustumCulled = false;
       if (child.geometry && !child.geometry.attributes.normal && typeof child.geometry.computeVertexNormals === "function") {
         child.geometry.computeVertexNormals();
