@@ -1,7 +1,8 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { GLTFLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
-import { ASSETS, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
+import { ASSETS, MOTH_ASSETS, MOTH_CONFIG, ORBIT_ITEMS, SCENE_CONFIG } from "./config.js";
+import { MothSystem } from "./moth-system.js";
 
 const CFG = {
   ...SCENE_CONFIG,
@@ -214,6 +215,8 @@ let audioSourceNode = null;
 let audioAnalyser = null;
 let audioData = null;
 let audioReactiveLevel = 0.10;
+
+let mothSystem = null;
 
 let nextDebugEventAt = 0;
 let lastHoveredDebugKey = "";
@@ -1049,6 +1052,27 @@ function updateQuickNav() {
   });
 }
 
+function initMothSystem() {
+  if (!centralModel || mothSystem) return;
+
+  mothSystem = new MothSystem({
+    scene,
+    camera,
+    renderer,
+    orbitRoot,
+    centralModel,
+    glyphAtlas,
+    palette: PALETTE,
+    lightDir: LIGHT_DIR,
+    assets: MOTH_ASSETS,
+    config: MOTH_CONFIG,
+    coverSize: { width: CFG.flagWidth, height: CFG.flagHeight },
+    orbitCenter: ORBIT_CENTER,
+    debug: pushDebugEvent,
+    getElapsed: () => clock.elapsedTime
+  });
+}
+
 function buildRelationSystem() {
   relationSystem.group = new THREE.Group();
   scene.add(relationSystem.group);
@@ -1171,6 +1195,7 @@ function setupLoadedModel(modelRoot, animations = []) {
   buildBinaryModelRepresentation();
   buildStreamSystem();
   buildFocusTunnelSystem();
+  initMothSystem();
 
   centralModel.traverse((child) => {
     if (child.isMesh) child.visible = false;
@@ -1206,6 +1231,7 @@ function createFallbackModel() {
   buildBinaryModelRepresentation();
   buildStreamSystem();
   buildFocusTunnelSystem();
+  initMothSystem();
 }
 
 function centerAndScaleModel(model) {
@@ -2079,9 +2105,16 @@ function attachEvents() {
     registerInteraction();
   });
 
-  window.addEventListener("click", () => {
+  window.addEventListener("click", (event) => {
     if (!hasEntered || introState.active || !introState.complete) return;
     registerInteraction();
+
+    if (mothSystem?.handleClick(event, hoveredEntry)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     if (hoveredEntry) {
       window.location.href = hoveredEntry.item.href;
     }
@@ -2314,6 +2347,25 @@ function animate() {
   updateBinaryModel(delta, elapsed);
   updateStreamParticles(delta, elapsed);
   updateFocusTunnel(delta, elapsed);
+
+  if (mothSystem) {
+    const hoveredIndex = hoveredEntry ? flagEntries.indexOf(hoveredEntry) : -1;
+    const activeIndex = activeEntry ? flagEntries.indexOf(activeEntry) : -1;
+
+    mothSystem.update({
+      delta,
+      elapsed,
+      introActive: introState.active,
+      introComplete: introState.complete,
+      hoveredEntry,
+      hoveredIndex,
+      activeEntry,
+      activeIndex,
+      coverWorldData,
+      audioReactiveLevel
+    });
+  }
+
   updateDebugTerminal(elapsed);
 
   renderer.render(scene, camera);
