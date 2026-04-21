@@ -200,18 +200,27 @@ Created The Moth Model, Rigged the model.
 
 ### 19/04
 Added Animations to Moth Model- Comprised of :
-        -F_Fly
-        -F_Fly_Sad
-        -F_Land
-        -F_Land_Idle
-        -F_Land_to_TakeOff
-        -F_Void_Inspect
-        -F_Backflip
+-F_Fly
+-F_Fly_Sad
+-F_Land
+-F_Land_Idle
+-F_Land_to_TakeOff
+-F_Void_Inspect
+-F_Backflip
 
 Anmiation for behaviours within the website, May still make changed easily as its only an FBX file. 
+
 <img width="540" height="854" alt="Animations_Stored" src="https://github.com/user-attachments/assets/228b4b76-6eea-4b82-b85f-ea6e157de440" />
 <img width="954" height="571" alt="Screenshot 2026-04-21 125454" src="https://github.com/user-attachments/assets/66face92-1d7c-4319-b7a4-a19d49a4d779" />
 
+
+### 20/04
+Worked on some behaviour of the moth within the website using Chatgpt, nothing really seemed good yet, mainly worked on ideas.
+
+### 21/04
+Uploaded all filed to the website Repo and got the moth to interacte with the website, Got a black Hole ( Binary Void ) and the Moths Patrol around the scene Working. Unfortunatly not the Animations.  I am using the saem shader Binary effect from the center model of the moth, to stay on theme. The Moth seems to flow well, but needs parameters to slow is speed and potentaly have better sline motion rather constant motion, to achive a more realistic effect. Will look into futher scale and parameter changes, as well as black hole consumptin time. 
+
+The moth may also do s sick backflip if cliked on :)
 
 
 
