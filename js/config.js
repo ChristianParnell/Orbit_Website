@@ -73,8 +73,8 @@ export const SCENE_CONFIG = {
 };
 
 export const MOTH_CONFIG = {
-  storageKey: "orbitSpecterMothVisibleV1",
-  sizeRatioToModelHeight: 0.08,
+  storageKey: "orbitSpecterMothReliableV1",
+  sizeRatioToModelHeight: 0.085,
   modelYawOffset: 0,
   modelPitchOffset: 0,
   modelRollOffset: 0,
@@ -122,5 +122,5 @@ export const MOTH_CONFIG = {
   offlineDrainPerHour: 0.05,
   sadThreshold: 0.28,
   stateSaveInterval: 5.0,
-  fallbackMothHeight: 0.34
+  fallbackMothHeight: 0.30
 };
