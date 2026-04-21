@@ -14,29 +14,36 @@ const DEFAULT_PALETTE = [
 
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
-  pointLimit: 850,
+  pointLimit: 420,
   sizeRatioToModelHeight: 0.078,
   modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   shellMotionStrength: 1.0,
 
-  patrolRadiusMin: 1.20,
-  patrolRadiusMax: 2.30,
-  patrolHeightMin: -0.15,
-  patrolHeightMax: 1.65,
-  patrolFrontMin: 1.35,
-  patrolFrontMax: 2.20,
-  patrolSideSpan: 1.05,
-  patrolViewMargin: 0.94,
-  patrolRepickMin: 2.8,
-  patrolRepickMax: 5.2,
+  patrolRadiusMin: 0.45,
+  patrolRadiusMax: 1.18,
+  patrolHeightMin: 0.28,
+  patrolHeightMax: 1.02,
+  patrolFrontMin: 0.22,
+  patrolFrontMax: 0.82,
+  patrolSideSpan: 0.58,
+  patrolViewMargin: 0.82,
+  patrolRepickMin: 1.8,
+  patrolRepickMax: 3.4,
+  patrolRecoveryMargin: 1.06,
+  patrolRecoverySpeedScale: 1.2,
+  patrolCenterPull: 0.18,
+
 
   flySpeed: 1.55,
   diveSpeed: 2.00,
   flySadSpeedScale: 0.62,
   approachSlowRadius: 0.42,
-  turnLerp: 0.12,
+  turnLerp: 0.22,
+  turnLerpFast: 0.28,
+  headingTargetBlend: 0.72,
+  headingVelocityBlend: 0.28,
 
   hoverPerchDelay: 0.10,
   perchDistance: 0.12,
@@ -992,6 +999,54 @@ export class MothSystem {
     );
   }
 
+  clampPointNearCenter(point) {
+    const offset = this.temp.b.copy(point).sub(this.orbitCenter);
+    const horizontal = this.temp.c.set(offset.x, 0, offset.z);
+    const horizontalLen = horizontal.length();
+
+    if (horizontalLen > this.cfg.patrolRadiusMax) {
+      horizontal.setLength(this.cfg.patrolRadiusMax);
+    } else if (horizontalLen < this.cfg.patrolRadiusMin) {
+      if (horizontalLen < 0.0001) horizontal.set(0, 0, this.cfg.patrolRadiusMin);
+      else horizontal.setLength(this.cfg.patrolRadiusMin);
+    }
+
+    point.x = this.orbitCenter.x + horizontal.x;
+    point.z = this.orbitCenter.z + horizontal.z;
+    point.y = THREE.MathUtils.clamp(point.y, this.orbitCenter.y + this.cfg.patrolHeightMin, this.orbitCenter.y + this.cfg.patrolHeightMax);
+    return point;
+  }
+
+  getRecoveryPatrolPoint() {
+    const camForward = this.temp.a.set(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+    const camRight = this.temp.b.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+
+    const p = new THREE.Vector3()
+      .copy(this.orbitCenter)
+      .addScaledVector(camForward, 0.46)
+      .addScaledVector(camRight, THREE.MathUtils.clamp(this.temp.screen.x * 0.42, -0.34, 0.34));
+    p.y = this.orbitCenter.y + 0.58;
+    return this.clampPointNearCenter(p);
+  }
+
+  getFacingDirection(targetPoint = null) {
+    const velocityDir = this.temp.c.copy(this.velocity);
+    const hasVelocity = velocityDir.lengthSq() > 0.00004;
+    if (hasVelocity) velocityDir.normalize();
+
+    const targetDir = this.temp.d;
+    if (targetPoint) targetDir.copy(targetPoint).sub(this.root.position);
+    else targetDir.copy(this.forward);
+    if (targetDir.lengthSq() > 0.00004) targetDir.normalize();
+    else targetDir.copy(this.forward);
+
+    const facing = this.temp.e.copy(targetDir).multiplyScalar(this.cfg.headingTargetBlend);
+    if (hasVelocity) facing.addScaledVector(velocityDir, this.cfg.headingVelocityBlend);
+
+    if (facing.lengthSq() <= 0.00004) facing.copy(targetDir);
+    return facing.normalize();
+  }
+
   pickNextPatrolPoint(force = false) {
     const elapsed = this.getElapsed();
     this.nextPatrolDecisionAt = elapsed + randomFromRange(this.cfg.patrolRepickMin, this.cfg.patrolRepickMax);
@@ -1007,32 +1062,32 @@ export class MothSystem {
     camRight.normalize();
 
     let candidate = null;
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 28; i += 1) {
       const front = randomFromRange(this.cfg.patrolFrontMin, this.cfg.patrolFrontMax);
       const side = randomFromRange(-this.cfg.patrolSideSpan, this.cfg.patrolSideSpan);
-      const radiusWobble = randomFromRange(this.cfg.patrolRadiusMin, this.cfg.patrolRadiusMax) * 0.18;
-      const y = randomFromRange(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax);
+      const y = this.orbitCenter.y + randomFromRange(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax);
 
       const p = new THREE.Vector3()
         .copy(this.orbitCenter)
         .addScaledVector(camForward, front)
-        .addScaledVector(camRight, side)
-        .add(new THREE.Vector3(
-          (Math.random() - 0.5) * radiusWobble,
-          y,
-          (Math.random() - 0.5) * radiusWobble
-        ));
+        .addScaledVector(camRight, side);
 
-      if (this.worldPointComfortablyVisible(p) || i === 19) {
+      p.y = y;
+      this.clampPointNearCenter(p);
+
+      const centerBlend = this.temp.c.copy(this.orbitCenter).lerp(p, 1.0 - this.cfg.patrolCenterPull);
+      p.copy(centerBlend);
+
+      if (this.worldPointComfortablyVisible(p) || i === 27) {
         candidate = p;
         break;
       }
     }
 
-    if (candidate) {
-      this.currentPatrolAnchor.copy(candidate);
-      if (force) this.root.position.copy(candidate);
-    }
+    if (!candidate) candidate = this.getRecoveryPatrolPoint();
+
+    this.currentPatrolAnchor.copy(candidate);
+    if (force) this.root.position.copy(candidate);
   }
 
   getCoverPerchTarget(index, coverWorldData) {
@@ -1143,7 +1198,7 @@ export class MothSystem {
 
     if (this.mode === "backflip") {
       this.root.position.addScaledVector(this.velocity, delta);
-      this.lookAtDirection(this.velocity.lengthSq() > 0.0001 ? this.velocity : this.forward, 0.14);
+      this.lookAtDirection(this.getFacingDirection(this.root.position.clone().add(this.velocity)), this.cfg.turnLerpFast);
       return;
     }
 
@@ -1169,7 +1224,7 @@ export class MothSystem {
         this.maybeDropNest(coverTarget.position, hoveredIndex);
       }
       this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.95);
-      this.lookAtDirection(this.velocity.lengthSq() > 0.0001 ? this.velocity : coverTarget.position.clone().sub(this.root.position), 0.16);
+      this.lookAtDirection(this.getFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
       if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
         this.playLoop(this.getPatrolFlightAction());
       }
@@ -1179,7 +1234,7 @@ export class MothSystem {
     if (this.mode === "approachVoid" && voidTarget) {
       const distance = this.root.position.distanceTo(voidTarget.position);
       this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed);
-      this.lookAtDirection(this.velocity.lengthSq() > 0.0001 ? this.velocity : voidTarget.position.clone().sub(this.root.position), 0.18);
+      this.lookAtDirection(this.getFacingDirection(voidTarget.position), this.cfg.turnLerpFast);
       if (distance <= this.cfg.voidConsumeDistance) {
         this.mode = "inspectVoid";
         this.voidState.inspectStartedAt = elapsed;
@@ -1199,8 +1254,12 @@ export class MothSystem {
         this.pickNextPatrolPoint();
       }
 
+      if (!this.worldPointComfortablyVisible(this.root.position, this.cfg.patrolRecoveryMargin)) {
+        this.currentPatrolAnchor.copy(this.getRecoveryPatrolPoint());
+      }
+
       this.moveToward(delta, this.currentPatrolAnchor, this.getPatrolFlightSpeed(elapsed));
-      this.lookAtDirection(this.velocity.lengthSq() > 0.0001 ? this.velocity : this.currentPatrolAnchor.clone().sub(this.root.position), this.cfg.turnLerp);
+      this.lookAtDirection(this.getFacingDirection(this.currentPatrolAnchor), this.cfg.turnLerpFast);
       this.playLoop(this.getPatrolFlightAction());
     }
   }
@@ -1217,7 +1276,14 @@ export class MothSystem {
     const desired = dir.multiplyScalar(speed);
 
     this.velocity.lerp(desired, 1.0 - Math.exp(-delta * 5.4));
+
+    if (!this.worldPointComfortablyVisible(this.root.position, this.cfg.patrolRecoveryMargin)) {
+      const recovery = this.getRecoveryPatrolPoint().sub(this.root.position).multiplyScalar(this.cfg.patrolRecoverySpeedScale * delta);
+      this.velocity.add(recovery);
+    }
+
     this.root.position.addScaledVector(this.velocity, delta);
+    this.clampPointNearCenter(this.root.position);
   }
 
   updateVoidInspect(delta, elapsed, voidTarget) {
@@ -1271,7 +1337,7 @@ export class MothSystem {
     this.root.position.lerpVectors(this.takeoffState.startPos, this.takeoffState.endPos, ease * this.cfg.takeoffMotionScale);
   }
 
-  lookAtDirection(direction, lerpAmount = 0.12) {
+  lookAtDirection(direction, lerpAmount = this.cfg.turnLerp) {
     if (direction.lengthSq() <= 0.0001) return;
     this.forward.copy(direction).normalize();
     this.temp.m.lookAt(this.root.position, this.temp.a.copy(this.root.position).add(this.forward), new THREE.Vector3(0, 1, 0));
