@@ -14,12 +14,25 @@ const DEFAULT_PALETTE = [
 
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
-  pointLimit: 420,
-  sizeRatioToModelHeight: 0.078,
+  pointLimit: 960,
+  sizeRatioToModelHeight: 0.0936,
   modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
-  shellMotionStrength: 1.0,
+  shellMotionStrength: 1.25,
+  shellPointSizeMin: 0.82,
+  shellPointSizeMax: 1.52,
+  shellPointAlphaMin: 0.34,
+  shellPointAlphaMax: 0.58,
+  trailCount: 180,
+  trailEmitInterval: 0.02,
+  trailLife: 0.85,
+  trailDrag: 2.1,
+  trailSpeed: 0.32,
+  trailJitter: 0.08,
+  trailPointSizeMin: 0.7,
+  trailPointSizeMax: 1.3,
+  trailAlpha: 0.78,
 
   patrolRadiusMin: 0.45,
   patrolRadiusMax: 1.18,
@@ -275,6 +288,66 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
   });
 }
 
+function createBinaryTrailMaterial(atlas, palette) {
+  const paletteUniform = palette.map((c) => c.clone());
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uAtlas: { value: atlas },
+      uTime: { value: 0 },
+      uPalette: { value: paletteUniform },
+      uAlpha: { value: 1 }
+    },
+    vertexShader: `
+      uniform float uTime;
+      attribute float aSeed;
+      attribute float aSize;
+      attribute float aLife;
+      varying float vDigit;
+      varying float vAlpha;
+      varying float vPalette;
+
+      void main() {
+        vDigit = mod(floor(uTime * (2.4 + fract(aSeed * 2.6)) + aSeed * 24.0), 2.0);
+        vPalette = fract(aSeed * 7.9 + uTime * 0.04);
+        vAlpha = aLife;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = max(1.8, aSize * (24.0 / max(1.0, -mvPosition.z)) * (0.55 + aLife));
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uAtlas;
+      uniform vec3 uPalette[7];
+      uniform float uAlpha;
+      varying float vDigit;
+      varying float vAlpha;
+      varying float vPalette;
+
+      vec3 palette(float t) {
+        float scaled = t * 6.0;
+        int i0 = int(floor(scaled));
+        int i1 = min(i0 + 1, 6);
+        float f = fract(scaled);
+        return mix(uPalette[i0], uPalette[i1], f);
+      }
+
+      void main() {
+        vec2 uv = gl_PointCoord;
+        vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
+        vec4 glyph = texture2D(uAtlas, atlasUv);
+        float alpha = glyph.a * vAlpha * uAlpha;
+        if (alpha < 0.02) discard;
+        vec3 color = palette(vPalette);
+        gl_FragColor = vec4(color, alpha);
+      }
+    `
+  });
+}
+
 function createVoidMaterial(atlas, palette) {
   const paletteUniform = palette.map((c) => c.clone());
   return new THREE.ShaderMaterial({
@@ -424,6 +497,7 @@ export class MothSystem {
     this.pendingActionKey = "";
     this.binaryShell = null;
     this.binaryMaterial = null;
+    this.trail = null;
     this.hitProxy = null;
 
     this.nestGroup = new THREE.Group();
@@ -657,6 +731,7 @@ export class MothSystem {
     this.fitMothScale();
     this.setupAnimations(clips);
     this.buildBinaryShell();
+    this.buildTrail();
     this.buildHitProxy();
     this.pickNextPatrolPoint(true);
 
@@ -810,8 +885,8 @@ export class MothSystem {
     const seeds = new Float32Array(count);
 
     for (let i = 0; i < count; i += 1) {
-      sizes[i] = 0.56 + Math.random() * 0.28;
-      alphas[i] = 0.18 + Math.random() * 0.16;
+      sizes[i] = this.cfg.shellPointSizeMin + Math.random() * (this.cfg.shellPointSizeMax - this.cfg.shellPointSizeMin);
+      alphas[i] = this.cfg.shellPointAlphaMin + Math.random() * (this.cfg.shellPointAlphaMax - this.cfg.shellPointAlphaMin);
       seeds[i] = Math.random();
     }
 
@@ -828,6 +903,117 @@ export class MothSystem {
     this.visualRoot.add(this.binaryShell);
   }
 
+  buildTrail() {
+    if (!this.binaryShell) return;
+
+    const count = this.cfg.trailCount;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    const seeds = new Float32Array(count);
+    const life = new Float32Array(count);
+
+    for (let i = 0; i < count; i += 1) {
+      positions[i * 3 + 0] = 9999;
+      positions[i * 3 + 1] = 9999;
+      positions[i * 3 + 2] = 9999;
+      sizes[i] = this.cfg.trailPointSizeMin + Math.random() * (this.cfg.trailPointSizeMax - this.cfg.trailPointSizeMin);
+      seeds[i] = Math.random();
+      life[i] = 0;
+    }
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+    geometry.setAttribute("aLife", new THREE.BufferAttribute(life, 1).setUsage(THREE.DynamicDrawUsage));
+
+    const material = createBinaryTrailMaterial(this.glyphAtlas, this.palette);
+    const points = new THREE.Points(geometry, material);
+    points.frustumCulled = false;
+    points.renderOrder = 11;
+    this.scene.add(points);
+
+    this.trail = {
+      points,
+      geometry,
+      material,
+      positions,
+      sizes,
+      seeds,
+      life,
+      velocity: Array.from({ length: count }, () => new THREE.Vector3()),
+      cursor: 0,
+      emitClock: 0
+    };
+  }
+
+  emitTrailParticle() {
+    if (!this.trail || !this.binaryShell) return;
+
+    const shellPositions = this.binaryShell.geometry.attributes.position.array;
+    const pointCount = shellPositions.length / 3;
+    if (!pointCount) return;
+
+    const i = this.trail.cursor;
+    this.trail.cursor = (this.trail.cursor + 1) % this.cfg.trailCount;
+
+    const shellIndex = Math.floor(Math.random() * pointCount) * 3;
+    this.temp.a.set(
+      shellPositions[shellIndex + 0],
+      shellPositions[shellIndex + 1],
+      shellPositions[shellIndex + 2]
+    );
+    this.binaryShell.localToWorld(this.temp.a);
+
+    const base = i * 3;
+    this.trail.positions[base + 0] = this.temp.a.x;
+    this.trail.positions[base + 1] = this.temp.a.y;
+    this.trail.positions[base + 2] = this.temp.a.z;
+    this.trail.life[i] = this.cfg.trailLife;
+
+    this.trail.velocity[i]
+      .copy(this.forward)
+      .multiplyScalar(-this.cfg.trailSpeed * (0.8 + Math.random() * 0.45))
+      .add(new THREE.Vector3(
+        (Math.random() - 0.5) * this.cfg.trailJitter,
+        (Math.random() - 0.5) * this.cfg.trailJitter,
+        (Math.random() - 0.5) * this.cfg.trailJitter
+      ));
+  }
+
+  updateTrail(delta, elapsed) {
+    if (!this.trail) return;
+
+    this.trail.material.uniforms.uTime.value = elapsed;
+    this.trail.material.uniforms.uAlpha.value = this.cfg.trailAlpha;
+
+    this.trail.emitClock += delta;
+    const moving = this.velocity.lengthSq() > 0.0025;
+    while (moving && this.trail.emitClock >= this.cfg.trailEmitInterval) {
+      this.trail.emitClock -= this.cfg.trailEmitInterval;
+      this.emitTrailParticle();
+    }
+
+    for (let i = 0; i < this.cfg.trailCount; i += 1) {
+      if (this.trail.life[i] <= 0) continue;
+      this.trail.life[i] = Math.max(0, this.trail.life[i] - delta);
+      const base = i * 3;
+      const vel = this.trail.velocity[i];
+      vel.multiplyScalar(Math.exp(-this.cfg.trailDrag * delta));
+      this.trail.positions[base + 0] += vel.x * delta;
+      this.trail.positions[base + 1] += vel.y * delta;
+      this.trail.positions[base + 2] += vel.z * delta;
+      if (this.trail.life[i] <= 0.001) {
+        this.trail.positions[base + 0] = 9999;
+        this.trail.positions[base + 1] = 9999;
+        this.trail.positions[base + 2] = 9999;
+      }
+    }
+
+    this.trail.geometry.attributes.position.needsUpdate = true;
+    this.trail.geometry.attributes.aLife.needsUpdate = true;
+  }
+
   buildHitProxy() {
     const proxy = new THREE.Mesh(
       new THREE.SphereGeometry(0.11, 12, 12),
@@ -838,7 +1024,7 @@ export class MothSystem {
     this.root.add(proxy);
   }
 
-  extractPointsFromModel(model, limit = 420) {
+  extractPointsFromModel(model, limit = 960) {
     const positions = [];
     const normals = [];
 
@@ -856,12 +1042,13 @@ export class MothSystem {
     }
 
     const totalVerts = meshes.reduce((sum, mesh) => sum + mesh.geometry.attributes.position.count, 0);
-    const step = Math.max(1, Math.floor(totalVerts / Math.max(limit, 1)));
 
     meshes.forEach((mesh) => {
       const pos = mesh.geometry.attributes.position;
       const nor = mesh.geometry.attributes.normal;
       const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+      const meshTarget = Math.max(24, Math.round(limit * (pos.count / Math.max(1, totalVerts))));
+      const step = Math.max(1, Math.floor(pos.count / meshTarget));
 
       for (let i = 0; i < pos.count; i += step) {
         this.temp.a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
@@ -1156,6 +1343,7 @@ export class MothSystem {
     this.updateVoidVisual(elapsed, delta);
     this.updateNestAnimations(elapsed, coverWorldData);
     this.updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData);
+    this.updateTrail(delta, elapsed);
 
     if (this.hitProxy) {
       this.hitProxy.position.set(0, 0, 0);
