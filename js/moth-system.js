@@ -16,6 +16,10 @@ const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
   pointLimit: 420,
   sizeRatioToModelHeight: 0.078,
+  modelYawOffset: -Math.PI / 2,
+  modelPitchOffset: 0,
+  modelRollOffset: 0,
+  shellMotionStrength: 1.0,
 
   patrolRadiusMin: 1.20,
   patrolRadiusMax: 2.30,
@@ -184,12 +188,14 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
       uLightDir: { value: lightDir.clone() },
       uPalette: { value: paletteUniform },
       uAlphaBoost: { value: 1 },
-      uSadness: { value: 0 }
+      uSadness: { value: 0 },
+      uMotion: { value: 0 }
     },
     vertexShader: `
       uniform float uTime;
       uniform vec3 uLightDir;
       uniform float uSadness;
+      uniform float uMotion;
 
       attribute vec3 aNormal;
       attribute float aSeed;
@@ -203,23 +209,28 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
 
       void main() {
         vec3 p = position;
-        float drift = (0.0016 + aSeed * 0.0028) * (1.0 - uSadness * 0.2);
-        p.x += sin(uTime * (2.2 + fract(aSeed * 0.8)) + aSeed * 31.0) * drift;
-        p.y += cos(uTime * (2.6 + fract(aSeed * 0.9)) + aSeed * 47.0) * drift;
-        p.z += sin(uTime * (2.0 + fract(aSeed * 0.7)) + aSeed * 19.0) * drift;
+        vec3 n = normalize(aNormal);
+        float motion = 0.35 + uMotion * 1.35;
+        float drift = (0.0032 + aSeed * 0.0070) * motion * (1.0 - uSadness * 0.12);
+        float flap = sin(uTime * (8.0 + fract(aSeed * 3.6) * 5.0) + aSeed * 40.0);
+        float flutter = cos(uTime * (5.2 + fract(aSeed * 2.4) * 3.0) + aSeed * 23.0);
+        p += n * (flap * drift * 0.9);
+        p.x += sin(uTime * (2.4 + fract(aSeed * 0.8)) + aSeed * 31.0) * drift * 0.55;
+        p.y += cos(uTime * (3.2 + fract(aSeed * 0.9)) + aSeed * 47.0) * drift * 0.65;
+        p.z += flutter * drift * 0.75;
 
-        vec3 worldNormal = normalize(mat3(modelMatrix) * aNormal);
+        vec3 worldNormal = normalize(mat3(modelMatrix) * n);
         float light = max(dot(worldNormal, normalize(uLightDir)), 0.0);
         float shade = pow(smoothstep(0.08, 0.98, light), 1.6);
 
-        float digitSwitch = floor(uTime * (2.1 + fract(aSeed * 1.6)) + aSeed * 18.0);
+        float digitSwitch = floor(uTime * (3.2 + fract(aSeed * 2.2)) + aSeed * 28.0);
         vDigit = mod(digitSwitch, 2.0);
-        vPalette = fract(aSeed * 9.7);
+        vPalette = fract(aSeed * 9.7 + uMotion * 0.08);
         vShade = shade;
-        vAlpha = aAlpha * mix(0.48, 1.0, shade) * (1.0 - uSadness * 0.4);
+        vAlpha = aAlpha * mix(0.48, 1.0, shade) * (1.0 - uSadness * 0.34) * (0.85 + uMotion * 0.25);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(2.2, aSize * (26.0 / max(1.0, -mvPosition.z)));
+        gl_PointSize = max(2.4, aSize * (30.0 / max(1.0, -mvPosition.z)) * (0.95 + uMotion * 0.22));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -393,6 +404,10 @@ export class MothSystem {
     this.root = new THREE.Group();
     this.root.name = "SpecterMothRoot";
     this.scene.add(this.root);
+
+    this.visualRoot = new THREE.Group();
+    this.visualRoot.name = "SpecterMothVisualRoot";
+    this.root.add(this.visualRoot);
 
     this.modelRoot = null;
     this.mixer = null;
@@ -596,7 +611,12 @@ export class MothSystem {
 
   setupModel(model, clips) {
     this.modelRoot = model.scene || model;
-    this.root.add(this.modelRoot);
+    this.visualRoot.add(this.modelRoot);
+    this.visualRoot.rotation.set(
+      this.cfg.modelPitchOffset || 0,
+      this.cfg.modelYawOffset || 0,
+      this.cfg.modelRollOffset || 0
+    );
 
     this.modelRoot.traverse((child) => {
       if (!child.isMesh) return;
@@ -798,7 +818,7 @@ export class MothSystem {
     this.binaryShell = new THREE.Points(geometry, this.binaryMaterial);
     this.binaryShell.frustumCulled = false;
     this.binaryShell.renderOrder = 12;
-    this.root.add(this.binaryShell);
+    this.visualRoot.add(this.binaryShell);
   }
 
   buildHitProxy() {
@@ -1071,9 +1091,11 @@ export class MothSystem {
     }
 
     if (this.binaryMaterial) {
+      const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
       this.binaryMaterial.uniforms.uTime.value = elapsed;
       this.binaryMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
       this.binaryMaterial.uniforms.uAlphaBoost.value = 1.0;
+      this.binaryMaterial.uniforms.uMotion.value = motion;
     }
 
     this.updateVoidVisual(elapsed, delta);
@@ -1147,7 +1169,7 @@ export class MothSystem {
         this.maybeDropNest(coverTarget.position, hoveredIndex);
       }
       this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.95);
-      this.lookAtPoint(coverTarget.position.clone().add(coverTarget.normal), coverTarget.up, 0.12);
+      this.lookAtDirection(this.velocity.lengthSq() > 0.0001 ? this.velocity : coverTarget.position.clone().sub(this.root.position), 0.16);
       if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
         this.playLoop(this.getPatrolFlightAction());
       }
@@ -1157,7 +1179,7 @@ export class MothSystem {
     if (this.mode === "approachVoid" && voidTarget) {
       const distance = this.root.position.distanceTo(voidTarget.position);
       this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed);
-      this.lookAtPoint(voidTarget.lookAt, new THREE.Vector3(0, 1, 0), 0.14);
+      this.lookAtDirection(this.velocity.lengthSq() > 0.0001 ? this.velocity : voidTarget.position.clone().sub(this.root.position), 0.18);
       if (distance <= this.cfg.voidConsumeDistance) {
         this.mode = "inspectVoid";
         this.voidState.inspectStartedAt = elapsed;
