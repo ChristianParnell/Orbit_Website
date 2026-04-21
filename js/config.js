@@ -1,3 +1,4 @@
+
 export const ORBIT_ITEMS = [
   {
     id: "about",
@@ -67,15 +68,7 @@ export const MOTH_ASSETS = {
   modelFBX: "./assets/models/moth/moth.fbx",
   modelGLB: "",
   modelGLTF: "",
-  motions: {
-    fly: "./assets/models/moth/F_Fly.fbx",
-    flySad: "./assets/models/moth/F_Fly_Sad.fbx",
-    land: "./assets/models/moth/F_Land.fbx",
-    perch: "./assets/models/moth/F_Land_Idle.fbx",
-    takeoff: "./assets/models/moth/F_Land_to_TakeOff.fbx",
-    feed: "./assets/models/moth/F_Void_Inspect.fbx",
-    backflip: "./assets/models/moth/F_Backflip.fbx"
-  }
+  motions: {}
 };
 
 export const SCENE_CONFIG = {
@@ -84,33 +77,55 @@ export const SCENE_CONFIG = {
 };
 
 export const MOTH_CONFIG = {
-  storageKey: "orbitSpecterMothV1",
-  pointLimit: 520,
+  storageKey: "orbitSpecterMothV2",
+  pointLimit: 420,
   sizeRatioToModelHeight: 0.078,
-  patrolRadiusMin: 1.18,
-  patrolRadiusMax: 2.28,
-  patrolHeightMin: -0.2,
-  patrolHeightMax: 1.9,
+
+  patrolRadiusMin: 1.20,
+  patrolRadiusMax: 2.30,
+  patrolHeightMin: -0.15,
+  patrolHeightMax: 1.65,
+  patrolFrontMin: 1.35,
+  patrolFrontMax: 2.20,
+  patrolSideSpan: 1.05,
+  patrolViewMargin: 0.94,
+  patrolRepickMin: 2.8,
+  patrolRepickMax: 5.2,
+
   flySpeed: 1.55,
-  diveSpeed: 2.25,
-  perchDistance: 0.18,
+  diveSpeed: 2.00,
+  flySadSpeedScale: 0.62,
+  approachSlowRadius: 0.42,
+  turnLerp: 0.12,
+
+  hoverPerchDelay: 0.10,
+  perchDistance: 0.12,
+  landTriggerDistance: 0.12,
   coverPerchLift: 0.065,
-  coverPerchForward: 0.06,
-  hoverPerchDelay: 0.12,
+  coverPerchForward: 0.055,
+  coverPerchLerp: 0.18,
+
+  takeoffRiseHeight: 0.20,
+  takeoffMotionScale: 1.0,
+  backflipPush: 0.25,
+  backflipLift: 0.10,
+
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.9,
   voidHeightMax: 1.8,
+  voidHoverRadius: 0.18,
+  voidConsumeDistance: 0.20,
+  voidInspectDuration: 5.0,
+  satiatedDuration: 8.0,
+
   voidParticleCount: 320,
   voidDepth: 0.88,
-  ghostCount: 6,
+
   nestMax: 5,
   nestChancePerPerch: 0.22,
   nestDepositDelay: 7.5,
-  vitalityDrainPerSecond: 0.0032,
-  vitalityRecoveryPerSecond: 0.0095,
+  vitalityDrainPerSecond: 0.0026,
+  vitalityRecoveryPerSecond: 0.01,
   offlineDrainPerHour: 0.05,
-  sadThreshold: 0.28,
-  swarmThreshold: 1.25,
-  clickEvadeLift: 0.28,
-  clickEvadePush: 0.22
+  sadThreshold: 0.30
 };
