@@ -80,6 +80,10 @@ export const MOTH_CONFIG = {
   storageKey: "orbitSpecterMothV2",
   pointLimit: 420,
   sizeRatioToModelHeight: 0.078,
+  modelYawOffset: -Math.PI / 2,
+  modelPitchOffset: 0,
+  modelRollOffset: 0,
+  shellMotionStrength: 1.0,
 
   patrolRadiusMin: 1.20,
   patrolRadiusMax: 2.30,
