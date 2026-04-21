@@ -1,3 +1,4 @@
+
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { FBXLoader } from "https://esm.sh/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
 
@@ -12,8 +13,8 @@ const DEFAULT_PALETTE = [
 ];
 
 const DEFAULT_CONFIG = {
-  storageKey: "orbitSpecterMothV4",
-  sizeRatioToModelHeight: 0.1,
+  storageKey: "orbitSpecterMothVisibleV1",
+  sizeRatioToModelHeight: 0.08,
   modelYawOffset: 0,
   modelPitchOffset: 0,
   modelRollOffset: 0,
@@ -22,35 +23,35 @@ const DEFAULT_CONFIG = {
   patrolHeightMin: -0.18,
   patrolHeightMax: 1.7,
   flySpeed: 1.35,
-  diveSpeed: 1.85,
+  diveSpeed: 1.95,
   arrivalRadius: 0.12,
   turnLerp: 0.12,
-  damping: 0.92,
-  hoverPerchDelay: 0.1,
+  damping: 0.93,
+  hoverPerchDelay: 0.08,
   coverPerchLift: 0.07,
   coverPerchForward: 0.05,
-  coverFollowLerp: 0.18,
   clickEvadeLift: 0.24,
   clickEvadePush: 0.28,
-  shellCount: 120,
-  shellAlpha: 0.38,
-  shellPointScale: 0.85,
+  shellCount: 80,
+  shellAlpha: 0.16,
+  shellPointScale: 0.68,
   trailCount: 180,
   trailEmitInterval: 0.02,
-  trailLife: 0.78,
-  trailDrag: 1.85,
-  trailSpeedFactor: 0.26,
-  trailVelocityJitter: 0.14,
-  trailAlpha: 0.8,
-  trailPointScale: 0.95,
-  meshSampleLimit: 320,
+  trailLife: 0.8,
+  trailDrag: 1.8,
+  trailSpeedFactor: 0.24,
+  trailVelocityJitter: 0.16,
+  trailAlpha: 0.84,
+  trailPointScale: 0.92,
+  meshSampleLimit: 420,
+  voidParticleCount: 320,
   voidRadius: 0.58,
-  voidDepth: 1.2,
+  voidDepth: 1.18,
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.85,
   voidHeightMax: 1.85,
-  voidConsumeDistance: 0.18,
-  voidConsumeRate: 0.9,
+  voidConsumeDistance: 0.2,
+  voidConsumeRate: 0.92,
   nestMax: 6,
   nestChancePerLanding: 0.24,
   nestDepositDelay: 7.0,
@@ -60,8 +61,8 @@ const DEFAULT_CONFIG = {
   vitalityRecoveryPerSecond: 0.011,
   offlineDrainPerHour: 0.05,
   sadThreshold: 0.28,
-  swarmThreshold: 1.1,
-  stateSaveInterval: 5.0
+  stateSaveInterval: 5.0,
+  fallbackMothHeight: 0.34
 };
 
 const ACTION_ALIASES = {
@@ -108,9 +109,9 @@ function safeStorageSet(key, value) {
 }
 
 function makeLookQuaternion(from, to, up = new THREE.Vector3(0, 1, 0), out = new THREE.Quaternion()) {
-  const m = new THREE.Matrix4();
-  m.lookAt(from, to, up);
-  out.setFromRotationMatrix(m);
+  const matrix = new THREE.Matrix4();
+  matrix.lookAt(from, to, up);
+  out.setFromRotationMatrix(matrix);
   return out;
 }
 
@@ -146,7 +147,6 @@ function createNestTexture(size = 256) {
   const ctx = canvas.getContext("2d");
 
   ctx.clearRect(0, 0, size, size);
-
   const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, size * 0.06, size * 0.5, size * 0.5, size * 0.48);
   grad.addColorStop(0, "rgba(0,0,0,0.92)");
   grad.addColorStop(0.45, "rgba(8,18,35,0.56)");
@@ -160,7 +160,6 @@ function createNestTexture(size = 256) {
   ctx.textBaseline = "middle";
   ctx.font = '700 18px ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace';
   const colors = ["#2fe4ff", "#4b7dff", "#33ff88", "#ff57ce"];
-
   for (let i = 0; i < 120; i += 1) {
     ctx.save();
     ctx.translate(Math.random() * size, Math.random() * size);
@@ -243,140 +242,6 @@ function createBinaryPointMaterial(atlas, palette, additive = true) {
   });
 }
 
-function createVoidMaterial(atlas, palette) {
-  const p = palette.map((c) => c.clone());
-  return new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uAtlas: { value: atlas },
-      uTime: { value: 0 },
-      uAlpha: { value: 1 },
-      uPalette: { value: p }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D uAtlas;
-      uniform float uTime;
-      uniform float uAlpha;
-      uniform vec3 uPalette[7];
-      varying vec2 vUv;
-
-      float hash(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-      }
-
-      vec3 pickPalette(float t) {
-        float s = clamp(t, 0.0, 0.999) * 7.0;
-        int idx = int(floor(s));
-        if (idx <= 0) return uPalette[0];
-        if (idx == 1) return uPalette[1];
-        if (idx == 2) return uPalette[2];
-        if (idx == 3) return uPalette[3];
-        if (idx == 4) return uPalette[4];
-        if (idx == 5) return uPalette[5];
-        return uPalette[6];
-      }
-
-      void main() {
-        vec2 p = vUv * 2.0 - 1.0;
-        p.y *= 1.15;
-        float r = length(p);
-        float a = atan(p.y, p.x);
-        float ring = smoothstep(1.02, 0.86, r) * smoothstep(0.08, 0.22, r);
-
-        float swirl = a * 3.8 + (1.0 - r) * 18.0 - uTime * 3.2;
-        vec2 codeUv = vec2(fract(swirl * 0.08), fract((1.0 - r) * 8.0 + uTime * 0.25));
-        float digit = step(0.5, hash(floor(vec2(swirl * 1.3, r * 40.0))));
-        codeUv.x = mix(codeUv.x * 0.5, 0.5 + codeUv.x * 0.5, digit);
-        vec4 glyph = texture2D(uAtlas, codeUv);
-
-        float tunnel = smoothstep(0.92, 0.28, r);
-        float pulse = 0.85 + 0.15 * sin(uTime * 5.5 + r * 18.0 - a * 2.0);
-        float alpha = glyph.a * ring * tunnel * pulse * uAlpha;
-        alpha *= smoothstep(0.02, 0.16, r);
-        if (alpha < 0.02) discard;
-
-        vec3 color = pickPalette(fract(a * 0.11 + (1.0 - r) * 0.7 + uTime * 0.02));
-        gl_FragColor = vec4(color, alpha);
-      }
-    `
-  });
-}
-
-function getMeshBounds(root) {
-  root.updateMatrixWorld(true);
-  const box = new THREE.Box3();
-  const tempBox = new THREE.Box3();
-  let found = false;
-
-  root.traverse((child) => {
-    if (!child.isMesh || !child.geometry?.attributes?.position) return;
-    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
-    tempBox.copy(child.geometry.boundingBox).applyMatrix4(child.matrixWorld);
-    if (!found) {
-      box.copy(tempBox);
-      found = true;
-    } else {
-      box.union(tempBox);
-    }
-  });
-
-  if (!found) {
-    box.setFromObject(root);
-  }
-
-  return box;
-}
-
-function collectMeshSamplePoints(root, desiredCount) {
-  const pools = [];
-  let totalVertices = 0;
-
-  root.updateMatrixWorld(true);
-
-  root.traverse((child) => {
-    if (!child.isMesh || !child.geometry?.attributes?.position) return;
-    const positionAttr = child.geometry.attributes.position;
-    if (!positionAttr.count) return;
-    pools.push({ child, positionAttr, count: positionAttr.count });
-    totalVertices += positionAttr.count;
-  });
-
-  if (!pools.length || !totalVertices) return [];
-
-  const samples = [];
-  const temp = new THREE.Vector3();
-
-  for (const pool of pools) {
-    const take = Math.max(1, Math.round((pool.count / totalVertices) * desiredCount));
-    const step = Math.max(1, Math.floor(pool.count / take));
-    pool.child.updateWorldMatrix(true, false);
-
-    for (let i = 0; i < pool.count && samples.length < desiredCount; i += step) {
-      temp.fromBufferAttribute(pool.positionAttr, i);
-      temp.applyMatrix4(pool.child.matrixWorld);
-      root.worldToLocal(temp);
-      samples.push(temp.clone());
-    }
-  }
-
-  while (samples.length > desiredCount) {
-    samples.splice(Math.floor(Math.random() * samples.length), 1);
-  }
-
-  return samples;
-}
-
 export class MothSystem {
   constructor(options) {
     this.scene = options.scene;
@@ -389,29 +254,39 @@ export class MothSystem {
     this.palette = (options.palette?.length ? options.palette : DEFAULT_PALETTE).map((c) => c.clone());
     this.assets = options.assets || {};
     this.cfg = { ...DEFAULT_CONFIG, ...(options.config || {}) };
-    this.glyphAtlas = options.glyphAtlas || createGlyphAtlas();
     this.debug = typeof options.debug === "function" ? options.debug : null;
     this.getElapsed = typeof options.getElapsed === "function" ? options.getElapsed : () => 0;
 
-    this.loader = new FBXLoader();
+    this.glyphAtlas = options.glyphAtlas || createGlyphAtlas();
+    this.nestTexture = createNestTexture();
 
     this.root = new THREE.Group();
     this.root.name = "SpecterMothRoot";
     this.orbitRoot.add(this.root);
 
     this.modelHolder = new THREE.Group();
+    this.modelHolder.name = "SpecterMothModelHolder";
     this.root.add(this.modelHolder);
 
+    this.loader = new FBXLoader();
     this.moth = null;
     this.mixer = null;
-    this.actions = {};
-    this.currentAction = null;
+    this.actions = new Map();
     this.currentActionKey = "";
-    this.pendingLoopActionKey = "";
+    this.currentAction = null;
+    this.pendingLoopAction = "";
     this.flipBusy = false;
-    this.ready = false;
+    this.manualFlipTime = 0;
+    this.manualFlipDuration = 0.62;
+    this.fallbackWings = [];
 
-    this.localSurfacePoints = [];
+    this.ready = false;
+    this.hoveredCoverIndex = -1;
+    this.coverHoverBeganAt = -Infinity;
+    this.mode = "patrol";
+    this.stateName = "Curious";
+    this.perched = false;
+
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, 1);
     this.targetPoint = new THREE.Vector3();
@@ -419,20 +294,20 @@ export class MothSystem {
     this.currentCoverPoint = new THREE.Vector3();
     this.currentCoverNormal = new THREE.Vector3(0, 0, 1);
     this.currentCoverUp = new THREE.Vector3(0, 1, 0);
-    this.hoveredCoverIndex = -1;
-    this.coverHoverBeganAt = -Infinity;
-    this.perched = false;
-    this.mode = "patrol";
-    this.stateName = "Curious";
+    this.patrolTheta = Math.random() * Math.PI * 2;
+
+    this.surfaceSamples = [];
+    this.surfaceNormals = [];
+
     this.vitality = 0.74;
     this.lastSaveAt = 0;
     this.lastNestDropAt = -Infinity;
-    this.patrolAngle = Math.random() * Math.PI * 2;
 
     this.voidState = {
       active: false,
       position: new THREE.Vector3(),
-      energy: 0
+      energy: 0,
+      spin: 0
     };
 
     this.temp = {
@@ -440,34 +315,34 @@ export class MothSystem {
       vecB: new THREE.Vector3(),
       vecC: new THREE.Vector3(),
       vecD: new THREE.Vector3(),
+      vecE: new THREE.Vector3(),
       quatA: new THREE.Quaternion(),
       box: new THREE.Box3(),
-      raycaster: new THREE.Raycaster(),
       mouse: new THREE.Vector2(),
-      plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+      raycaster: new THREE.Raycaster(),
       sphere: new THREE.Sphere(),
-      scale: new THREE.Vector3(),
-      center: new THREE.Vector3()
+      plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+      inv: new THREE.Matrix4(),
+      nrm: new THREE.Matrix3()
     };
 
-    this.hitProxy = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, 16, 16),
-      new THREE.MeshBasicMaterial({ visible: false })
-    );
-    this.hitProxy.visible = false;
-    this.root.add(this.hitProxy);
-
-    this.shell = this.buildShell();
-    this.trail = this.buildTrail();
-    this.voidVisual = this.buildVoidVisual();
+    this.aura = this.createAura();
+    this.trail = this.createTrail();
+    this.voidVisual = this.createVoidVisual();
     this.nestGroup = new THREE.Group();
+    this.nestGroup.name = "SpecterMothNests";
     this.orbitRoot.add(this.nestGroup);
     this.nests = [];
-    this.nestTexture = createNestTexture();
+
+    this.hitProxy = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 12, 12),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.001, depthWrite: false, colorWrite: false })
+    );
+    this.hitProxy.name = "SpecterMothHitProxy";
+    this.root.add(this.hitProxy);
 
     this.restoreState();
-    this.pickNextPatrolPoint(true);
-    this.loadMoth();
+    this.loadModel();
   }
 
   log(message, level = "SYS") {
@@ -477,7 +352,6 @@ export class MothSystem {
   restoreState() {
     const raw = safeStorageGet(this.cfg.storageKey);
     if (!raw) return;
-
     try {
       const data = JSON.parse(raw);
       if (typeof data.vitality === "number") this.vitality = clamp01(data.vitality);
@@ -485,9 +359,7 @@ export class MothSystem {
         const hours = Math.max(0, (Date.now() - data.lastVisit) / 3600000);
         this.vitality = clamp01(this.vitality - hours * this.cfg.offlineDrainPerHour);
       }
-      if (Array.isArray(data.nests)) {
-        this.pendingNestState = data.nests.slice(0, this.cfg.nestMax);
-      }
+      if (Array.isArray(data.nests)) this.pendingNestState = data.nests.slice(0, this.cfg.nestMax);
     } catch {
       // ignore
     }
@@ -497,72 +369,56 @@ export class MothSystem {
     const elapsed = this.getElapsed();
     if (!force && elapsed - this.lastSaveAt < this.cfg.stateSaveInterval) return;
     this.lastSaveAt = elapsed;
-    safeStorageSet(
-      this.cfg.storageKey,
-      JSON.stringify({
-        vitality: this.vitality,
-        lastVisit: Date.now(),
-        nests: this.nests.map((nest) => ({
-          coverIndex: nest.coverIndex,
-          u: nest.u,
-          v: nest.v,
-          rot: nest.rot,
-          scale: nest.scale
-        }))
-      })
-    );
+    safeStorageSet(this.cfg.storageKey, JSON.stringify({
+      vitality: this.vitality,
+      lastVisit: Date.now(),
+      nests: this.nests.map((n) => ({ coverIndex: n.coverIndex, u: n.u, v: n.v, rot: n.rot, scale: n.scale }))
+    }));
   }
 
-  buildShell() {
-    const count = this.cfg.shellCount;
+  createAura() {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3));
+    geometry.setAttribute("aSeed", new THREE.BufferAttribute(new Float32Array(0), 1));
+    geometry.setAttribute("aSize", new THREE.BufferAttribute(new Float32Array(0), 1));
+    geometry.setAttribute("aLife", new THREE.BufferAttribute(new Float32Array(0), 1));
+    const material = createBinaryPointMaterial(this.glyphAtlas, this.palette, true);
+    const points = new THREE.Points(geometry, material);
+    points.frustumCulled = false;
+    points.renderOrder = 10;
+    this.root.add(points);
+    return { geometry, material, points };
+  }
+
+  rebuildAuraFromSamples() {
+    const count = Math.min(this.cfg.shellCount, this.surfaceSamples.length);
+    if (!count) return;
+
     const positions = new Float32Array(count * 3);
     const seeds = new Float32Array(count);
     const sizes = new Float32Array(count);
     const life = new Float32Array(count);
 
     for (let i = 0; i < count; i += 1) {
-      positions[i * 3 + 0] = 0;
-      positions[i * 3 + 1] = 0;
-      positions[i * 3 + 2] = 0;
+      const sample = this.surfaceSamples[Math.floor((i / count) * this.surfaceSamples.length)];
+      positions[i * 3 + 0] = sample.x;
+      positions[i * 3 + 1] = sample.y;
+      positions[i * 3 + 2] = sample.z;
       seeds[i] = Math.random();
-      sizes[i] = this.cfg.shellPointScale * (0.75 + Math.random() * 0.7);
-      life[i] = 0.65 + Math.random() * 0.35;
+      sizes[i] = this.cfg.shellPointScale * (0.7 + Math.random() * 0.5);
+      life[i] = 0.7 + Math.random() * 0.3;
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
-    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-    geometry.setAttribute("aLife", new THREE.BufferAttribute(life, 1));
-
-    const material = createBinaryPointMaterial(this.glyphAtlas, this.palette, true);
-    const points = new THREE.Points(geometry, material);
-    points.frustumCulled = false;
-    points.renderOrder = 6;
-    this.root.add(points);
-
-    return { geometry, material, points, positions, life, sizes };
+    this.aura.geometry.dispose();
+    this.aura.geometry = new THREE.BufferGeometry();
+    this.aura.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    this.aura.geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+    this.aura.geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    this.aura.geometry.setAttribute("aLife", new THREE.BufferAttribute(life, 1));
+    this.aura.points.geometry = this.aura.geometry;
   }
 
-  buildShellFromSamples(samples) {
-    const pos = this.shell.geometry.attributes.position.array;
-    const life = this.shell.geometry.attributes.aLife.array;
-    const count = this.cfg.shellCount;
-
-    for (let i = 0; i < count; i += 1) {
-      const sample = samples[i % samples.length];
-      const jitter = 0.008;
-      pos[i * 3 + 0] = sample.x + (Math.random() - 0.5) * jitter;
-      pos[i * 3 + 1] = sample.y + (Math.random() - 0.5) * jitter;
-      pos[i * 3 + 2] = sample.z + (Math.random() - 0.5) * jitter;
-      life[i] = 0.5 + Math.random() * 0.5;
-    }
-
-    this.shell.geometry.attributes.position.needsUpdate = true;
-    this.shell.geometry.attributes.aLife.needsUpdate = true;
-  }
-
-  buildTrail() {
+  createTrail() {
     const count = this.cfg.trailCount;
     const positions = new Float32Array(count * 3);
     const seeds = new Float32Array(count);
@@ -575,7 +431,7 @@ export class MothSystem {
       positions[i * 3 + 1] = 9999;
       positions[i * 3 + 2] = 9999;
       seeds[i] = Math.random();
-      sizes[i] = this.cfg.trailPointScale * (0.7 + Math.random() * 0.9);
+      sizes[i] = this.cfg.trailPointScale * (0.75 + Math.random() * 0.65);
       life[i] = 0;
     }
 
@@ -588,78 +444,360 @@ export class MothSystem {
     const material = createBinaryPointMaterial(this.glyphAtlas, this.palette, true);
     const points = new THREE.Points(geometry, material);
     points.frustumCulled = false;
-    points.renderOrder = 7;
+    points.renderOrder = 11;
     this.scene.add(points);
 
-    return { geometry, material, points, positions, life, velocities, cursor: 0, emitTimer: 0 };
+    return { geometry, material, points, positions, seeds, sizes, life, velocities, cursor: 0, emitTimer: 0 };
   }
 
-  buildVoidVisual() {
-    const group = new THREE.Group();
-    group.visible = false;
-    group.renderOrder = 8;
-    this.orbitRoot.add(group);
+  createVoidVisual() {
+    const count = this.cfg.voidParticleCount;
+    const positions = new Float32Array(count * 3);
+    const seeds = new Float32Array(count);
+    const sizes = new Float32Array(count);
+    const life = new Float32Array(count);
+    const radius = new Float32Array(count);
+    const angle = new Float32Array(count);
+    const depth = new Float32Array(count);
 
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.cfg.voidRadius * 2.35, this.cfg.voidRadius * 2.35, 1, 1),
-      createVoidMaterial(this.glyphAtlas, this.palette)
-    );
-    plane.renderOrder = 8;
-    group.add(plane);
+    for (let i = 0; i < count; i += 1) {
+      const t = i / Math.max(1, count - 1);
+      radius[i] = Math.sqrt(1.0 - t) * this.cfg.voidRadius;
+      angle[i] = Math.random() * Math.PI * 2;
+      depth[i] = -t * this.cfg.voidDepth;
+      positions[i * 3 + 0] = Math.cos(angle[i]) * radius[i];
+      positions[i * 3 + 1] = Math.sin(angle[i]) * radius[i];
+      positions[i * 3 + 2] = depth[i];
+      seeds[i] = Math.random();
+      sizes[i] = 0.8 + Math.random() * 1.2;
+      life[i] = 0.65 + Math.random() * 0.35;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("aLife", new THREE.BufferAttribute(life, 1));
+
+    const material = createBinaryPointMaterial(this.glyphAtlas, this.palette, true);
+    const points = new THREE.Points(geometry, material);
+    points.frustumCulled = false;
+    points.renderOrder = 12;
 
     const core = new THREE.Mesh(
-      new THREE.CircleGeometry(this.cfg.voidRadius * 0.18, 40),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.96, depthWrite: false })
+      new THREE.CircleGeometry(this.cfg.voidRadius * 0.24, 40),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.95, depthWrite: false })
     );
-    core.position.z = 0.001;
-    core.renderOrder = 9;
-    group.add(core);
+    core.position.z = -this.cfg.voidDepth - 0.01;
 
     const rim = new THREE.Mesh(
-      new THREE.RingGeometry(this.cfg.voidRadius * 0.22, this.cfg.voidRadius * 0.3, 48),
-      new THREE.MeshBasicMaterial({ color: 0x4b7dff, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending })
+      new THREE.RingGeometry(this.cfg.voidRadius * 0.72, this.cfg.voidRadius * 0.86, 48),
+      new THREE.MeshBasicMaterial({ color: 0x2fe4ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false })
     );
-    rim.position.z = 0.002;
-    rim.renderOrder = 9;
-    group.add(rim);
+    rim.position.z = -0.02;
 
-    return { group, plane, core, rim, material: plane.material };
+    const group = new THREE.Group();
+    group.visible = false;
+    group.add(points, core, rim);
+    this.orbitRoot.add(group);
+
+    return { group, geometry, material, points, core, rim, positions, radius, angle, depth };
+  }
+
+  loadModel() {
+    const src = this.assets?.modelFBX || "./assets/models/moth/moth.fbx";
+    this.loader.load(
+      src,
+      (fbx) => this.onModelLoaded(fbx),
+      undefined,
+      () => {
+        this.log("moth FBX failed to load, using fallback moth", "WARN");
+        this.createFallbackMoth();
+        this.finalizeLoadedModel([]);
+      }
+    );
+  }
+
+  onModelLoaded(fbx) {
+    this.moth = fbx;
+    this.modelHolder.add(fbx);
+    this.prepareVisibleMaterials(fbx);
+    this.centerAndScaleModel();
+    this.sampleModelSurface();
+    this.rebuildAuraFromSamples();
+    this.rebuildHitProxy();
+    this.finalizeLoadedModel(fbx.animations || []);
+    this.log(`moth loaded with ${fbx.animations?.length || 0} embedded clips`, "OK");
+  }
+
+  finalizeLoadedModel(clips) {
+    this.setupAnimations(clips);
+    this.restoreNests();
+    this.pickNextPatrolPoint(true);
+    this.root.position.copy(this.patrolPoint);
+    this.ready = true;
+    this.playLoop(this.vitality < this.cfg.sadThreshold ? "flySad" : "fly");
+  }
+
+  prepareVisibleMaterials(model) {
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      child.visible = true;
+      child.frustumCulled = false;
+      child.castShadow = true;
+      child.receiveShadow = false;
+      const wasArray = Array.isArray(child.material);
+      const materials = wasArray ? child.material : [child.material];
+      const rebuilt = materials.map((material) => {
+        const m = (material || new THREE.MeshStandardMaterial({ color: 0x777777 })).clone();
+        if ("side" in m) m.side = THREE.DoubleSide;
+        if ("transparent" in m) m.transparent = true;
+        if ("opacity" in m) m.opacity = m.opacity == null ? 1 : Math.max(0.98, m.opacity);
+        if ("depthWrite" in m) m.depthWrite = true;
+        if ("emissive" in m) {
+          m.emissive = m.emissive ? m.emissive.clone() : new THREE.Color(0x000000);
+          m.emissive.lerp(new THREE.Color("#153447"), 0.15);
+          m.emissiveIntensity = Math.max(0.15, m.emissiveIntensity || 0.15);
+        }
+        return m;
+      });
+      child.material = wasArray ? rebuilt : rebuilt[0];
+    });
+  }
+
+  centerAndScaleModel() {
+    if (!this.moth) return;
+    this.temp.box.setFromObject(this.moth);
+    const size = this.temp.box.getSize(new THREE.Vector3());
+    const center = this.temp.box.getCenter(new THREE.Vector3());
+
+    this.moth.position.sub(center);
+
+    let targetHeight = this.cfg.fallbackMothHeight;
+    if (this.centralModel) {
+      const modelBox = new THREE.Box3().setFromObject(this.centralModel);
+      const modelSize = modelBox.getSize(new THREE.Vector3());
+      targetHeight = Math.max(0.12, modelSize.y * this.cfg.sizeRatioToModelHeight);
+    }
+
+    const mothHeight = Math.max(0.0001, size.y || 1);
+    const scale = targetHeight / mothHeight;
+    this.moth.scale.setScalar(scale);
+    this.modelHolder.rotation.set(this.cfg.modelPitchOffset, this.cfg.modelYawOffset, this.cfg.modelRollOffset);
+    this.root.updateMatrixWorld(true);
+  }
+
+  sampleModelSurface() {
+    this.surfaceSamples = [];
+    this.surfaceNormals = [];
+    if (!this.moth) return;
+
+    this.root.updateMatrixWorld(true);
+    this.temp.inv.copy(this.root.matrixWorld).invert();
+
+    const meshes = [];
+    let totalVertices = 0;
+    this.moth.traverse((child) => {
+      if (!child.isMesh || !child.geometry?.attributes?.position) return;
+      const count = child.geometry.attributes.position.count;
+      meshes.push({ mesh: child, count });
+      totalVertices += count;
+    });
+
+    if (!meshes.length || !totalVertices) return;
+
+    for (const entry of meshes) {
+      const perMesh = Math.max(8, Math.floor(this.cfg.meshSampleLimit * (entry.count / totalVertices)));
+      const posAttr = entry.mesh.geometry.attributes.position;
+      const norAttr = entry.mesh.geometry.attributes.normal;
+      entry.mesh.updateWorldMatrix(true, false);
+      const rootToMesh = new THREE.Matrix4().multiplyMatrices(this.temp.inv, entry.mesh.matrixWorld);
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(rootToMesh);
+      const step = Math.max(1, Math.floor(posAttr.count / perMesh));
+
+      for (let i = 0; i < posAttr.count && this.surfaceSamples.length < this.cfg.meshSampleLimit; i += step) {
+        const p = new THREE.Vector3().fromBufferAttribute(posAttr, i).applyMatrix4(rootToMesh);
+        let n = new THREE.Vector3(0, 1, 0);
+        if (norAttr) n.fromBufferAttribute(norAttr, i).applyMatrix3(normalMatrix).normalize();
+        this.surfaceSamples.push(p);
+        this.surfaceNormals.push(n);
+      }
+    }
+  }
+
+  rebuildHitProxy() {
+    if (!this.moth) return;
+    this.temp.box.setFromObject(this.modelHolder);
+    const size = this.temp.box.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z) * 0.55;
+    this.hitProxy.geometry.dispose();
+    this.hitProxy.geometry = new THREE.SphereGeometry(Math.max(0.07, radius), 14, 14);
+  }
+
+  setupAnimations(clips) {
+    if (!this.moth || !clips.length) return;
+    this.mixer = new THREE.AnimationMixer(this.moth);
+
+    const normalized = new Map();
+    for (const clip of clips) normalized.set(normalizeName(clip.name), clip);
+
+    const findClip = (aliases) => {
+      for (const alias of aliases) {
+        const found = normalized.get(alias);
+        if (found) return found;
+      }
+      for (const [name, clip] of normalized.entries()) {
+        for (const alias of aliases) {
+          if (name.includes(alias)) return clip;
+        }
+      }
+      return null;
+    };
+
+    for (const [key, aliases] of Object.entries(ACTION_ALIASES)) {
+      const clip = findClip(aliases);
+      if (!clip) continue;
+      const action = this.mixer.clipAction(clip);
+      action.enabled = true;
+      action.clampWhenFinished = true;
+      this.actions.set(key, action);
+    }
+
+    this.mixer.addEventListener("finished", (event) => {
+      if (event.action === this.actions.get("backflip")) this.flipBusy = false;
+      if (this.pendingLoopAction) {
+        const next = this.pendingLoopAction;
+        this.pendingLoopAction = "";
+        this.playLoop(next);
+      }
+    });
+  }
+
+  playLoop(key) {
+    const next = this.actions.get(key);
+    if (!next) return false;
+    if (this.currentAction === next && this.currentActionKey === key) return true;
+
+    next.reset();
+    next.enabled = true;
+    next.setLoop(THREE.LoopRepeat, Infinity);
+    next.clampWhenFinished = false;
+
+    if (this.currentAction) this.currentAction.crossFadeTo(next, 0.18, true);
+    next.play();
+    this.currentAction = next;
+    this.currentActionKey = key;
+    return true;
+  }
+
+  playOnce(key, fallbackKey) {
+    const next = this.actions.get(key);
+    if (!next) {
+      if (key === "backflip") {
+        this.flipBusy = true;
+        this.manualFlipTime = this.manualFlipDuration;
+      }
+      if (fallbackKey) this.playLoop(fallbackKey);
+      return false;
+    }
+
+    this.pendingLoopAction = fallbackKey || "";
+    next.reset();
+    next.enabled = true;
+    next.setLoop(THREE.LoopOnce, 1);
+    next.clampWhenFinished = true;
+
+    if (this.currentAction) this.currentAction.crossFadeTo(next, 0.12, true);
+    next.play();
+    this.currentAction = next;
+    this.currentActionKey = key;
+    return true;
+  }
+
+  createFallbackMoth() {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x777777, emissive: 0x153447, emissiveIntensity: 0.3, roughness: 0.7 })
+    );
+    group.add(body);
+    const wingGeo = new THREE.PlaneGeometry(0.24, 0.34);
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0x575b66, emissive: 0x153447, emissiveIntensity: 0.25, side: THREE.DoubleSide, transparent: true, opacity: 0.92 });
+    const left = new THREE.Mesh(wingGeo, wingMat.clone());
+    const right = new THREE.Mesh(wingGeo, wingMat.clone());
+    left.position.set(-0.09, 0.02, 0);
+    right.position.set(0.09, 0.02, 0);
+    left.rotation.y = Math.PI * 0.5;
+    right.rotation.y = -Math.PI * 0.5;
+    group.add(left, right);
+    this.fallbackWings = [left, right];
+    this.moth = group;
+    this.modelHolder.add(group);
+    this.surfaceSamples = [new THREE.Vector3(), new THREE.Vector3(0.1, 0.02, 0), new THREE.Vector3(-0.1, 0.02, 0), new THREE.Vector3(0, 0.08, 0)];
+    this.surfaceNormals = this.surfaceSamples.map(() => new THREE.Vector3(0, 1, 0));
+    this.rebuildAuraFromSamples();
+    this.rebuildHitProxy();
+  }
+
+  pickNextPatrolPoint(seed = false) {
+    this.patrolTheta += randomRange(0.55, 1.35);
+    const radius = randomRange(this.cfg.patrolRadiusMin, this.cfg.patrolRadiusMax);
+    const y = randomRange(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax);
+    this.patrolPoint.set(
+      this.orbitCenter.x + Math.cos(this.patrolTheta) * radius,
+      this.orbitCenter.y + y,
+      this.orbitCenter.z + Math.sin(this.patrolTheta) * radius
+    );
+    if (seed) this.targetPoint.copy(this.patrolPoint);
+  }
+
+  updateHoverTarget(hoveredIndex, coverWorldData) {
+    if (hoveredIndex !== this.hoveredCoverIndex) {
+      this.hoveredCoverIndex = hoveredIndex;
+      this.coverHoverBeganAt = this.getElapsed();
+    }
+    if (hoveredIndex < 0) return false;
+    const data = coverWorldData?.[hoveredIndex];
+    if (!data || !data.visible) return false;
+
+    const normal = this.temp.vecA.copy(data.right).cross(data.up).normalize();
+    const toCam = this.temp.vecB.copy(this.camera.position).sub(data.position);
+    if (normal.dot(toCam) < 0) normal.multiplyScalar(-1);
+
+    this.currentCoverNormal.copy(normal);
+    this.currentCoverUp.copy(data.up);
+    this.currentCoverPoint.copy(data.position)
+      .addScaledVector(data.up, this.coverSize.height * 0.5 + this.cfg.coverPerchLift)
+      .addScaledVector(normal, this.cfg.coverPerchForward);
+
+    return this.getElapsed() - this.coverHoverBeganAt >= this.cfg.hoverPerchDelay;
   }
 
   createNest(data) {
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({
-        map: this.nestTexture,
-        transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        toneMapped: false
-      })
+      new THREE.MeshBasicMaterial({ map: this.nestTexture, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
     );
-    mesh.renderOrder = 5;
+    mesh.renderOrder = 9;
     this.nestGroup.add(mesh);
-
     const nest = { mesh, ...data };
     this.nests.push(nest);
     if (this.nests.length > this.cfg.nestMax) {
       const oldest = this.nests.shift();
-      oldest?.mesh?.parent?.remove(oldest.mesh);
+      if (oldest?.mesh?.parent) oldest.mesh.parent.remove(oldest.mesh);
     }
     return nest;
   }
 
   restoreNests() {
     if (!Array.isArray(this.pendingNestState)) return;
-    for (const data of this.pendingNestState) this.createNest(data);
+    for (const data of this.pendingNestState.slice(0, this.cfg.nestMax)) this.createNest(data);
     this.pendingNestState = null;
   }
 
   dropNestOnCover(coverIndex) {
     if (coverIndex < 0) return;
     if (Math.random() > this.cfg.nestChancePerLanding) return;
-
     this.createNest({
       coverIndex,
       u: randomRange(-0.22, 0.22),
@@ -673,279 +811,177 @@ export class MothSystem {
   updateNests(coverWorldData) {
     const halfW = this.coverSize.width * 0.5;
     const halfH = this.coverSize.height * 0.5;
-
     for (const nest of this.nests) {
       const data = coverWorldData?.[nest.coverIndex];
-      if (!data?.visible) {
+      if (!data || !data.visible) {
         nest.mesh.visible = false;
         continue;
       }
-
       nest.mesh.visible = true;
       const normal = this.temp.vecA.copy(data.right).cross(data.up).normalize();
       const toCam = this.temp.vecB.copy(this.camera.position).sub(data.position);
       if (normal.dot(toCam) < 0) normal.multiplyScalar(-1);
-
-      nest.mesh.position
-        .copy(data.position)
-        .addScaledVector(data.right, nest.u * halfW * 2)
-        .addScaledVector(data.up, nest.v * halfH * 2)
-        .addScaledVector(normal, 0.01);
-
+      nest.mesh.position.copy(data.position)
+        .addScaledVector(data.right, nest.u * halfW * 2.0)
+        .addScaledVector(data.up, nest.v * halfH * 2.0)
+        .addScaledVector(normal, 0.012);
       nest.mesh.scale.setScalar(nest.scale);
       makeLookQuaternion(nest.mesh.position, nest.mesh.position.clone().add(normal), data.up, nest.mesh.quaternion);
       nest.mesh.rotateZ(nest.rot);
     }
   }
 
-  loadMoth() {
-    const src = this.assets?.modelFBX || "./assets/models/moth/moth.fbx";
-    this.loader.load(
-      src,
-      (fbx) => this.setupLoadedMoth(fbx),
-      undefined,
-      (err) => {
-        console.error("Moth FBX failed to load:", err);
-        this.log("moth load failed, using fallback", "ERR");
-        this.createFallbackMoth();
-      }
-    );
+  emitTrailParticle() {
+    if (!this.surfaceSamples.length) return;
+    const index = this.trail.cursor;
+    this.trail.cursor = (this.trail.cursor + 1) % this.cfg.trailCount;
+
+    const sampleIndex = Math.floor(Math.random() * this.surfaceSamples.length);
+    const localPos = this.surfaceSamples[sampleIndex];
+    const localNormal = this.surfaceNormals[sampleIndex] || new THREE.Vector3(0, 1, 0);
+
+    const worldPos = this.root.localToWorld(localPos.clone());
+    const worldNormal = localNormal.clone().applyQuaternion(this.root.quaternion).normalize();
+
+    const base = index * 3;
+    this.trail.positions[base + 0] = worldPos.x;
+    this.trail.positions[base + 1] = worldPos.y;
+    this.trail.positions[base + 2] = worldPos.z;
+    this.trail.life[index] = this.cfg.trailLife;
+
+    this.trail.velocities[index]
+      .copy(this.forward)
+      .multiplyScalar(-this.velocity.length() * this.cfg.trailSpeedFactor - 0.08)
+      .addScaledVector(worldNormal, 0.07)
+      .add(this.temp.vecA.set(
+        (Math.random() - 0.5) * this.cfg.trailVelocityJitter,
+        (Math.random() - 0.5) * this.cfg.trailVelocityJitter,
+        (Math.random() - 0.5) * this.cfg.trailVelocityJitter
+      ));
   }
 
-  setupLoadedMoth(fbx) {
-    this.moth = fbx;
-    this.modelHolder.add(fbx);
-
-    fbx.traverse((child) => {
-      if (!child.isMesh) return;
-      child.castShadow = true;
-      child.receiveShadow = false;
-      child.frustumCulled = false;
-      if (child.material) {
-        child.material = child.material.clone();
-        if ("emissive" in child.material) {
-          child.material.emissive.set("#12364d");
-          child.material.emissiveIntensity = 0.35;
-        }
-      }
-    });
-
-    const preBox = getMeshBounds(fbx);
-    const preCenter = preBox.getCenter(this.temp.center);
-    const preSize = preBox.getSize(this.temp.scale);
-    fbx.position.sub(preCenter);
-
-    let targetHeight = 0.34;
-    if (this.centralModel) {
-      const centerBox = new THREE.Box3().setFromObject(this.centralModel);
-      const centerSize = centerBox.getSize(new THREE.Vector3());
-      if (centerSize.y > 0) targetHeight = centerSize.y * this.cfg.sizeRatioToModelHeight;
+  updateTrail(delta, elapsed) {
+    this.trail.material.uniforms.uTime.value = elapsed;
+    this.trail.material.uniforms.uAlpha.value = this.cfg.trailAlpha * (this.mode === "feeding" ? 1.12 : this.vitality < this.cfg.sadThreshold ? 0.64 : 1.0);
+    this.trail.emitTimer += delta;
+    while (this.ready && this.mode !== "perched" && this.trail.emitTimer >= this.cfg.trailEmitInterval) {
+      this.trail.emitTimer -= this.cfg.trailEmitInterval;
+      this.emitTrailParticle();
     }
 
-    const rawHeight = Math.max(0.001, preSize.y || 1);
-    const scale = THREE.MathUtils.clamp(targetHeight / rawHeight, 0.002, 2.5);
-    fbx.scale.setScalar(scale);
+    for (let i = 0; i < this.cfg.trailCount; i += 1) {
+      if (this.trail.life[i] <= 0) continue;
+      this.trail.life[i] = Math.max(0, this.trail.life[i] - delta);
+      const base = i * 3;
+      const vel = this.trail.velocities[i];
+      vel.multiplyScalar(Math.exp(-this.cfg.trailDrag * delta));
+      this.trail.positions[base + 0] += vel.x * delta;
+      this.trail.positions[base + 1] += vel.y * delta;
+      this.trail.positions[base + 2] += vel.z * delta;
+    }
 
-    this.modelHolder.rotation.set(this.cfg.modelPitchOffset, this.cfg.modelYawOffset, this.cfg.modelRollOffset);
+    this.trail.geometry.attributes.position.needsUpdate = true;
+    this.trail.geometry.attributes.aLife.needsUpdate = true;
+  }
 
-    const postBox = getMeshBounds(this.modelHolder);
-    const postSize = postBox.getSize(new THREE.Vector3());
-    const hitRadius = Math.max(postSize.x, postSize.y, postSize.z) * 0.5;
-    this.hitProxy.geometry.dispose();
-    this.hitProxy.geometry = new THREE.SphereGeometry(Math.max(0.06, hitRadius), 16, 16);
+  updateVoidVisual(delta, elapsed) {
+    this.voidVisual.material.uniforms.uTime.value = elapsed;
+    if (!this.voidState.active) {
+      this.voidVisual.group.visible = false;
+      return;
+    }
 
-    this.localSurfacePoints = collectMeshSamplePoints(this.modelHolder, this.cfg.meshSampleLimit);
-    if (!this.localSurfacePoints.length) this.localSurfacePoints = [new THREE.Vector3(0, 0, 0)];
-    this.buildShellFromSamples(this.localSurfacePoints);
-    this.setupAnimationMixer(fbx.animations || []);
-    this.restoreNests();
+    this.voidVisual.group.visible = true;
+    this.voidVisual.group.position.copy(this.voidState.position);
+    this.voidVisual.group.quaternion.copy(this.camera.quaternion);
+    this.voidState.spin += delta * (1.4 + this.voidState.energy * 0.4);
 
-    this.ready = true;
+    const positions = this.voidVisual.positions;
+    const energy = Math.max(0.12, this.voidState.energy);
+    for (let i = 0; i < this.cfg.voidParticleCount; i += 1) {
+      const base = i * 3;
+      const wobble = Math.sin(elapsed * 2.2 + i * 0.11) * 0.04;
+      const angle = this.voidVisual.angle[i] + this.voidState.spin * (0.8 + i * 0.0007);
+      const radius = this.voidVisual.radius[i] * (0.92 + wobble);
+      positions[base + 0] = Math.cos(angle) * radius;
+      positions[base + 1] = Math.sin(angle) * radius;
+      positions[base + 2] = this.voidVisual.depth[i] + Math.sin(elapsed * 3.0 + i * 0.13) * 0.02;
+    }
+    this.voidVisual.geometry.attributes.position.needsUpdate = true;
+    this.voidVisual.material.uniforms.uAlpha.value = 0.76 + energy * 0.14;
+    this.voidVisual.core.scale.setScalar(0.94 + Math.sin(elapsed * 2.4) * 0.05);
+    this.voidVisual.rim.scale.setScalar(0.96 + Math.sin(elapsed * 1.9) * 0.03 + energy * 0.02);
+    this.voidVisual.rim.material.opacity = 0.14 + energy * 0.04;
+  }
+
+  clearVoid() {
+    this.voidState.active = false;
+    this.voidState.energy = 0;
+  }
+
+  spawnVoid(position) {
+    this.voidState.active = true;
+    this.voidState.position.copy(position);
+    this.voidState.energy = Math.min(1.4, Math.max(0.9, this.voidState.energy + 0.26));
+    this.mode = "toVoid";
+    this.perched = false;
     this.playLoop(this.vitality < this.cfg.sadThreshold ? "flySad" : "fly");
-    this.log(`moth loaded :: clips=${(fbx.animations || []).map((a) => a.name).join(", ")}`, "OK");
   }
 
-  createFallbackMoth() {
-    const g = new THREE.Group();
-
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.025, 0.11, 4, 8),
-      new THREE.MeshStandardMaterial({ color: 0x6a6f7b, emissive: 0x12364d, emissiveIntensity: 0.35, roughness: 0.78 })
-    );
-    g.add(body);
-
-    const wingMat = new THREE.MeshStandardMaterial({
-      color: 0x585d68,
-      emissive: 0x12364d,
-      emissiveIntensity: 0.2,
-      roughness: 0.85,
-      transparent: true,
-      opacity: 0.94,
-      side: THREE.DoubleSide
-    });
-
-    const wingGeo = new THREE.PlaneGeometry(0.12, 0.22);
-    const left = new THREE.Mesh(wingGeo, wingMat.clone());
-    const right = new THREE.Mesh(wingGeo, wingMat.clone());
-    left.position.set(-0.055, 0.03, 0);
-    right.position.set(0.055, 0.03, 0);
-    left.rotation.y = Math.PI * 0.42;
-    right.rotation.y = -Math.PI * 0.42;
-    left.rotation.z = 0.1;
-    right.rotation.z = -0.1;
-    g.add(left, right);
-
-    this.fallbackWings = [left, right];
-    this.moth = g;
-    this.modelHolder.add(g);
-
-    this.localSurfacePoints = [
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(-0.04, 0.03, 0),
-      new THREE.Vector3(0.04, 0.03, 0),
-      new THREE.Vector3(0, -0.03, 0.02)
-    ];
-    this.buildShellFromSamples(this.localSurfacePoints);
-    this.restoreNests();
-    this.ready = true;
-  }
-
-  setupAnimationMixer(clips) {
-    if (!this.moth || !clips.length) return;
-    this.mixer = new THREE.AnimationMixer(this.moth);
-
-    const normalized = new Map();
-    for (const clip of clips) normalized.set(normalizeName(clip.name), clip);
-
-    const findClip = (aliases) => {
-      for (const alias of aliases) {
-        if (normalized.has(alias)) return normalized.get(alias);
-      }
-      for (const [name, clip] of normalized.entries()) {
-        for (const alias of aliases) {
-          if (name.includes(alias)) return clip;
-        }
-      }
-      return null;
-    };
-
-    for (const [key, aliases] of Object.entries(ACTION_ALIASES)) {
-      const clip = findClip(aliases.map(normalizeName));
-      if (!clip) continue;
-      const action = this.mixer.clipAction(clip);
-      action.enabled = true;
-      action.clampWhenFinished = true;
-      this.actions[key] = action;
+  pickVoidPoint() {
+    const ray = this.temp.raycaster.ray;
+    const hit = new THREE.Vector3();
+    this.temp.sphere.center.copy(this.orbitCenter);
+    this.temp.sphere.radius = this.cfg.voidSpawnRadius;
+    if (!ray.intersectSphere(this.temp.sphere, hit)) {
+      this.temp.plane.set(new THREE.Vector3(0, 0, 1), -this.orbitCenter.z);
+      if (!ray.intersectPlane(this.temp.plane, hit)) return null;
     }
-
-    this.mixer.addEventListener("finished", (event) => {
-      if (event.action === this.actions.backflip) this.flipBusy = false;
-      if (this.pendingLoopActionKey) {
-        const nextKey = this.pendingLoopActionKey;
-        this.pendingLoopActionKey = "";
-        this.playLoop(nextKey);
-      }
-    });
-  }
-
-  getAction(key) {
-    return this.actions[key] || null;
-  }
-
-  playLoop(key, fade = 0.18) {
-    const next = this.getAction(key);
-    if (!next) return false;
-    if (this.currentAction === next && this.currentActionKey === key) return true;
-
-    next.reset();
-    next.enabled = true;
-    next.setLoop(THREE.LoopRepeat, Infinity);
-    next.clampWhenFinished = false;
-
-    if (this.currentAction) this.currentAction.crossFadeTo(next, fade, true);
-    next.play();
-    this.currentAction = next;
-    this.currentActionKey = key;
-    return true;
-  }
-
-  playOnce(key, fallbackKey = "fly", fade = 0.12) {
-    const next = this.getAction(key);
-    if (!next) {
-      this.playLoop(fallbackKey);
-      return false;
-    }
-
-    this.pendingLoopActionKey = fallbackKey;
-    next.reset();
-    next.enabled = true;
-    next.setLoop(THREE.LoopOnce, 1);
-    next.clampWhenFinished = true;
-
-    if (this.currentAction) this.currentAction.crossFadeTo(next, fade, true);
-    next.play();
-    this.currentAction = next;
-    this.currentActionKey = key;
-    return true;
+    const local = hit.clone().sub(this.orbitCenter);
+    if (local.length() > this.cfg.voidSpawnRadius) local.setLength(this.cfg.voidSpawnRadius);
+    local.y = THREE.MathUtils.clamp(local.y, this.cfg.voidHeightMin, this.cfg.voidHeightMax);
+    return this.orbitCenter.clone().add(local);
   }
 
   performBackflip() {
     this.flipBusy = true;
     this.perched = false;
     this.mode = "patrol";
-    this.root.position.y += this.cfg.clickEvadeLift * 0.18;
+    this.hoveredCoverIndex = -1;
     this.velocity.add(this.forward.clone().multiplyScalar(-this.cfg.clickEvadePush));
+    this.root.position.y += this.cfg.clickEvadeLift * 0.18;
     this.pickNextPatrolPoint();
-
-    if (!this.playOnce("backflip", this.vitality < this.cfg.sadThreshold ? "flySad" : "fly")) {
-      this.flipBusy = false;
-    }
+    this.playOnce("backflip", this.vitality < this.cfg.sadThreshold ? "flySad" : "fly");
   }
 
-  pickNextPatrolPoint(seedOnly = false) {
-    this.patrolAngle += randomRange(0.55, 1.35);
-    const radius = randomRange(this.cfg.patrolRadiusMin, this.cfg.patrolRadiusMax);
-    const y = randomRange(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax);
-    this.patrolPoint.set(
-      this.orbitCenter.x + Math.cos(this.patrolAngle) * radius,
-      this.orbitCenter.y + y,
-      this.orbitCenter.z + Math.sin(this.patrolAngle) * radius
-    );
-    if (seedOnly) this.root.position.copy(this.patrolPoint);
-  }
+  handleClick(event, hoveredEntry) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.temp.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.temp.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.temp.raycaster.setFromCamera(this.temp.mouse, this.camera);
 
-  updateHoverTarget(hoveredIndex, coverWorldData) {
-    if (hoveredIndex !== this.hoveredCoverIndex) {
-      this.hoveredCoverIndex = hoveredIndex;
-      this.coverHoverBeganAt = this.getElapsed();
+    const hits = this.temp.raycaster.intersectObject(this.hitProxy, false);
+    if (hits.length) {
+      this.performBackflip();
+      return true;
     }
 
-    if (hoveredIndex < 0) return false;
-    const data = coverWorldData?.[hoveredIndex];
-    if (!data?.visible) return false;
+    if (hoveredEntry) return false;
 
-    const normal = this.temp.vecA.copy(data.right).cross(data.up).normalize();
-    const toCam = this.temp.vecB.copy(this.camera.position).sub(data.position);
-    if (normal.dot(toCam) < 0) normal.multiplyScalar(-1);
-
-    this.currentCoverNormal.copy(normal);
-    this.currentCoverUp.copy(data.up);
-    this.currentCoverPoint
-      .copy(data.position)
-      .addScaledVector(data.up, this.coverSize.height * 0.5 + this.cfg.coverPerchLift)
-      .addScaledVector(normal, this.cfg.coverPerchForward);
-
-    return this.getElapsed() - this.coverHoverBeganAt >= this.cfg.hoverPerchDelay;
+    const point = this.pickVoidPoint();
+    if (!point) return false;
+    this.spawnVoid(point);
+    return true;
   }
 
   updateMovement(delta, coverWorldData) {
-    const lockedToCover = this.updateHoverTarget(this.hoveredCoverIndex, coverWorldData);
+    const hasCoverTarget = this.updateHoverTarget(this.hoveredCoverIndex, coverWorldData);
 
-    if (!this.flipBusy && lockedToCover) {
+    if (!this.flipBusy && hasCoverTarget) {
       this.mode = this.perched ? "perched" : "toCover";
     } else if (!this.flipBusy && this.voidState.active) {
       this.mode = "toVoid";
-    } else if (!this.flipBusy && this.mode !== "perched") {
+    } else if (!this.flipBusy && this.mode !== "perched" && this.mode !== "feeding") {
       this.mode = "patrol";
     }
 
@@ -955,15 +991,16 @@ export class MothSystem {
     if (this.mode === "toCover" || this.mode === "perched") {
       target = this.currentCoverPoint;
       speed = this.cfg.flySpeed * 0.92;
-    } else if (this.mode === "toVoid") {
+    } else if (this.mode === "toVoid" || this.mode === "feeding") {
       target = this.voidState.position;
       speed = this.cfg.diveSpeed;
     }
 
-    const toTarget = this.temp.vecC.copy(target).sub(this.root.position);
+    this.targetPoint.copy(target);
+    const toTarget = this.temp.vecA.copy(target).sub(this.root.position);
     const distance = toTarget.length();
 
-    if (this.mode === "patrol" && distance < 0.14) this.pickNextPatrolPoint();
+    if (this.mode === "patrol" && distance < 0.16) this.pickNextPatrolPoint();
 
     if ((this.mode === "toCover" || this.mode === "perched") && distance < this.cfg.arrivalRadius) {
       this.perched = true;
@@ -978,81 +1015,93 @@ export class MothSystem {
     }
 
     if (this.mode === "perched") {
-      this.root.position.lerp(this.currentCoverPoint, 1 - Math.exp(-delta * 8));
-      this.velocity.multiplyScalar(0.6);
-      const look = this.temp.vecD.copy(this.currentCoverPoint).add(this.currentCoverNormal);
-      makeLookQuaternion(this.root.position, look, this.currentCoverUp, this.temp.quatA);
-      this.root.quaternion.slerp(this.temp.quatA, 1 - Math.exp(-delta * 10));
-
+      this.root.position.lerp(this.currentCoverPoint, 1.0 - Math.exp(-delta * 10.0));
+      this.velocity.multiplyScalar(0.7);
+      const lookAt = this.temp.vecB.copy(this.currentCoverPoint).add(this.currentCoverNormal);
+      makeLookQuaternion(this.root.position, lookAt, this.currentCoverUp, this.temp.quatA);
+      this.root.quaternion.slerp(this.temp.quatA, 1.0 - Math.exp(-delta * 10.0));
       if (this.hoveredCoverIndex < 0) {
         this.perched = false;
         this.mode = this.voidState.active ? "toVoid" : "patrol";
-        this.root.position.y += this.cfg.clickEvadeLift * 0.2;
+        this.root.position.y += 0.02;
         this.playOnce("takeoff", this.vitality < this.cfg.sadThreshold ? "flySad" : "fly");
       }
       return;
     }
 
     if (this.mode === "feeding") {
-      this.root.position.lerp(this.voidState.position, 1 - Math.exp(-delta * 9));
-      this.velocity.multiplyScalar(0.75);
-      const look = this.temp.vecD.copy(this.voidState.position).add(new THREE.Vector3(0, 0, -0.2));
-      makeLookQuaternion(this.root.position, look, new THREE.Vector3(0, 1, 0), this.temp.quatA);
-      this.root.quaternion.slerp(this.temp.quatA, 1 - Math.exp(-delta * 9));
+      this.velocity.multiplyScalar(0.84);
+      this.root.position.lerp(this.voidState.position, 1.0 - Math.exp(-delta * 8.5));
+      const lookAt = this.temp.vecB.copy(this.voidState.position).add(new THREE.Vector3(0, 0, -0.2));
+      makeLookQuaternion(this.root.position, lookAt, new THREE.Vector3(0, 1, 0), this.temp.quatA);
+      this.root.quaternion.slerp(this.temp.quatA, 1.0 - Math.exp(-delta * 8.0));
       return;
     }
 
     if (distance > 0.0001) {
-      const desired = toTarget.normalize().multiplyScalar(speed * Math.min(1.0, distance / 0.55 + 0.18));
-      this.velocity.lerp(desired, 1 - Math.exp(-delta * 4.5));
+      const desired = toTarget.normalize().multiplyScalar(speed * Math.min(1, distance / 0.55 + 0.18));
+      this.velocity.lerp(desired, 1.0 - Math.exp(-delta * 4.4));
     }
+
     this.velocity.multiplyScalar(Math.pow(this.cfg.damping, delta * 60));
     this.root.position.addScaledVector(this.velocity, delta);
 
     if (this.velocity.lengthSq() > 0.00001) {
-      this.forward.lerp(this.velocity.clone().normalize(), 1 - Math.exp(-delta * 8)).normalize();
-      const lookPoint = this.temp.vecD.copy(this.root.position).add(this.forward);
-      makeLookQuaternion(this.root.position, lookPoint, new THREE.Vector3(0, 1, 0), this.temp.quatA);
+      this.forward.lerp(this.velocity.clone().normalize(), 1.0 - Math.exp(-delta * 8.0)).normalize();
+      const lookAt = this.temp.vecB.copy(this.root.position).add(this.forward);
+      makeLookQuaternion(this.root.position, lookAt, new THREE.Vector3(0, 1, 0), this.temp.quatA);
       this.root.quaternion.slerp(this.temp.quatA, this.cfg.turnLerp);
     }
   }
 
-  updateAnimations(delta) {
+  updateAnimation(delta) {
     if (!this.ready) return;
 
-    if (!this.mixer && this.fallbackWings?.length) {
-      const t = this.getElapsed();
-      const base = this.mode === "feeding" ? 10.0 : this.vitality < this.cfg.sadThreshold ? 4.8 : 7.2;
-      const amp = this.mode === "perched" ? 0.08 : this.vitality < this.cfg.sadThreshold ? 0.24 : 0.42;
-      this.fallbackWings[0].rotation.z = Math.sin(t * base) * amp + 0.12;
-      this.fallbackWings[1].rotation.z = -Math.sin(t * base) * amp - 0.12;
-      return;
+    if (this.manualFlipTime > 0) {
+      this.manualFlipTime = Math.max(0, this.manualFlipTime - delta);
+      if (this.manualFlipTime === 0) this.flipBusy = false;
     }
 
-    if (!this.mixer) return;
-    if (this.flipBusy) {
-      this.mixer.update(delta);
+    if (this.fallbackWings.length) {
+      const t = this.getElapsed();
+      const flapBase = this.mode === "feeding" ? 9.4 : this.vitality < this.cfg.sadThreshold ? 4.8 : 6.9;
+      const flapAmp = this.mode === "perched" ? 0.08 : this.vitality < this.cfg.sadThreshold ? 0.22 : 0.42;
+      this.fallbackWings[0].rotation.z = Math.sin(t * flapBase) * flapAmp + 0.18;
+      this.fallbackWings[1].rotation.z = -Math.sin(t * flapBase) * flapAmp - 0.18;
+    }
+
+    const baseX = this.cfg.modelPitchOffset;
+    const baseY = this.cfg.modelYawOffset;
+    const baseZ = this.cfg.modelRollOffset;
+    if (this.manualFlipTime > 0) {
+      const progress = 1 - this.manualFlipTime / this.manualFlipDuration;
+      this.modelHolder.rotation.set(baseX, baseY, baseZ + progress * Math.PI * 2.0);
+    } else if (!this.mixer) {
+      this.modelHolder.rotation.set(baseX, baseY, baseZ);
+    }
+
+    if (!this.mixer || this.flipBusy) {
+      if (this.mixer) this.mixer.update(delta);
       return;
     }
 
     let desired = this.vitality < this.cfg.sadThreshold ? "flySad" : "fly";
-    if (this.mode === "perched") desired = this.getAction("perch") ? "perch" : desired;
-    else if (this.mode === "toCover") desired = this.getAction("land") ? "land" : desired;
-    else if (this.mode === "feeding" || this.mode === "toVoid") desired = this.getAction("feed") ? "feed" : desired;
+    if (this.mode === "perched") desired = this.actions.has("perch") ? "perch" : desired;
+    else if (this.mode === "toCover") desired = this.actions.has("land") ? "land" : desired;
+    else if (this.mode === "feeding" || this.mode === "toVoid") desired = this.actions.has("feed") ? "feed" : desired;
 
     this.playLoop(desired);
     this.mixer.update(delta);
   }
 
   updateVitals(delta) {
-    if (this.mode === "feeding" || this.mode === "perched") {
-      this.vitality = clamp01(this.vitality + this.cfg.vitalityRecoveryPerSecond * delta);
-    } else {
-      this.vitality = clamp01(this.vitality - this.cfg.vitalityDrainPerSecond * delta);
-    }
+    const feeding = this.mode === "feeding" || this.mode === "perched";
+    if (feeding) this.vitality = clamp01(this.vitality + this.cfg.vitalityRecoveryPerSecond * delta);
+    else this.vitality = clamp01(this.vitality - this.cfg.vitalityDrainPerSecond * delta);
 
     if (this.mode === "feeding" && this.voidState.active) {
       this.voidState.energy = Math.max(0, this.voidState.energy - this.cfg.voidConsumeRate * delta);
+      this.vitality = clamp01(this.vitality + this.cfg.vitalityRecoveryPerSecond * delta * 0.8);
       if (this.voidState.energy <= 0.001) {
         this.clearVoid();
         this.mode = this.hoveredCoverIndex >= 0 ? "toCover" : "patrol";
@@ -1071,167 +1120,36 @@ export class MothSystem {
     if (this.mode === "feeding") this.stateName = "Feeding";
     else if (this.vitality < this.cfg.sadThreshold) this.stateName = "Dying";
     else if (this.mode === "toCover" || this.mode === "perched" || this.mode === "toVoid") this.stateName = "Curious";
-    else if (this.voidState.active && this.voidState.energy > this.cfg.swarmThreshold) this.stateName = "Swarming";
     else this.stateName = "Hiding";
   }
 
-  updateShell(elapsed) {
-    this.shell.material.uniforms.uTime.value = elapsed;
-    this.shell.material.uniforms.uAlpha.value = this.cfg.shellAlpha * (this.mode === "feeding" ? 1.2 : this.vitality < this.cfg.sadThreshold ? 0.85 : 1.0);
-  }
-
-  emitTrailParticle() {
-    if (!this.localSurfacePoints.length) return;
-    const i = this.trail.cursor;
-    this.trail.cursor = (this.trail.cursor + 1) % this.cfg.trailCount;
-
-    const sample = this.localSurfacePoints[Math.floor(Math.random() * this.localSurfacePoints.length)];
-    const local = sample.clone().add(new THREE.Vector3(
-      (Math.random() - 0.5) * 0.01,
-      (Math.random() - 0.5) * 0.01,
-      (Math.random() - 0.5) * 0.01
-    ));
-    const world = this.root.localToWorld(local.clone());
-
-    const base = i * 3;
-    this.trail.positions[base + 0] = world.x;
-    this.trail.positions[base + 1] = world.y;
-    this.trail.positions[base + 2] = world.z;
-    this.trail.life[i] = this.cfg.trailLife;
-
-    this.trail.velocities[i]
-      .copy(this.forward)
-      .multiplyScalar(-this.velocity.length() * this.cfg.trailSpeedFactor - 0.12)
-      .add(
-        new THREE.Vector3(
-          (Math.random() - 0.5) * this.cfg.trailVelocityJitter,
-          (Math.random() - 0.5) * this.cfg.trailVelocityJitter,
-          (Math.random() - 0.5) * this.cfg.trailVelocityJitter
-        )
-      );
-  }
-
-  updateTrail(delta, elapsed) {
-    this.trail.material.uniforms.uTime.value = elapsed;
-    this.trail.material.uniforms.uAlpha.value = this.cfg.trailAlpha * (this.mode === "feeding" ? 1.2 : this.vitality < this.cfg.sadThreshold ? 0.7 : 1.0);
-
-    this.trail.emitTimer += delta;
-    const canEmit = this.ready && this.mode !== "perched";
-    while (canEmit && this.trail.emitTimer >= this.cfg.trailEmitInterval) {
-      this.trail.emitTimer -= this.cfg.trailEmitInterval;
-      this.emitTrailParticle();
-    }
-
-    for (let i = 0; i < this.cfg.trailCount; i += 1) {
-      if (this.trail.life[i] <= 0) continue;
-      this.trail.life[i] = Math.max(0, this.trail.life[i] - delta);
-      const base = i * 3;
-      this.trail.velocities[i].multiplyScalar(Math.exp(-this.cfg.trailDrag * delta));
-      this.trail.positions[base + 0] += this.trail.velocities[i].x * delta;
-      this.trail.positions[base + 1] += this.trail.velocities[i].y * delta;
-      this.trail.positions[base + 2] += this.trail.velocities[i].z * delta;
-    }
-
-    this.trail.geometry.attributes.position.needsUpdate = true;
-    this.trail.geometry.attributes.aLife.needsUpdate = true;
-  }
-
-  updateVoidVisual(elapsed) {
-    const visual = this.voidVisual;
-    if (!this.voidState.active) {
-      visual.group.visible = false;
-      return;
-    }
-
-    visual.group.visible = true;
-    visual.group.position.copy(this.voidState.position);
-    visual.group.quaternion.copy(this.camera.quaternion);
-    visual.material.uniforms.uTime.value = elapsed;
-    visual.material.uniforms.uAlpha.value = 0.9 + Math.sin(elapsed * 3.2) * 0.05;
-
-    const pulse = 0.96 + Math.sin(elapsed * 4.6) * 0.03;
-    visual.core.scale.setScalar(pulse);
-    visual.rim.scale.setScalar(1.0 + Math.sin(elapsed * 5.1) * 0.04);
-  }
-
-  clearVoid() {
-    this.voidState.active = false;
-    this.voidState.energy = 0;
-  }
-
-  spawnVoid(point) {
-    this.voidState.active = true;
-    this.voidState.position.copy(point);
-    this.voidState.energy = 1.0;
-    this.mode = "toVoid";
-    this.perched = false;
-  }
-
-  pickVoidPoint() {
-    const hit = new THREE.Vector3();
-    const ray = this.temp.raycaster.ray;
-
-    this.temp.sphere.center.copy(this.orbitCenter);
-    this.temp.sphere.radius = this.cfg.voidSpawnRadius;
-    if (!ray.intersectSphere(this.temp.sphere, hit)) {
-      this.temp.plane.set(new THREE.Vector3(0, 0, 1), -this.orbitCenter.z);
-      if (!ray.intersectPlane(this.temp.plane, hit)) return null;
-    }
-
-    const local = hit.clone().sub(this.orbitCenter);
-    if (local.length() > this.cfg.voidSpawnRadius) local.setLength(this.cfg.voidSpawnRadius);
-    local.y = THREE.MathUtils.clamp(local.y, this.cfg.voidHeightMin, this.cfg.voidHeightMax);
-    hit.copy(this.orbitCenter).add(local);
-    return hit;
-  }
-
-  handleClick(event, hoveredEntry) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.temp.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.temp.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.temp.raycaster.setFromCamera(this.temp.mouse, this.camera);
-
-    const hits = this.temp.raycaster.intersectObject(this.hitProxy, false);
-    if (hits.length) {
-      this.performBackflip();
-      return true;
-    }
-
-    if (hoveredEntry) return false;
-    const point = this.pickVoidPoint();
-    if (point) {
-      this.spawnVoid(point);
-      return true;
-    }
-    return false;
+  updateAura(elapsed) {
+    this.aura.material.uniforms.uTime.value = elapsed;
+    this.aura.material.uniforms.uAlpha.value = this.cfg.shellAlpha * (this.mode === "feeding" ? 1.3 : this.vitality < this.cfg.sadThreshold ? 0.65 : 1.0);
   }
 
   update(params = {}) {
     const delta = params.delta || 0.016;
     const elapsed = params.elapsed || this.getElapsed();
-    const hoveredIndex = typeof params.hoveredIndex === "number" ? params.hoveredIndex : -1;
-    const coverWorldData = params.coverWorldData || [];
+    this.hoveredCoverIndex = typeof params.hoveredIndex === "number" ? params.hoveredIndex : -1;
 
-    this.hoveredCoverIndex = hoveredIndex;
-
-    this.updateMovement(delta, coverWorldData);
+    this.updateMovement(delta, params.coverWorldData || []);
     this.updateVitals(delta);
-    this.updateAnimations(delta);
-    this.updateShell(elapsed);
+    this.updateAnimation(delta);
+    this.updateAura(elapsed);
     this.updateTrail(delta, elapsed);
-    this.updateVoidVisual(elapsed);
-    this.updateNests(coverWorldData);
+    this.updateVoidVisual(delta, elapsed);
+    this.updateNests(params.coverWorldData || []);
     this.saveState(false);
-
-    this.hitProxy.visible = false;
   }
 
   dispose() {
     this.saveState(true);
     if (this.mixer) this.mixer.stopAllAction();
-    this.root.parent?.remove(this.root);
-    this.trail.points.parent?.remove(this.trail.points);
-    this.voidVisual.group.parent?.remove(this.voidVisual.group);
-    this.nestGroup.parent?.remove(this.nestGroup);
+    if (this.aura?.points?.parent) this.aura.points.parent.remove(this.aura.points);
+    if (this.trail?.points?.parent) this.trail.points.parent.remove(this.trail.points);
+    if (this.voidVisual?.group?.parent) this.voidVisual.group.parent.remove(this.voidVisual.group);
+    if (this.nestGroup?.parent) this.nestGroup.parent.remove(this.nestGroup);
+    if (this.root?.parent) this.root.parent.remove(this.root);
   }
 }
