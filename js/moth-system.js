@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
   pointLimit: 960,
   sizeRatioToModelHeight: 0.0936,
-  modelYawOffset: -Math.PI / 2,
+  modelYawOffset: Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   shellMotionStrength: 1.25,
@@ -56,8 +56,8 @@ const DEFAULT_CONFIG = {
   approachSlowRadius: 0.42,
   turnLerp: 0.22,
   turnLerpFast: 0.28,
-  headingTargetBlend: 0.72,
-  headingVelocityBlend: 0.28,
+  headingTargetBlend: 0.18,
+  headingVelocityBlend: 0.82,
 
   hoverPerchDelay: 0.10,
   perchDistance: 0.12,
@@ -1239,6 +1239,22 @@ export class MothSystem {
     return facing.normalize();
   }
 
+  getTravelFacingDirection(targetPoint = null) {
+    const velocityDir = this.temp.b.copy(this.velocity);
+    if (velocityDir.lengthSq() > 0.00004) {
+      velocityDir.normalize();
+      if (targetPoint) {
+        const targetDir = this.temp.c.copy(targetPoint).sub(this.root.position);
+        if (targetDir.lengthSq() > 0.00004) {
+          targetDir.normalize();
+          velocityDir.lerp(targetDir, 0.14).normalize();
+        }
+      }
+      return velocityDir;
+    }
+    return this.getFacingDirection(targetPoint);
+  }
+
   pickNextPatrolPoint(force = false) {
     const elapsed = this.getElapsed();
     this.nextPatrolDecisionAt = elapsed + randomFromRange(this.cfg.patrolRepickMin, this.cfg.patrolRepickMax);
@@ -1392,7 +1408,7 @@ export class MothSystem {
 
     if (this.mode === "backflip") {
       this.root.position.addScaledVector(this.velocity, delta);
-      this.lookAtDirection(this.getFacingDirection(this.root.position.clone().add(this.velocity)), this.cfg.turnLerpFast);
+      this.lookAtDirection(this.getTravelFacingDirection(this.root.position.clone().add(this.velocity)), this.cfg.turnLerpFast);
       return;
     }
 
@@ -1418,7 +1434,7 @@ export class MothSystem {
         this.maybeDropNest(coverTarget.position, hoveredIndex);
       }
       this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.95);
-      this.lookAtDirection(this.getFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
+      this.lookAtDirection(this.getTravelFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
       if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
         this.playLoop(this.getPatrolFlightAction());
       }
@@ -1428,7 +1444,7 @@ export class MothSystem {
     if (this.mode === "approachVoid" && voidTarget) {
       const distance = this.root.position.distanceTo(voidTarget.position);
       this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed);
-      this.lookAtDirection(this.getFacingDirection(voidTarget.position), this.cfg.turnLerpFast);
+      this.lookAtDirection(this.getTravelFacingDirection(voidTarget.position), this.cfg.turnLerpFast);
       if (distance <= this.cfg.voidConsumeDistance) {
         this.mode = "inspectVoid";
         this.voidState.inspectStartedAt = elapsed;
@@ -1453,7 +1469,7 @@ export class MothSystem {
       }
 
       this.moveToward(delta, this.currentPatrolAnchor, this.getPatrolFlightSpeed(elapsed));
-      this.lookAtDirection(this.getFacingDirection(this.currentPatrolAnchor), this.cfg.turnLerpFast);
+      this.lookAtDirection(this.getTravelFacingDirection(this.currentPatrolAnchor), this.cfg.turnLerpFast);
       this.playLoop(this.getPatrolFlightAction());
     }
   }
