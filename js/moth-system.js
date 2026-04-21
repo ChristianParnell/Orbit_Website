@@ -14,7 +14,8 @@ const DEFAULT_PALETTE = [
 
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
-  pointLimit: 960,
+  pointLimit: 680,
+  outlinePointLimit: 420,
   sizeRatioToModelHeight: 0.0936,
   modelYawOffset: Math.PI / 2,
   modelPitchOffset: 0,
@@ -22,9 +23,14 @@ const DEFAULT_CONFIG = {
   shellMotionStrength: 1.25,
   shellPointSizeMin: 0.82,
   shellPointSizeMax: 1.52,
-  shellPointAlphaMin: 0.48,
-  shellPointAlphaMax: 0.82,
-  binaryBrightness: 1.42,
+  shellPointAlphaMin: 0.24,
+  shellPointAlphaMax: 0.54,
+  binaryBrightness: 1.16,
+  outlineBrightness: 1.55,
+  outlineExpand: 0.018,
+  outlinePointSizeMin: 1.15,
+  outlinePointSizeMax: 1.95,
+  outlineAlpha: 0.92,
   trailCount: 180,
   trailEmitInterval: 0.02,
   trailLife: 0.85,
@@ -35,19 +41,21 @@ const DEFAULT_CONFIG = {
   trailPointSizeMax: 1.3,
   trailAlpha: 0.78,
 
-  patrolRadiusMin: 0.45,
-  patrolRadiusMax: 1.18,
-  patrolHeightMin: 0.28,
-  patrolHeightMax: 1.02,
-  patrolFrontMin: 0.22,
-  patrolFrontMax: 0.82,
-  patrolSideSpan: 0.58,
-  patrolViewMargin: 0.82,
+  patrolRadiusMin: 1.75,
+  patrolRadiusMax: 3.40,
+  patrolHeightMin: -0.10,
+  patrolHeightMax: 1.55,
+  patrolFrontMin: 0.35,
+  patrolFrontMax: 1.35,
+  patrolSideSpan: 1.25,
+  patrolViewMargin: 0.78,
+  patrolViewYMin: -0.48,
+  patrolViewYMax: 0.46,
   patrolRepickMin: 1.8,
   patrolRepickMax: 3.4,
-  patrolRecoveryMargin: 1.06,
+  patrolRecoveryMargin: 0.96,
   patrolRecoverySpeedScale: 1.2,
-  patrolCenterPull: 0.18,
+  patrolCenterPull: 0.12,
 
 
   flySpeed: 1.55,
@@ -281,12 +289,99 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
         vec2 uv = gl_PointCoord;
         vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
         vec4 glyph = texture2D(uAtlas, atlasUv);
-        float alpha = glyph.a * vAlpha * uAlphaBoost * (0.96 + uBrightness * 0.16);
+        float alpha = glyph.a * vAlpha * uAlphaBoost * (0.82 + uBrightness * 0.08);
         if (alpha < 0.02) discard;
         vec3 color = palette(vPalette);
-        color *= mix(0.42, 1.18, vShade) * uBrightness;
-        color += palette(vPalette) * (0.08 * uBrightness);
+        color *= mix(0.34, 0.96, vShade) * uBrightness;
+        color += palette(vPalette) * (0.035 * uBrightness);
         color = mix(color, vec3(0.10, 0.18, 0.24), uSadness * 0.38);
+        gl_FragColor = vec4(color, alpha);
+      }
+    `
+  });
+}
+
+function createBinaryOutlineMaterial(atlas, palette, lightDir) {
+  const paletteUniform = palette.map((c) => c.clone());
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uAtlas: { value: atlas },
+      uTime: { value: 0 },
+      uLightDir: { value: lightDir.clone() },
+      uPalette: { value: paletteUniform },
+      uAlpha: { value: 1 },
+      uSadness: { value: 0 },
+      uMotion: { value: 0 },
+      uBrightness: { value: 1.55 }
+    },
+    vertexShader: `
+      uniform float uTime;
+      uniform float uMotion;
+      attribute vec3 aNormal;
+      attribute float aSeed;
+      attribute float aSize;
+      attribute float aAlpha;
+
+      varying float vDigit;
+      varying float vAlpha;
+      varying float vPalette;
+      varying float vEdge;
+
+      void main() {
+        vec3 n = normalize(aNormal);
+        vec3 p = position + n * (0.002 + uMotion * 0.003);
+        float flutter = (0.0025 + aSeed * 0.0045) * (0.7 + uMotion * 1.1);
+        p += n * sin(uTime * (6.0 + fract(aSeed * 4.0) * 4.5) + aSeed * 22.0) * flutter;
+
+        vec4 worldPos = modelMatrix * vec4(p, 1.0);
+        vec3 worldNormal = normalize(mat3(modelMatrix) * n);
+        vec3 viewDir = normalize(cameraPosition - worldPos.xyz);
+        float fresnel = pow(max(0.0, 1.0 - abs(dot(worldNormal, viewDir))), 1.45);
+
+        vEdge = fresnel;
+        vDigit = mod(floor(uTime * (2.7 + fract(aSeed * 2.4)) + aSeed * 17.0), 2.0);
+        vPalette = fract(aSeed * 8.7 + uTime * 0.03);
+        vAlpha = aAlpha;
+
+        vec4 mvPosition = viewMatrix * worldPos;
+        gl_PointSize = max(2.6, aSize * (34.0 / max(1.0, -mvPosition.z)) * (0.92 + uMotion * 0.18));
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uAtlas;
+      uniform vec3 uPalette[7];
+      uniform float uAlpha;
+      uniform float uSadness;
+      uniform float uBrightness;
+
+      varying float vDigit;
+      varying float vAlpha;
+      varying float vPalette;
+      varying float vEdge;
+
+      vec3 palette(float t) {
+        float scaled = t * 6.0;
+        int i0 = int(floor(scaled));
+        int i1 = min(i0 + 1, 6);
+        float f = fract(scaled);
+        return mix(uPalette[i0], uPalette[i1], f);
+      }
+
+      void main() {
+        vec2 uv = gl_PointCoord;
+        vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
+        vec4 glyph = texture2D(uAtlas, atlasUv);
+        float edge = smoothstep(0.12, 0.88, vEdge);
+        float alpha = glyph.a * vAlpha * edge * uAlpha;
+        if (alpha < 0.02) discard;
+        vec3 color = palette(vPalette) * uBrightness;
+        color += palette(vPalette) * 0.18 * edge;
+        color = mix(color, vec3(0.12, 0.18, 0.22), uSadness * 0.22);
         gl_FragColor = vec4(color, alpha);
       }
     `
@@ -736,6 +831,7 @@ export class MothSystem {
     this.fitMothScale();
     this.setupAnimations(clips);
     this.buildBinaryShell();
+    this.buildBinaryOutline();
     this.buildTrail();
     this.buildHitProxy();
     this.pickNextPatrolPoint(true);
@@ -881,6 +977,7 @@ export class MothSystem {
 
   buildBinaryShell() {
     const samples = this.extractPointsFromModel(this.modelRoot, this.cfg.pointLimit);
+    this.binarySamples = samples;
     const count = samples.positions.length / 3;
     if (!count) return;
 
@@ -906,6 +1003,45 @@ export class MothSystem {
     this.binaryShell.frustumCulled = false;
     this.binaryShell.renderOrder = 12;
     this.visualRoot.add(this.binaryShell);
+  }
+
+  buildBinaryOutline() {
+    const samples = this.extractPointsFromModel(this.modelRoot, this.cfg.outlinePointLimit || Math.max(240, Math.floor(this.cfg.pointLimit * 0.55)));
+    const count = samples.positions.length / 3;
+    if (!count) return;
+
+    const positions = new Float32Array(samples.positions.length);
+    const normals = new Float32Array(samples.normals.length);
+    positions.set(samples.positions);
+    normals.set(samples.normals);
+
+    const sizes = new Float32Array(count);
+    const alphas = new Float32Array(count);
+    const seeds = new Float32Array(count);
+
+    const expand = this.cfg.outlineExpand || 0.018;
+    for (let i = 0; i < count; i += 1) {
+      const i3 = i * 3;
+      positions[i3 + 0] += normals[i3 + 0] * expand;
+      positions[i3 + 1] += normals[i3 + 1] * expand;
+      positions[i3 + 2] += normals[i3 + 2] * expand;
+      sizes[i] = this.cfg.outlinePointSizeMin + Math.random() * (this.cfg.outlinePointSizeMax - this.cfg.outlinePointSizeMin);
+      alphas[i] = this.cfg.outlineAlpha * (0.85 + Math.random() * 0.25);
+      seeds[i] = Math.random();
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("aNormal", new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+
+    this.outlineMaterial = createBinaryOutlineMaterial(this.glyphAtlas, this.palette, this.lightDir);
+    this.outlineShell = new THREE.Points(geometry, this.outlineMaterial);
+    this.outlineShell.frustumCulled = false;
+    this.outlineShell.renderOrder = 11;
+    this.visualRoot.add(this.outlineShell);
   }
 
   buildTrail() {
@@ -1187,7 +1323,8 @@ export class MothSystem {
       this.temp.screen.z > -1 &&
       this.temp.screen.z < 1 &&
       Math.abs(this.temp.screen.x) <= margin &&
-      Math.abs(this.temp.screen.y) <= margin
+      this.temp.screen.y >= (this.cfg.patrolViewYMin ?? -margin) &&
+      this.temp.screen.y <= (this.cfg.patrolViewYMax ?? margin)
     );
   }
 
@@ -1217,7 +1354,7 @@ export class MothSystem {
       .copy(this.orbitCenter)
       .addScaledVector(camForward, 0.46)
       .addScaledVector(camRight, THREE.MathUtils.clamp(this.temp.screen.x * 0.42, -0.34, 0.34));
-    p.y = this.orbitCenter.y + 0.58;
+    p.y = this.orbitCenter.y + 0.46;
     return this.clampPointNearCenter(p);
   }
 
@@ -1273,7 +1410,8 @@ export class MothSystem {
     for (let i = 0; i < 28; i += 1) {
       const front = randomFromRange(this.cfg.patrolFrontMin, this.cfg.patrolFrontMax);
       const side = randomFromRange(-this.cfg.patrolSideSpan, this.cfg.patrolSideSpan);
-      const y = this.orbitCenter.y + randomFromRange(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax);
+      const verticalT = Math.pow(Math.random(), 1.65);
+      const y = this.orbitCenter.y + THREE.MathUtils.lerp(this.cfg.patrolHeightMin, this.cfg.patrolHeightMax, verticalT);
 
       const p = new THREE.Vector3()
         .copy(this.orbitCenter)
@@ -1353,13 +1491,21 @@ export class MothSystem {
       this.vitality = clamp01(this.vitality + delta * this.cfg.vitalityRecoveryPerSecond * 0.25);
     }
 
+    const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
     if (this.binaryMaterial) {
-      const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
       this.binaryMaterial.uniforms.uTime.value = elapsed;
       this.binaryMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
-      this.binaryMaterial.uniforms.uAlphaBoost.value = hungry ? 1.05 : 1.22;
+      this.binaryMaterial.uniforms.uAlphaBoost.value = hungry ? 0.96 : 1.04;
       this.binaryMaterial.uniforms.uMotion.value = motion;
-      this.binaryMaterial.uniforms.uBrightness.value = hungry ? Math.max(1.12, (this.cfg.binaryBrightness || 1.42) - 0.14) : (this.cfg.binaryBrightness || 1.42);
+      this.binaryMaterial.uniforms.uBrightness.value = hungry ? Math.max(1.0, (this.cfg.binaryBrightness || 1.16) - 0.08) : (this.cfg.binaryBrightness || 1.16);
+    }
+
+    if (this.outlineMaterial) {
+      this.outlineMaterial.uniforms.uTime.value = elapsed;
+      this.outlineMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
+      this.outlineMaterial.uniforms.uMotion.value = motion;
+      this.outlineMaterial.uniforms.uAlpha.value = hungry ? 0.86 : 1.0;
+      this.outlineMaterial.uniforms.uBrightness.value = this.cfg.outlineBrightness || 1.55;
     }
 
     this.updateVoidVisual(elapsed, delta);
