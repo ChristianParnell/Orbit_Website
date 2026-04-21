@@ -181,7 +181,19 @@ Additional changes included:
 <img width="954" height="696" alt="wd" src="https://github.com/user-attachments/assets/020ecaac-9763-47a3-a00f-011c19ff4488" />
 
   
-## Final Product: 
+## Final Product_ Project_2: 
 Overall, I am very pleased with the outcome of this project. My design goal was to create a website that resembled a digital network or matrix-like system, and I feel I came close to achieving that vision. This is most evident on the main page, where the network aesthetic is strongest. In contrast, the subpages act as a kind of sanctuary from the chaos of the homepage. I believe this works well for their purpose, as they function more like professional portfolio pages, with a cleaner and more corporate feel, while still retaining elements of design and subtle colour. In relation to this website, these themes i felt resembled my portfolio as I do alot of coding with C++, probably more than any other design or modeling work. Which brough me to this matrix effect theme.
 <img width="1898" height="944" alt="qsq" src="https://github.com/user-attachments/assets/4cce46fd-d649-4e3e-89fa-e865c04d86c7" />
+
+
+
+## Generative System:
+## Idea:
+For my generative system ill be introducing a living creature that will co-exisit with my main center character. Following the code corruption theme, I felt the best suitable inahbitant would be a Spectral Moth.
+This Spectral Moth will feed off of code corruption within the website, The moth will also leave a trail of binary to float around behind its wake, and will be attracted to the users interactions with the website. The moth can also be interacted with and may fly to any Project cover when the user is hovering over one. 
+
+Additional: the Spectral Moth feeds of Glitch voids that can be created by the User, These glitch voids are made but left clicking in an open space, this will attract the spectral moth to that location to feed off the corription, if not fed in a while the spectral moth will become hungry and slow down, and possibly show sadness.
+
+
+
 
