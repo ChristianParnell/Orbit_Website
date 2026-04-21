@@ -22,8 +22,9 @@ const DEFAULT_CONFIG = {
   shellMotionStrength: 1.25,
   shellPointSizeMin: 0.82,
   shellPointSizeMax: 1.52,
-  shellPointAlphaMin: 0.34,
-  shellPointAlphaMax: 0.58,
+  shellPointAlphaMin: 0.48,
+  shellPointAlphaMax: 0.82,
+  binaryBrightness: 1.42,
   trailCount: 180,
   trailEmitInterval: 0.02,
   trailLife: 0.85,
@@ -209,13 +210,15 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
       uPalette: { value: paletteUniform },
       uAlphaBoost: { value: 1 },
       uSadness: { value: 0 },
-      uMotion: { value: 0 }
+      uMotion: { value: 0 },
+      uBrightness: { value: 1.42 }
     },
     vertexShader: `
       uniform float uTime;
       uniform vec3 uLightDir;
       uniform float uSadness;
       uniform float uMotion;
+      uniform float uBrightness;
 
       attribute vec3 aNormal;
       attribute float aSeed;
@@ -259,6 +262,7 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
       uniform vec3 uPalette[7];
       uniform float uAlphaBoost;
       uniform float uSadness;
+      uniform float uBrightness;
 
       varying float vDigit;
       varying float vAlpha;
@@ -277,11 +281,12 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
         vec2 uv = gl_PointCoord;
         vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
         vec4 glyph = texture2D(uAtlas, atlasUv);
-        float alpha = glyph.a * vAlpha * uAlphaBoost;
+        float alpha = glyph.a * vAlpha * uAlphaBoost * (0.96 + uBrightness * 0.16);
         if (alpha < 0.02) discard;
         vec3 color = palette(vPalette);
-        color *= mix(0.25, 1.0, vShade);
-        color = mix(color, vec3(0.10, 0.18, 0.24), uSadness * 0.45);
+        color *= mix(0.42, 1.18, vShade) * uBrightness;
+        color += palette(vPalette) * (0.08 * uBrightness);
+        color = mix(color, vec3(0.10, 0.18, 0.24), uSadness * 0.38);
         gl_FragColor = vec4(color, alpha);
       }
     `
@@ -1336,8 +1341,9 @@ export class MothSystem {
       const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
       this.binaryMaterial.uniforms.uTime.value = elapsed;
       this.binaryMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
-      this.binaryMaterial.uniforms.uAlphaBoost.value = 1.0;
+      this.binaryMaterial.uniforms.uAlphaBoost.value = hungry ? 1.05 : 1.22;
       this.binaryMaterial.uniforms.uMotion.value = motion;
+      this.binaryMaterial.uniforms.uBrightness.value = hungry ? Math.max(1.12, (this.cfg.binaryBrightness || 1.42) - 0.14) : (this.cfg.binaryBrightness || 1.42);
     }
 
     this.updateVoidVisual(elapsed, delta);
