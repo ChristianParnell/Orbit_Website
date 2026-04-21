@@ -14,7 +14,7 @@ const DEFAULT_PALETTE = [
 
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
-  pointLimit: 420,
+  pointLimit: 850,
   sizeRatioToModelHeight: 0.078,
   modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
