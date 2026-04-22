@@ -81,7 +81,7 @@ export const MOTH_CONFIG = {
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
-  modelYawOffset: 0,
+  modelYawOffset: Math.PI,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   shellMotionStrength: 1.25,
