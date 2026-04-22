@@ -134,11 +134,11 @@ export const MOTH_CONFIG = {
   hoverPerchDelay: 0.05,
   perchDistance: 0.12,
   landTriggerDistance: 0.12,
-  coverPerchLift: 0.065,
-  coverPerchForward: 0.055,
+  coverPerchLift: 0.035,
+  coverPerchForward: 0.035,
   coverPerchLerp: 0.18,
 
-  takeoffRiseHeight: 0.20,
+  takeoffRiseHeight: 0.10,
   takeoffMotionScale: 1.0,
   backflipPush: 0.25,
   backflipLift: 0.10,
@@ -154,7 +154,7 @@ export const MOTH_CONFIG = {
   voidParticleCount: 320,
   voidDepth: 0.88,
 
-  nestMax: 5,
+  nestMax: 0,  
   nestChancePerPerch: 0.22,
   nestDepositDelay: 7.5,
   vitalityDrainPerSecond: 0.0026,
