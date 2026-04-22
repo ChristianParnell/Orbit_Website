@@ -697,7 +697,8 @@ export class MothSystem {
     this.satiatedUntil = 0;
 
     this.velocity = new THREE.Vector3();
-    this.forward = new THREE.Vector3(0, 0, 1);
+    this.forward = new THREE.Vector3(0, 0, -1);
+    this.orientationUp = new THREE.Vector3(0, 1, 0);
 
     this.takeoffState = null;
 
@@ -1825,18 +1826,57 @@ export class MothSystem {
     this.root.position.lerpVectors(this.takeoffState.startPos, this.takeoffState.endPos, ease * this.cfg.takeoffMotionScale);
   }
 
-  lookAtDirection(direction, lerpAmount = this.cfg.turnLerp) {
+  orientRootToDirection(direction, preferredUp = null, lerpAmount = this.cfg.turnLerp) {
     if (direction.lengthSq() <= 0.0001) return;
-    this.forward.copy(direction).normalize();
-    this.temp.m.lookAt(this.root.position, this.temp.a.copy(this.root.position).add(this.forward), new THREE.Vector3(0, 1, 0));
+
+    const forward = this.temp.a.copy(direction).normalize();
+    const up = this.temp.b.copy(preferredUp || this.orientationUp);
+
+    if (up.lengthSq() <= 0.0001) up.set(0, 1, 0);
+    up.normalize();
+
+    const parallelLimit = 0.92;
+    if (Math.abs(up.dot(forward)) > parallelLimit) {
+      up.set(0, 1, 0);
+      if (Math.abs(up.dot(forward)) > parallelLimit) {
+        up.set(0, 0, 1).applyQuaternion(this.camera.quaternion).normalize();
+        if (Math.abs(up.dot(forward)) > parallelLimit) {
+          up.set(1, 0, 0);
+          if (Math.abs(up.dot(forward)) > parallelLimit) {
+            up.set(0, 0, -1);
+          }
+        }
+      }
+    }
+
+    const right = this.temp.c.copy(up).cross(forward);
+    if (right.lengthSq() <= 0.0001) {
+      right.set(1, 0, 0).cross(forward);
+      if (right.lengthSq() <= 0.0001) {
+        right.set(0, 0, 1).cross(forward);
+      }
+    }
+    right.normalize();
+
+    up.copy(forward).cross(right).normalize();
+
+    this.temp.m.makeBasis(right, up, this.temp.d.copy(forward).multiplyScalar(-1));
     this.temp.q.setFromRotationMatrix(this.temp.m);
     this.root.quaternion.slerp(this.temp.q, lerpAmount);
+
+    this.forward.copy(forward);
+    const upBlend = 1.0 - Math.exp(-Math.max(0.0001, lerpAmount) * 10.0);
+    this.orientationUp.lerp(up, upBlend).normalize();
+  }
+
+  lookAtDirection(direction, lerpAmount = this.cfg.turnLerp) {
+    this.orientRootToDirection(direction, null, lerpAmount);
   }
 
   lookAtPoint(point, up = new THREE.Vector3(0, 1, 0), lerpAmount = 0.12) {
-    this.temp.m.lookAt(this.root.position, point, up);
-    this.temp.q.setFromRotationMatrix(this.temp.m);
-    this.root.quaternion.slerp(this.temp.q, lerpAmount);
+    this.temp.e.copy(point).sub(this.root.position);
+    if (this.temp.e.lengthSq() <= 0.0001) return;
+    this.orientRootToDirection(this.temp.e, up, lerpAmount);
   }
 
   getPatrolFlightSpeed(elapsed) {
