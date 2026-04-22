@@ -1686,8 +1686,8 @@ export class MothSystem {
     }
 
     if (this.mode === "backflip") {
-      this.root.position.addScaledVector(this.velocity, delta);
-      this.lookAtDirection(this.getTravelFacingDirection(this.root.position.clone().add(this.velocity)), this.cfg.turnLerpFast);
+      this.velocity.set(0, 0, 0);
+      this.lookAtDirection(this.forward, this.cfg.turnLerpFast);
       return;
     }
 
@@ -1939,23 +1939,43 @@ export class MothSystem {
     this.voidCore.scale.setScalar(0.68 + energy * 0.24);
   }
 
-  handleClick(event, hoveredEntry) {
+  isScenePointerEventAllowed(event) {
     if (!this.ready || !this.visible) return false;
-    if (event.button !== 0) return false;
+    if ((event.button ?? 0) !== 0) return false;
     if (event.target?.closest?.("button, a, nav, .folder-label, .quick-nav")) return false;
+    return true;
+  }
 
+  updatePointerRay(event) {
     const bounds = this.renderer.domElement.getBoundingClientRect();
     this.temp.pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
     this.temp.pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
     this.temp.raycaster.setFromCamera(this.temp.pointer, this.camera);
+  }
 
-    if (this.hitProxy) {
-      const hits = this.temp.raycaster.intersectObject(this.hitProxy, false);
-      if (hits.length) {
-        this.performBackflip();
-        return true;
-      }
+  isPointerOverMoth() {
+    if (!this.hitProxy) return false;
+    const hits = this.temp.raycaster.intersectObject(this.hitProxy, false);
+    return hits.length > 0;
+  }
+
+  handleSingleClick(event, hoveredEntry) {
+    if (!this.isScenePointerEventAllowed(event)) return false;
+
+    this.updatePointerRay(event);
+
+    if (this.isPointerOverMoth()) {
+      this.performBackflip();
+      return true;
     }
+
+    return false;
+  }
+
+  handleDoubleClick(event, hoveredEntry) {
+    if (!this.isScenePointerEventAllowed(event)) return false;
+
+    this.updatePointerRay(event);
 
     if (hoveredEntry) return false;
 
@@ -1966,6 +1986,10 @@ export class MothSystem {
     }
 
     return false;
+  }
+
+  handleClick(event, hoveredEntry) {
+    return this.handleSingleClick(event, hoveredEntry);
   }
 
   pickVoidPoint() {
@@ -2017,9 +2041,7 @@ export class MothSystem {
     this.perched = false;
     this.mode = "backflip";
     this.takeoffState = null;
-    this.pickNextPatrolPoint();
-    this.root.position.y += this.cfg.backflipLift;
-    this.velocity.add(this.forward.clone().multiplyScalar(-this.cfg.backflipPush));
+    this.velocity.set(0, 0, 0);
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
       this.flipBusy = false;
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
