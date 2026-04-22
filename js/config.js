@@ -78,8 +78,8 @@ export const SCENE_CONFIG = {
 
 export const MOTH_CONFIG = {
   storageKey: "orbitSpecterMothV2",
-  pointLimit: 800,
-  outlinePointLimit: 760,
+  pointLimit: 500,
+  outlinePointLimit: 800,
   sizeRatioToModelHeight: 0.0936,
   modelYawOffset: Math.PI / 2,
   modelPitchOffset: 0,
@@ -95,9 +95,9 @@ export const MOTH_CONFIG = {
   outlinePointSizeMin: 0.78,
   outlinePointSizeMax: 1.02,
   outlineAlpha: 0.92,
-  trailCount: 180,
+  trailCount: 280,
   trailEmitInterval: 0.02,
-  trailLife: 0.85,
+  trailLife: 1.35,
   trailDrag: 2.1,
   trailSpeed: 0.32,
   trailJitter: 0.08,
@@ -122,7 +122,7 @@ export const MOTH_CONFIG = {
   patrolCenterPull: 0.12,
 
 
-  flySpeed: 1.55,
+  flySpeed: 1.85,
   diveSpeed: 2.00,
   flySadSpeedScale: 0.62,
   approachSlowRadius: 0.42,
