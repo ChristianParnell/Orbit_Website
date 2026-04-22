@@ -167,6 +167,7 @@ camera.position.set(0, CFG.lookY, CFG.cameraRadius);
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2(-10, -10);
+const MOTH_SINGLE_CLICK_DELAY = 240;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const ORBIT_CENTER = new THREE.Vector3(0, CFG.lookY, 0);
@@ -217,6 +218,9 @@ let audioData = null;
 let audioReactiveLevel = 0.10;
 
 let mothSystem = null;
+let pendingPrimaryClickTimer = null;
+let pendingPrimaryClickEvent = null;
+let pendingPrimaryClickHoverEntry = null;
 
 let nextDebugEventAt = 0;
 let lastHoveredDebugKey = "";
@@ -787,6 +791,41 @@ function registerInteraction() {
   lastInteractionAt = clock.elapsedTime;
   idleMode = false;
   setIdlePromptVisible(false);
+}
+
+
+
+function clonePointerClickEvent(event) {
+  return {
+    button: event.button ?? 0,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    target: event.target
+  };
+}
+
+function clearPendingPrimaryClick() {
+  if (pendingPrimaryClickTimer !== null) {
+    window.clearTimeout(pendingPrimaryClickTimer);
+    pendingPrimaryClickTimer = null;
+  }
+  pendingPrimaryClickEvent = null;
+  pendingPrimaryClickHoverEntry = null;
+}
+
+function flushPrimaryClick() {
+  if (!pendingPrimaryClickEvent) return;
+  const event = pendingPrimaryClickEvent;
+  const clickHoverEntry = pendingPrimaryClickHoverEntry;
+  clearPendingPrimaryClick();
+
+  if (mothSystem?.handleSingleClick(event, clickHoverEntry)) {
+    return;
+  }
+
+  if (clickHoverEntry) {
+    window.location.href = clickHoverEntry.item.href;
+  }
 }
 
 function setIntroPromptVisible(visible) {
@@ -2107,16 +2146,34 @@ function attachEvents() {
 
   window.addEventListener("click", (event) => {
     if (!hasEntered || introState.active || !introState.complete) return;
+    if ((event.button ?? 0) !== 0) return;
     registerInteraction();
 
-    if (mothSystem?.handleClick(event, hoveredEntry)) {
+    clearPendingPrimaryClick();
+    pendingPrimaryClickEvent = clonePointerClickEvent(event);
+    pendingPrimaryClickHoverEntry = hoveredEntry;
+    pendingPrimaryClickTimer = window.setTimeout(() => {
+      flushPrimaryClick();
+    }, MOTH_SINGLE_CLICK_DELAY);
+  });
+
+  window.addEventListener("dblclick", (event) => {
+    if (!hasEntered || introState.active || !introState.complete) return;
+    if ((event.button ?? 0) !== 0) return;
+    registerInteraction();
+
+    clearPendingPrimaryClick();
+
+    const clickHoverEntry = hoveredEntry;
+
+    if (mothSystem?.handleDoubleClick(event, clickHoverEntry)) {
       event.preventDefault();
       event.stopPropagation();
       return;
     }
 
-    if (hoveredEntry) {
-      window.location.href = hoveredEntry.item.href;
+    if (clickHoverEntry) {
+      window.location.href = clickHoverEntry.item.href;
     }
   });
 
