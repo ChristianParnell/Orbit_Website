@@ -14,22 +14,22 @@ const DEFAULT_PALETTE = [
 
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV2",
-  pointLimit: 680,
-  outlinePointLimit: 420,
+  pointLimit: 1180,
+  outlinePointLimit: 760,
   sizeRatioToModelHeight: 0.0936,
   modelYawOffset: Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   shellMotionStrength: 1.25,
-  shellPointSizeMin: 0.82,
-  shellPointSizeMax: 1.52,
+  shellPointSizeMin: 0.46,
+  shellPointSizeMax: 0.96,
   shellPointAlphaMin: 0.24,
   shellPointAlphaMax: 0.54,
   binaryBrightness: 1.16,
   outlineBrightness: 1.55,
   outlineExpand: 0.018,
-  outlinePointSizeMin: 1.15,
-  outlinePointSizeMax: 1.95,
+  outlinePointSizeMin: 0.78,
+  outlinePointSizeMax: 1.34,
   outlineAlpha: 0.92,
   trailCount: 180,
   trailEmitInterval: 0.02,
@@ -102,13 +102,13 @@ const DEFAULT_CONFIG = {
 };
 
 const ACTION_KEYS = {
-  fly: ["f fly", "fly"],
-  flySad: ["f fly sad", "fly sad", "sad"],
-  land: ["f land", "land"],
-  perch: ["f land idle", "land idle", "idle"],
-  takeoff: ["f land to takeoff", "f land to take off", "land to takeoff", "takeoff", "take off"],
-  feed: ["f void inspect", "void inspect", "inspect", "feed"],
-  backflip: ["f backflip", "backflip", "flip"]
+  fly: ["f fly", "fly", "flying", "hover", "hover fly", "glide", "move"],
+  flySad: ["f fly sad", "fly sad", "sad fly", "tired fly", "weak fly", "hurt fly", "sad"],
+  land: ["f land", "landing", "land", "touch down", "touchdown"],
+  perch: ["f land idle", "land idle", "perch", "perched", "rest", "idle perched", "idle"],
+  takeoff: ["f land to takeoff", "f land to take off", "land to takeoff", "takeoff", "take off", "launch", "lift off", "liftoff"],
+  feed: ["f void inspect", "void inspect", "inspect", "feed", "eat", "consume", "sniff"],
+  backflip: ["f backflip", "backflip", "flip", "evade", "dodge"]
 };
 
 function normalizeName(name) {
@@ -546,14 +546,67 @@ function createCoreDiscMaterial() {
   });
 }
 
+function scoreClipName(clipName, pattern) {
+  const clipNorm = normalizeName(clipName);
+  const patternNorm = normalizeName(pattern);
+  if (!clipNorm || !patternNorm) return -1;
+  if (clipNorm === patternNorm) return 1000;
+  if (clipNorm.startsWith(patternNorm)) return 700;
+  if (clipNorm.includes(patternNorm)) return 500 - (clipNorm.length - patternNorm.length);
+
+  const clipTokens = new Set(clipNorm.split(" "));
+  const patternTokens = patternNorm.split(" ").filter(Boolean);
+  const overlap = patternTokens.reduce((sum, token) => sum + (clipTokens.has(token) ? 1 : 0), 0);
+  if (!overlap) return -1;
+  return overlap * 100 - Math.abs(clipTokens.size - patternTokens.length) * 2;
+}
+
 function chooseBestClip(clips, patterns) {
   if (!clips.length) return null;
-  for (const pattern of patterns) {
-    const norm = normalizeName(pattern);
-    const match = clips.find((clip) => normalizeName(clip.name).includes(norm));
-    if (match) return match;
+
+  let bestClip = null;
+  let bestScore = -1;
+
+  for (const clip of clips) {
+    for (const pattern of patterns) {
+      const score = scoreClipName(clip.name, pattern);
+      if (score > bestScore) {
+        bestScore = score;
+        bestClip = clip;
+      }
+    }
   }
-  return null;
+
+  return bestScore >= 0 ? bestClip : null;
+}
+
+function collectAnimationClips(root, explicitClips = []) {
+  const collected = [];
+  const pushClip = (clip) => {
+    if (!clip || !clip.name || !clip.duration) return;
+    collected.push(clip);
+  };
+
+  explicitClips.forEach(pushClip);
+  if (Array.isArray(root?.animations)) root.animations.forEach(pushClip);
+  root?.traverse?.((child) => {
+    if (Array.isArray(child?.animations)) child.animations.forEach(pushClip);
+  });
+
+  return collected;
+}
+
+function applyBoneTransformToVector(mesh, vertexIndex, target) {
+  if (!mesh?.isSkinnedMesh) return target;
+  if (typeof mesh.applyBoneTransform === "function") {
+    mesh.applyBoneTransform(vertexIndex, target);
+    return target;
+  }
+  if (typeof mesh.boneTransform === "function") {
+    mesh.boneTransform(vertexIndex, target);
+    return target;
+  }
+  return target;
 }
 
 function ensureMaterialArray(value) {
@@ -596,7 +649,11 @@ export class MothSystem {
     this.currentActionKey = "";
     this.pendingActionKey = "";
     this.binaryShell = null;
+    this.binarySamples = [];
+    this.outlineShell = null;
+    this.outlineSamples = [];
     this.binaryMaterial = null;
+    this.outlineMaterial = null;
     this.trail = null;
     this.hitProxy = null;
 
@@ -846,7 +903,7 @@ export class MothSystem {
     const mothSize = mothBox.getSize(new THREE.Vector3());
     const mothCenter = mothBox.getCenter(new THREE.Vector3());
 
-    const modelBox = new THREE.Box3().setFromObject(this.centralModel);
+    const modelBox = this.centralModel ? new THREE.Box3().setFromObject(this.centralModel) : new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(1, 1, 1));
     const modelSize = modelBox.getSize(new THREE.Vector3());
     const targetHeight = Math.max(0.12, modelSize.y * this.cfg.sizeRatioToModelHeight);
     const scale = mothSize.y > 0 ? targetHeight / mothSize.y : 0.08;
@@ -860,15 +917,19 @@ export class MothSystem {
   }
 
   setupAnimations(clips) {
-    if (!clips.length || !this.modelRoot) return;
+    const availableClips = collectAnimationClips(this.modelRoot, clips);
+    if (!availableClips.length || !this.modelRoot) {
+      this.log("moth loaded without animation clips", "WARN");
+      return;
+    }
 
     this.mixer = new THREE.AnimationMixer(this.modelRoot);
 
     const uniqueClips = [];
     const seen = new Set();
-    clips.forEach((clip) => {
+    availableClips.forEach((clip) => {
       if (!clip || !clip.duration) return;
-      const key = `${normalizeName(clip.name)}_${clip.duration.toFixed(2)}`;
+      const key = `${normalizeName(clip.name)}_${clip.duration.toFixed(3)}`;
       if (seen.has(key)) return;
       seen.add(key);
       uniqueClips.push(clip);
@@ -886,6 +947,21 @@ export class MothSystem {
       this.actionDurations.set(actionKey, clip.duration);
     });
 
+    if (!this.actions.size) {
+      this.log(`moth clips found but no state mappings matched: ${uniqueClips.map((clip) => clip.name).join(", ")}`, "WARN");
+      return;
+    }
+
+    if (!this.actions.has("flySad") && this.actions.has("fly")) {
+      this.actions.set("flySad", this.actions.get("fly"));
+      this.actionDurations.set("flySad", this.actionDurations.get("fly") || 0);
+    }
+    if (!this.actions.has("perch") && this.actions.has("land")) {
+      this.actions.set("perch", this.actions.get("land"));
+      this.actionDurations.set("perch", this.actionDurations.get("land") || 0);
+    }
+
+    this.log(`moth animation states: ${Array.from(this.actions.keys()).join(", ")}`, "BOOT");
     this.mixer.addEventListener("finished", () => this.onActionFinished());
   }
 
@@ -976,12 +1052,14 @@ export class MothSystem {
   }
 
   buildBinaryShell() {
-    const samples = this.extractPointsFromModel(this.modelRoot, this.cfg.pointLimit);
+    const samples = this.extractPointSamples(this.modelRoot, this.cfg.pointLimit);
     this.binarySamples = samples;
-    const count = samples.positions.length / 3;
+    const count = samples.length;
     if (!count) return;
 
     const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const normals = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const alphas = new Float32Array(count);
     const seeds = new Float32Array(count);
@@ -992,8 +1070,8 @@ export class MothSystem {
       seeds[i] = Math.random();
     }
 
-    geometry.setAttribute("position", new THREE.BufferAttribute(samples.positions, 3));
-    geometry.setAttribute("aNormal", new THREE.BufferAttribute(samples.normals, 3));
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("aNormal", new THREE.BufferAttribute(normals, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
     geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
@@ -1003,36 +1081,30 @@ export class MothSystem {
     this.binaryShell.frustumCulled = false;
     this.binaryShell.renderOrder = 12;
     this.visualRoot.add(this.binaryShell);
+    this.refreshPointCloudGeometry(this.binaryShell, this.binarySamples, 0);
   }
 
   buildBinaryOutline() {
-    const samples = this.extractPointsFromModel(this.modelRoot, this.cfg.outlinePointLimit || Math.max(240, Math.floor(this.cfg.pointLimit * 0.55)));
-    const count = samples.positions.length / 3;
+    const samples = this.extractPointSamples(this.modelRoot, this.cfg.outlinePointLimit || Math.max(240, Math.floor(this.cfg.pointLimit * 0.55)));
+    this.outlineSamples = samples;
+    const count = samples.length;
     if (!count) return;
 
-    const positions = new Float32Array(samples.positions.length);
-    const normals = new Float32Array(samples.normals.length);
-    positions.set(samples.positions);
-    normals.set(samples.normals);
-
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const normals = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const alphas = new Float32Array(count);
     const seeds = new Float32Array(count);
 
-    const expand = this.cfg.outlineExpand || 0.018;
     for (let i = 0; i < count; i += 1) {
-      const i3 = i * 3;
-      positions[i3 + 0] += normals[i3 + 0] * expand;
-      positions[i3 + 1] += normals[i3 + 1] * expand;
-      positions[i3 + 2] += normals[i3 + 2] * expand;
       sizes[i] = this.cfg.outlinePointSizeMin + Math.random() * (this.cfg.outlinePointSizeMax - this.cfg.outlinePointSizeMin);
       alphas[i] = this.cfg.outlineAlpha * (0.85 + Math.random() * 0.25);
       seeds[i] = Math.random();
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("aNormal", new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("aNormal", new THREE.BufferAttribute(normals, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
     geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
@@ -1042,6 +1114,7 @@ export class MothSystem {
     this.outlineShell.frustumCulled = false;
     this.outlineShell.renderOrder = 11;
     this.visualRoot.add(this.outlineShell);
+    this.refreshPointCloudGeometry(this.outlineShell, this.outlineSamples, this.cfg.outlineExpand || 0.018);
   }
 
   buildTrail() {
@@ -1165,11 +1238,9 @@ export class MothSystem {
     this.root.add(proxy);
   }
 
-  extractPointsFromModel(model, limit = 960) {
-    const positions = [];
-    const normals = [];
-
+  extractPointSamples(model, limit = 960) {
     model.updateMatrixWorld(true);
+    this.visualRoot.updateMatrixWorld(true);
 
     const meshes = [];
     model.traverse((child) => {
@@ -1178,51 +1249,100 @@ export class MothSystem {
       }
     });
 
-    if (!meshes.length) {
-      return { positions: new Float32Array(), normals: new Float32Array() };
-    }
+    if (!meshes.length) return [];
 
     const totalVerts = meshes.reduce((sum, mesh) => sum + mesh.geometry.attributes.position.count, 0);
+    const samples = [];
 
     meshes.forEach((mesh) => {
       const pos = mesh.geometry.attributes.position;
       const nor = mesh.geometry.attributes.normal;
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
       const meshTarget = Math.max(24, Math.round(limit * (pos.count / Math.max(1, totalVerts))));
       const step = Math.max(1, Math.floor(pos.count / meshTarget));
 
       for (let i = 0; i < pos.count; i += step) {
-        this.temp.a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
-        positions.push(this.temp.a.x, this.temp.a.y, this.temp.a.z);
-
-        if (nor) {
-          this.temp.b.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
-        } else {
-          this.temp.b.set(0, 1, 0);
-        }
-        normals.push(this.temp.b.x, this.temp.b.y, this.temp.b.z);
+        samples.push({
+          mesh,
+          vertexIndex: i,
+          localPosition: new THREE.Vector3().fromBufferAttribute(pos, i),
+          localNormal: nor ? new THREE.Vector3().fromBufferAttribute(nor, i).normalize() : new THREE.Vector3(0, 1, 0)
+        });
       }
     });
 
-    const center = new THREE.Vector3();
-    for (let i = 0; i < positions.length; i += 3) {
-      center.x += positions[i];
-      center.y += positions[i + 1];
-      center.z += positions[i + 2];
-    }
-    const count = Math.max(1, positions.length / 3);
-    center.multiplyScalar(1 / count);
+    return samples;
+  }
 
-    for (let i = 0; i < positions.length; i += 3) {
-      positions[i] -= center.x;
-      positions[i + 1] -= center.y;
-      positions[i + 2] -= center.z;
-    }
+  refreshPointCloudGeometry(points, samples, expand = 0) {
+    if (!points || !samples?.length) return;
 
-    return {
-      positions: new Float32Array(positions),
-      normals: new Float32Array(normals)
+    this.modelRoot?.updateMatrixWorld?.(true);
+    this.visualRoot.updateMatrixWorld(true);
+
+    const positionAttr = points.geometry.attributes.position;
+    const normalAttr = points.geometry.attributes.aNormal;
+    const positions = positionAttr.array;
+    const normals = normalAttr.array;
+
+    const visualInverse = new THREE.Matrix4().copy(this.visualRoot.matrixWorld).invert();
+    const worldToVisualNormal = new THREE.Matrix3().getNormalMatrix(visualInverse);
+    const worldNormalMatrixCache = new Map();
+
+    const getWorldNormalMatrix = (mesh) => {
+      let normalMatrix = worldNormalMatrixCache.get(mesh.uuid);
+      if (!normalMatrix) {
+        normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+        worldNormalMatrixCache.set(mesh.uuid, normalMatrix);
+      }
+      return normalMatrix;
     };
+
+    for (let i = 0; i < samples.length; i += 1) {
+      const sample = samples[i];
+      const { mesh, vertexIndex, localPosition, localNormal } = sample;
+
+      const visualPos = this.temp.a.copy(localPosition);
+      applyBoneTransformToVector(mesh, vertexIndex, visualPos);
+      visualPos.applyMatrix4(mesh.matrixWorld).applyMatrix4(visualInverse);
+
+      let visualNormal = this.temp.b;
+      if (mesh.isSkinnedMesh) {
+        const normalTip = this.temp.c.copy(localPosition).addScaledVector(localNormal, 0.01);
+        applyBoneTransformToVector(mesh, vertexIndex, normalTip);
+        normalTip.applyMatrix4(mesh.matrixWorld).applyMatrix4(visualInverse);
+        visualNormal.copy(normalTip).sub(visualPos);
+        if (visualNormal.lengthSq() <= 0.0000001) visualNormal.copy(localNormal);
+        else visualNormal.normalize();
+      } else {
+        visualNormal.copy(localNormal)
+          .applyMatrix3(getWorldNormalMatrix(mesh))
+          .normalize()
+          .applyMatrix3(worldToVisualNormal)
+          .normalize();
+      }
+
+      if (expand) visualPos.addScaledVector(visualNormal, expand);
+
+      const base = i * 3;
+      positions[base + 0] = visualPos.x;
+      positions[base + 1] = visualPos.y;
+      positions[base + 2] = visualPos.z;
+      normals[base + 0] = visualNormal.x;
+      normals[base + 1] = visualNormal.y;
+      normals[base + 2] = visualNormal.z;
+    }
+
+    positionAttr.needsUpdate = true;
+    normalAttr.needsUpdate = true;
+  }
+
+  updateAnimatedShells() {
+    if (this.binaryShell && this.binarySamples.length) {
+      this.refreshPointCloudGeometry(this.binaryShell, this.binarySamples, 0);
+    }
+    if (this.outlineShell && this.outlineSamples.length) {
+      this.refreshPointCloudGeometry(this.outlineShell, this.outlineSamples, this.cfg.outlineExpand || 0.018);
+    }
   }
 
   initVoidVisuals() {
@@ -1483,6 +1603,7 @@ export class MothSystem {
     if (!sceneVisible) return;
 
     if (this.mixer) this.mixer.update(delta);
+    this.updateAnimatedShells();
 
     const hungry = this.isHungry(elapsed);
     if (hungry && !this.voidState?.active) {
