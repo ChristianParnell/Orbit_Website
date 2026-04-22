@@ -210,7 +210,7 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
     transparent: true,
     depthWrite: false,
     depthTest: true,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     uniforms: {
       uAtlas: { value: atlas },
       uTime: { value: 0 },
@@ -219,14 +219,13 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
       uAlphaBoost: { value: 1 },
       uSadness: { value: 0 },
       uMotion: { value: 0 },
-      uBrightness: { value: 1.42 }
+      uBrightness: { value: 1.16 }
     },
     vertexShader: `
       uniform float uTime;
       uniform vec3 uLightDir;
       uniform float uSadness;
       uniform float uMotion;
-      uniform float uBrightness;
 
       attribute vec3 aNormal;
       attribute float aSeed;
@@ -241,27 +240,26 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
       void main() {
         vec3 p = position;
         vec3 n = normalize(aNormal);
-        float motion = 0.35 + uMotion * 1.35;
-        float drift = (0.0032 + aSeed * 0.0070) * motion * (1.0 - uSadness * 0.12);
-        float flap = sin(uTime * (8.0 + fract(aSeed * 3.6) * 5.0) + aSeed * 40.0);
-        float flutter = cos(uTime * (5.2 + fract(aSeed * 2.4) * 3.0) + aSeed * 23.0);
-        p += n * (flap * drift * 0.9);
-        p.x += sin(uTime * (2.4 + fract(aSeed * 0.8)) + aSeed * 31.0) * drift * 0.55;
-        p.y += cos(uTime * (3.2 + fract(aSeed * 0.9)) + aSeed * 47.0) * drift * 0.65;
-        p.z += flutter * drift * 0.75;
+
+        float motion = 0.28 + uMotion * 0.92;
+        float drift = (0.0016 + aSeed * 0.0034) * motion * (1.0 - uSadness * 0.10);
+        p += n * (sin(uTime * (7.2 + fract(aSeed * 3.2) * 4.2) + aSeed * 40.0) * drift * 0.55);
+        p.x += sin(uTime * (1.9 + fract(aSeed * 0.8)) + aSeed * 31.0) * drift * 0.28;
+        p.y += cos(uTime * (2.4 + fract(aSeed * 0.9)) + aSeed * 47.0) * drift * 0.34;
+        p.z += cos(uTime * (2.1 + fract(aSeed * 1.1)) + aSeed * 23.0) * drift * 0.38;
 
         vec3 worldNormal = normalize(mat3(modelMatrix) * n);
         float light = max(dot(worldNormal, normalize(uLightDir)), 0.0);
-        float shade = pow(smoothstep(0.08, 0.98, light), 1.6);
+        float shade = pow(smoothstep(0.10, 0.98, light), 1.85);
 
-        float digitSwitch = floor(uTime * (3.2 + fract(aSeed * 2.2)) + aSeed * 28.0);
+        float digitSwitch = floor(uTime * (2.2 + fract(aSeed * 0.8)) + aSeed * 21.0);
         vDigit = mod(digitSwitch, 2.0);
-        vPalette = fract(aSeed * 9.7 + uMotion * 0.08);
+        vPalette = fract(aSeed * 13.7 + uMotion * 0.03);
         vShade = shade;
-        vAlpha = aAlpha * mix(0.48, 1.0, shade) * (1.0 - uSadness * 0.34) * (0.85 + uMotion * 0.25);
+        vAlpha = aAlpha * shade * (0.92 + uMotion * 0.12) * (1.0 - uSadness * 0.26);
 
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(2.4, aSize * (30.0 / max(1.0, -mvPosition.z)) * (0.95 + uMotion * 0.22));
+        gl_PointSize = max(2.2, aSize * (32.0 / max(1.0, -mvPosition.z)) * (0.98 + uMotion * 0.10));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -289,12 +287,13 @@ function createBinaryPointsMaterial(atlas, palette, lightDir) {
         vec2 uv = gl_PointCoord;
         vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
         vec4 glyph = texture2D(uAtlas, atlasUv);
-        float alpha = glyph.a * vAlpha * uAlphaBoost * (0.82 + uBrightness * 0.08);
+        float alpha = glyph.a * vAlpha * uAlphaBoost;
         if (alpha < 0.02) discard;
+
         vec3 color = palette(vPalette);
-        color *= mix(0.34, 0.96, vShade) * uBrightness;
-        color += palette(vPalette) * (0.035 * uBrightness);
-        color = mix(color, vec3(0.10, 0.18, 0.24), uSadness * 0.38);
+        color *= mix(0.24, 1.0, vShade) * uBrightness;
+        color = mix(color, vec3(0.10, 0.18, 0.24), uSadness * 0.22);
+
         gl_FragColor = vec4(color, alpha);
       }
     `
@@ -307,7 +306,7 @@ function createBinaryOutlineMaterial(atlas, palette, lightDir) {
     transparent: true,
     depthWrite: false,
     depthTest: true,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     uniforms: {
       uAtlas: { value: atlas },
       uTime: { value: 0 },
@@ -316,11 +315,13 @@ function createBinaryOutlineMaterial(atlas, palette, lightDir) {
       uAlpha: { value: 1 },
       uSadness: { value: 0 },
       uMotion: { value: 0 },
-      uBrightness: { value: 1.55 }
+      uBrightness: { value: 1.0 }
     },
     vertexShader: `
       uniform float uTime;
+      uniform vec3 uLightDir;
       uniform float uMotion;
+
       attribute vec3 aNormal;
       attribute float aSeed;
       attribute float aSize;
@@ -330,25 +331,29 @@ function createBinaryOutlineMaterial(atlas, palette, lightDir) {
       varying float vAlpha;
       varying float vPalette;
       varying float vEdge;
+      varying float vShade;
 
       void main() {
         vec3 n = normalize(aNormal);
-        vec3 p = position + n * (0.002 + uMotion * 0.003);
-        float flutter = (0.0025 + aSeed * 0.0045) * (0.7 + uMotion * 1.1);
-        p += n * sin(uTime * (6.0 + fract(aSeed * 4.0) * 4.5) + aSeed * 22.0) * flutter;
+        vec3 p = position + n * (0.0015 + uMotion * 0.0022);
+        float flutter = (0.0018 + aSeed * 0.0032) * (0.65 + uMotion * 0.75);
+        p += n * sin(uTime * (5.2 + fract(aSeed * 3.0) * 3.6) + aSeed * 22.0) * flutter;
 
         vec4 worldPos = modelMatrix * vec4(p, 1.0);
         vec3 worldNormal = normalize(mat3(modelMatrix) * n);
         vec3 viewDir = normalize(cameraPosition - worldPos.xyz);
-        float fresnel = pow(max(0.0, 1.0 - abs(dot(worldNormal, viewDir))), 1.45);
+        float fresnel = pow(max(0.0, 1.0 - abs(dot(worldNormal, viewDir))), 1.55);
+        float light = max(dot(worldNormal, normalize(uLightDir)), 0.0);
+        float shade = pow(smoothstep(0.10, 0.98, light), 1.85);
 
         vEdge = fresnel;
-        vDigit = mod(floor(uTime * (2.7 + fract(aSeed * 2.4)) + aSeed * 17.0), 2.0);
-        vPalette = fract(aSeed * 8.7 + uTime * 0.03);
-        vAlpha = aAlpha;
+        vShade = shade;
+        vDigit = mod(floor(uTime * (2.3 + fract(aSeed * 1.7)) + aSeed * 17.0), 2.0);
+        vPalette = fract(aSeed * 8.7 + uTime * 0.02);
+        vAlpha = aAlpha * shade * mix(0.16, 0.52, fresnel);
 
         vec4 mvPosition = viewMatrix * worldPos;
-        gl_PointSize = max(2.6, aSize * (34.0 / max(1.0, -mvPosition.z)) * (0.92 + uMotion * 0.18));
+        gl_PointSize = max(2.2, aSize * (32.0 / max(1.0, -mvPosition.z)) * (0.94 + uMotion * 0.08));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -363,6 +368,7 @@ function createBinaryOutlineMaterial(atlas, palette, lightDir) {
       varying float vAlpha;
       varying float vPalette;
       varying float vEdge;
+      varying float vShade;
 
       vec3 palette(float t) {
         float scaled = t * 6.0;
@@ -379,9 +385,11 @@ function createBinaryOutlineMaterial(atlas, palette, lightDir) {
         float edge = smoothstep(0.12, 0.88, vEdge);
         float alpha = glyph.a * vAlpha * edge * uAlpha;
         if (alpha < 0.02) discard;
-        vec3 color = palette(vPalette) * uBrightness;
-        color += palette(vPalette) * 0.18 * edge;
-        color = mix(color, vec3(0.12, 0.18, 0.22), uSadness * 0.22);
+
+        vec3 color = palette(vPalette);
+        color *= mix(0.20, 0.88, vShade) * uBrightness;
+        color = mix(color, vec3(0.12, 0.18, 0.22), uSadness * 0.18);
+
         gl_FragColor = vec4(color, alpha);
       }
     `
