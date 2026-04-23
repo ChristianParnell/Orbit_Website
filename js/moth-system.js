@@ -86,8 +86,6 @@ const DEFAULT_CONFIG = {
 
   takeoffRiseHeight: 0.20,
   takeoffMotionScale: 1.0,
-  backflipPush: 0.25,
-  backflipLift: 0.10,
 
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.9,
@@ -717,6 +715,7 @@ export class MothSystem {
     this.lastDelta = 1 / 60;
 
     this.takeoffState = null;
+    this.backflipState = null;
 
     this.temp = {
       a: new THREE.Vector3(),
@@ -1050,6 +1049,7 @@ export class MothSystem {
 
     if (this.currentActionKey === "backflip") {
       this.flipBusy = false;
+      this.backflipState = null;
       const next = this.pendingActionKey || this.getPatrolFlightAction();
       this.pendingActionKey = "";
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
@@ -1772,8 +1772,13 @@ export class MothSystem {
     }
 
     if (this.mode === "backflip") {
+      if (this.backflipState) {
+        this.root.position.copy(this.backflipState.position);
+        this.root.quaternion.copy(this.backflipState.quaternion);
+        this.forward.copy(this.backflipState.forward);
+        this.orientationUp.copy(this.backflipState.up);
+      }
       this.velocity.set(0, 0, 0);
-      this.lookAtDirection(this.forward, this.cfg.turnLerpFast);
       return;
     }
 
@@ -1950,7 +1955,22 @@ export class MothSystem {
       );
     }
 
-    if (this.mode === "backflip" || this.mode === "inspectVoid" || this.mode === "landing") {
+    if (this.mode === "backflip") {
+      const bankAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualBankResponse || 7.5));
+      const pitchAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualPitchResponse || 6.0));
+
+      this.visualBank = THREE.MathUtils.lerp(this.visualBank, 0, bankAlpha);
+      this.visualPitch = THREE.MathUtils.lerp(this.visualPitch, 0, pitchAlpha);
+
+      this.visualRoot.rotation.set(
+        this.baseVisualPitch + this.visualPitch,
+        this.baseVisualYaw,
+        this.baseVisualRoll + this.visualBank
+      );
+      return;
+    }
+
+    if (this.mode === "inspectVoid" || this.mode === "landing") {
       bankTarget *= 0.35;
       pitchTarget *= 0.35;
     }
@@ -2205,10 +2225,17 @@ export class MothSystem {
     this.perched = false;
     this.mode = "backflip";
     this.takeoffState = null;
+    this.backflipState = {
+      position: this.root.position.clone(),
+      quaternion: this.root.quaternion.clone(),
+      forward: this.forward.clone(),
+      up: this.orientationUp.clone()
+    };
     this.velocity.set(0, 0, 0);
 
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
       this.flipBusy = false;
+      this.backflipState = null;
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
       this.playLoop(this.getPatrolFlightAction());
     }
