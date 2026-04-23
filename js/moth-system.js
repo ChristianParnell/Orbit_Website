@@ -64,8 +64,18 @@ const DEFAULT_CONFIG = {
   approachSlowRadius: 0.42,
   turnLerp: 0.22,
   turnLerpFast: 0.28,
+  turnResponse: 12.0,
+  turnResponseFast: 17.0,
   headingTargetBlend: 0.18,
   headingVelocityBlend: 0.82,
+  headingVelocityMin: 0.035,
+  velocityResponse: 5.4,
+  animationFadeLoop: 0.22,
+  animationFadeOnce: 0.16,
+  visualBankMax: 0.24,
+  visualBankResponse: 7.5,
+  visualPitchMax: 0.12,
+  visualPitchResponse: 6.0,
 
   hoverPerchDelay: 0.10,
   perchDistance: 0.12,
@@ -699,6 +709,12 @@ export class MothSystem {
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
     this.orientationUp = new THREE.Vector3(0, 1, 0);
+    this.visualBank = 0;
+    this.visualPitch = 0;
+    this.baseVisualPitch = this.cfg.modelPitchOffset || 0;
+    this.baseVisualYaw = this.cfg.modelYawOffset || 0;
+    this.baseVisualRoll = this.cfg.modelRollOffset || 0;
+    this.lastDelta = 1 / 60;
 
     this.takeoffState = null;
 
@@ -709,6 +725,7 @@ export class MothSystem {
       d: new THREE.Vector3(),
       e: new THREE.Vector3(),
       q: new THREE.Quaternion(),
+      q2: new THREE.Quaternion(),
       m: new THREE.Matrix4(),
       sphere: new THREE.Sphere(this.orbitCenter.clone(), this.cfg.voidSpawnRadius),
       plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.orbitCenter.y),
@@ -862,9 +879,9 @@ export class MothSystem {
     this.modelRoot = model.scene || model;
     this.visualRoot.add(this.modelRoot);
     this.visualRoot.rotation.set(
-      this.cfg.modelPitchOffset || 0,
-      this.cfg.modelYawOffset || 0,
-      this.cfg.modelRollOffset || 0
+      this.baseVisualPitch,
+      this.baseVisualYaw,
+      this.baseVisualRoll
     );
 
     this.modelRoot.traverse((child) => {
@@ -1057,15 +1074,28 @@ export class MothSystem {
     if (!next) return false;
     if (this.currentActionKey === key && next.isRunning()) return true;
 
-    this.actions.forEach((action, actionKey) => {
-      if (actionKey === key) return;
-      action.fadeOut(0.16);
-    });
+    const fade = this.cfg.animationFadeLoop || 0.22;
+    const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
 
-    next.reset();
+    next.enabled = true;
+    next.setEffectiveTimeScale(1);
+    next.setEffectiveWeight(1);
     next.setLoop(THREE.LoopRepeat, Infinity);
     next.clampWhenFinished = false;
-    next.fadeIn(0.14).play();
+
+    if (previous && previous !== next) {
+      next.reset();
+      next.crossFadeFrom(previous, fade, true).play();
+    } else {
+      next.reset();
+      next.fadeIn(fade).play();
+    }
+
+    this.actions.forEach((action, actionKey) => {
+      if (actionKey === key || action === next || action === previous) return;
+      action.fadeOut(fade);
+    });
+
     this.currentActionKey = key;
     return true;
   }
@@ -1077,16 +1107,28 @@ export class MothSystem {
       return false;
     }
 
-    this.actions.forEach((action, actionKey) => {
-      if (actionKey === key) return;
-      action.fadeOut(0.10);
-    });
+    const fade = this.cfg.animationFadeOnce || 0.16;
+    const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
 
     this.pendingActionKey = followUp;
+    next.enabled = true;
+    next.setEffectiveTimeScale(1);
+    next.setEffectiveWeight(1);
     next.reset();
     next.setLoop(THREE.LoopOnce, 1);
     next.clampWhenFinished = true;
-    next.fadeIn(0.10).play();
+
+    if (previous && previous !== next) {
+      next.crossFadeFrom(previous, fade, true).play();
+    } else {
+      next.fadeIn(fade).play();
+    }
+
+    this.actions.forEach((action, actionKey) => {
+      if (actionKey === key || action === next || action === previous) return;
+      action.fadeOut(fade);
+    });
+
     this.currentActionKey = key;
     return true;
   }
@@ -1642,6 +1684,8 @@ export class MothSystem {
     this.setVisibility(sceneVisible);
     if (!sceneVisible) return;
 
+    this.lastDelta = Math.max(1 / 240, delta || 1 / 60);
+
     if (this.mixer) this.mixer.update(delta);
     this.updateAnimatedShells();
 
@@ -1672,6 +1716,7 @@ export class MothSystem {
     this.updateVoidVisual(elapsed, delta);
     this.updateNestAnimations(elapsed, coverWorldData);
     this.updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData);
+    this.updateFlightPose(delta);
     this.updateTrail(delta, elapsed);
 
     if (this.hitProxy) {
@@ -1792,7 +1837,7 @@ export class MothSystem {
     const speed = baseSpeed * slowMul;
     const desired = dir.multiplyScalar(speed);
 
-    this.velocity.lerp(desired, 1.0 - Math.exp(-delta * 5.4));
+    this.velocity.lerp(desired, 1.0 - Math.exp(-delta * (this.cfg.velocityResponse || 5.4)));
 
     if (!this.worldPointComfortablyVisible(this.root.position, this.cfg.patrolRecoveryMargin)) {
       const recovery = this.getRecoveryPatrolPoint().sub(this.root.position).multiplyScalar(this.cfg.patrolRecoverySpeedScale * delta);
@@ -1854,6 +1899,67 @@ export class MothSystem {
     this.root.position.lerpVectors(this.takeoffState.startPos, this.takeoffState.endPos, ease * this.cfg.takeoffMotionScale);
   }
 
+  getTurnAlpha(lerpAmount = this.cfg.turnLerp) {
+    const clampedLerp = THREE.MathUtils.clamp(lerpAmount, 0.01, 0.99);
+    const response = clampedLerp >= (this.cfg.turnLerpFast || 0.28)
+      ? (this.cfg.turnResponseFast || 17.0)
+      : (this.cfg.turnResponse || 12.0);
+
+    const rateAware = 1.0 - Math.exp(-this.lastDelta * response);
+    const legacyAware = 1.0 - Math.pow(1.0 - clampedLerp, Math.max(0.25, this.lastDelta * 60.0));
+    return THREE.MathUtils.clamp(Math.max(rateAware, legacyAware), 0.01, 0.95);
+  }
+
+  updateFlightPose(delta) {
+    if (!this.visualRoot) return;
+
+    const speed = this.velocity.length();
+    const inverseRoot = this.temp.q2.copy(this.root.quaternion).invert();
+    const localVelocity = this.temp.a.copy(this.velocity).applyQuaternion(inverseRoot);
+
+    let bankTarget = 0;
+    let pitchTarget = 0;
+
+    if (speed > (this.cfg.headingVelocityMin || 0.035) && this.mode !== "landed") {
+      const normalizedSide = THREE.MathUtils.clamp(localVelocity.x / Math.max(0.0001, speed), -1, 1);
+      const normalizedLift = THREE.MathUtils.clamp(localVelocity.y / Math.max(0.0001, speed), -1, 1);
+
+      bankTarget = THREE.MathUtils.clamp(
+        -normalizedSide * (this.cfg.visualBankMax || 0.24),
+        -(this.cfg.visualBankMax || 0.24),
+        this.cfg.visualBankMax || 0.24
+      );
+
+      pitchTarget = THREE.MathUtils.clamp(
+        -normalizedLift * (this.cfg.visualPitchMax || 0.12),
+        -(this.cfg.visualPitchMax || 0.12),
+        this.cfg.visualPitchMax || 0.12
+      );
+    }
+
+    if (this.mode === "backflip" || this.mode === "inspectVoid" || this.mode === "landing") {
+      bankTarget *= 0.35;
+      pitchTarget *= 0.35;
+    }
+
+    if (this.mode === "landed") {
+      bankTarget = 0;
+      pitchTarget = 0;
+    }
+
+    const bankAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualBankResponse || 7.5));
+    const pitchAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualPitchResponse || 6.0));
+
+    this.visualBank = THREE.MathUtils.lerp(this.visualBank, bankTarget, bankAlpha);
+    this.visualPitch = THREE.MathUtils.lerp(this.visualPitch, pitchTarget, pitchAlpha);
+
+    this.visualRoot.rotation.set(
+      this.baseVisualPitch + this.visualPitch,
+      this.baseVisualYaw,
+      this.baseVisualRoll + this.visualBank
+    );
+  }
+
   orientRootToDirection(direction, preferredUp = null, lerpAmount = this.cfg.turnLerp) {
     if (direction.lengthSq() <= 0.0001) return;
 
@@ -1890,11 +1996,10 @@ export class MothSystem {
 
     this.temp.m.makeBasis(right, up, this.temp.d.copy(forward).multiplyScalar(-1));
     this.temp.q.setFromRotationMatrix(this.temp.m);
-    this.root.quaternion.slerp(this.temp.q, lerpAmount);
+    this.root.quaternion.slerp(this.temp.q, this.getTurnAlpha(lerpAmount));
 
-    this.forward.copy(forward);
-    const upBlend = 1.0 - Math.exp(-Math.max(0.0001, lerpAmount) * 10.0);
-    this.orientationUp.lerp(up, upBlend).normalize();
+    this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
+    this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
   }
 
   lookAtDirection(direction, lerpAmount = this.cfg.turnLerp) {
