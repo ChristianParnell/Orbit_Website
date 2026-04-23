@@ -108,7 +108,7 @@ const ACTION_KEYS = {
   perch: ["f land idle", "land idle", "perch", "perched", "rest", "idle perched", "idle"],
   takeoff: ["f land to takeoff", "f land to take off", "land to takeoff", "takeoff", "take off", "launch", "lift off", "liftoff"],
   feed: ["f void inspect", "void inspect", "inspect", "feed", "eat", "consume", "sniff"],
-  backflip: ["f backflip", "backflip", "flip", "evade", "dodge"]
+  backflip: ["f Backflip", "Backflip", "flip", "evade", "dodge"]
 };
 
 function normalizeName(name) {
