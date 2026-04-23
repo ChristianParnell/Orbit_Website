@@ -947,14 +947,42 @@ export class MothSystem {
       uniqueClips.push(clip);
     });
 
-    Object.entries(ACTION_KEYS).forEach(([actionKey, patterns]) => {
-      const clip = chooseBestClip(uniqueClips, patterns);
-      if (!clip) return;
+    console.log(
+      "[Moth] Available animation clips:",
+      uniqueClips.map((clip) => clip.name)
+    );
+
+    const createAction = (clip) => {
       const action = this.mixer.clipAction(clip);
       action.enabled = true;
       action.clampWhenFinished = true;
       action.zeroSlopeAtStart = true;
       action.zeroSlopeAtEnd = true;
+      return action;
+    };
+
+    const exactBackflipClip =
+      uniqueClips.find((clip) => clip.name === "Backflip") ||
+      uniqueClips.find((clip) => normalizeName(clip.name) === "backflip") ||
+      uniqueClips.find((clip) => clip.name === "F_Backflip") ||
+      uniqueClips.find((clip) => normalizeName(clip.name) === "f backflip");
+
+    if (exactBackflipClip) {
+      const action = createAction(exactBackflipClip);
+      this.actions.set("backflip", action);
+      this.actionDurations.set("backflip", exactBackflipClip.duration);
+      console.log("[Moth] Bound backflip to exact clip:", exactBackflipClip.name);
+    } else {
+      console.warn("[Moth] Exact Backflip clip was not found.");
+    }
+
+    Object.entries(ACTION_KEYS).forEach(([actionKey, patterns]) => {
+      if (actionKey === "backflip" && this.actions.has("backflip")) return;
+
+      const clip = chooseBestClip(uniqueClips, patterns);
+      if (!clip) return;
+
+      const action = createAction(clip);
       this.actions.set(actionKey, action);
       this.actionDurations.set(actionKey, clip.duration);
     });
@@ -1954,17 +1982,23 @@ export class MothSystem {
   }
 
   isPointerOverMoth() {
-    if (!this.hitProxy) return false;
-    const hits = this.temp.raycaster.intersectObject(this.hitProxy, false);
+    const targets = [];
+    if (this.hitProxy) targets.push(this.hitProxy);
+    if (this.modelRoot) targets.push(this.modelRoot);
+    if (!targets.length) return false;
+
+    const hits = this.temp.raycaster.intersectObjects(targets, true);
     return hits.length > 0;
   }
 
   handleSingleClick(event, hoveredEntry) {
     if (!this.isScenePointerEventAllowed(event)) return false;
+    if (typeof event.button === "number" && event.button !== 0) return false;
 
     this.updatePointerRay(event);
 
     if (this.isPointerOverMoth()) {
+      console.log("[Moth] Single left click detected on moth.");
       this.performBackflip();
       return true;
     }
@@ -2037,11 +2071,24 @@ export class MothSystem {
   }
 
   performBackflip() {
+    const backflipAction = this.getAction("backflip");
+
+    if (!backflipAction) {
+      console.warn("[Moth] No backflip action is bound.");
+      this.flipBusy = false;
+      this.mode = this.voidState?.active ? "approachVoid" : "patrol";
+      this.playLoop(this.getPatrolFlightAction());
+      return;
+    }
+
+    console.log("[Moth] Playing backflip clip.");
+
     this.flipBusy = true;
     this.perched = false;
     this.mode = "backflip";
     this.takeoffState = null;
     this.velocity.set(0, 0, 0);
+
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
       this.flipBusy = false;
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
