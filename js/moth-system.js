@@ -1019,10 +1019,17 @@ export class MothSystem {
     }
 
     this.log(`moth animation states: ${Array.from(this.actions.keys()).join(", ")}`, "BOOT");
-    this.mixer.addEventListener("finished", () => this.onActionFinished());
+    this.mixer.addEventListener("finished", (event) => this.onActionFinished(event));
   }
 
-  onActionFinished() {
+  onActionFinished(event) {
+    const finishedAction = event?.action || null;
+    const activeAction = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
+
+    if (finishedAction && activeAction && finishedAction !== activeAction) {
+      return;
+    }
+
     if (this.currentActionKey === "land" && this.pendingActionKey === "perch") {
       this.pendingActionKey = "";
       this.perched = true;
@@ -1078,14 +1085,16 @@ export class MothSystem {
     const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
 
     next.enabled = true;
+    next.stopFading();
     next.setEffectiveTimeScale(1);
     next.setEffectiveWeight(1);
     next.setLoop(THREE.LoopRepeat, Infinity);
     next.clampWhenFinished = false;
 
     if (previous && previous !== next) {
+      previous.stopFading();
       next.reset();
-      next.crossFadeFrom(previous, fade, true).play();
+      next.crossFadeFrom(previous, fade, false).play();
     } else {
       next.reset();
       next.fadeIn(fade).play();
@@ -1093,6 +1102,7 @@ export class MothSystem {
 
     this.actions.forEach((action, actionKey) => {
       if (actionKey === key || action === next || action === previous) return;
+      action.stopFading();
       action.fadeOut(fade);
     });
 
@@ -1112,6 +1122,7 @@ export class MothSystem {
 
     this.pendingActionKey = followUp;
     next.enabled = true;
+    next.stopFading();
     next.setEffectiveTimeScale(1);
     next.setEffectiveWeight(1);
     next.reset();
@@ -1119,13 +1130,15 @@ export class MothSystem {
     next.clampWhenFinished = true;
 
     if (previous && previous !== next) {
-      next.crossFadeFrom(previous, fade, true).play();
+      previous.stopFading();
+      next.crossFadeFrom(previous, fade, false).play();
     } else {
       next.fadeIn(fade).play();
     }
 
     this.actions.forEach((action, actionKey) => {
       if (actionKey === key || action === next || action === previous) return;
+      action.stopFading();
       action.fadeOut(fade);
     });
 
