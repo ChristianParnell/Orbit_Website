@@ -57,7 +57,6 @@ const DEFAULT_CONFIG = {
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
 
-
   flySpeed: 1.55,
   diveSpeed: 2.00,
   flySadSpeedScale: 0.62,
@@ -179,7 +178,6 @@ const ACTION_KEYS = {
   perch: ["f land idle", "land idle", "perch", "perched", "rest", "idle perched", "idle"],
   takeoff: ["f land to takeoff", "f land to take off", "land to takeoff", "takeoff", "take off", "launch", "lift off", "liftoff"],
   feed: ["f void inspect", "void inspect", "inspect", "feed", "eat", "consume", "sniff"],
-  backflip: ["f backflip", "backflip", "flip", "evade", "dodge"]
 };
 
 function normalizeName(name) {
@@ -797,8 +795,6 @@ export class MothSystem {
     this.lastDelta = 1 / 60;
 
     this.takeoffState = null;
-    this.backflipState = null;
-    this.backflipGuardUntil = 0;
     this.cursorCuriousUntil = 0;
     this.cursorInteractUntil = 0;
     this.nextCursorAttractAt = 0;
@@ -1094,24 +1090,7 @@ export class MothSystem {
       return action;
     };
 
-    const exactBackflipClip =
-      uniqueClips.find((clip) => clip.name === "Backflip") ||
-      uniqueClips.find((clip) => normalizeName(clip.name) === "backflip") ||
-      uniqueClips.find((clip) => clip.name === "F_Backflip") ||
-      uniqueClips.find((clip) => normalizeName(clip.name) === "f backflip");
-
-    if (exactBackflipClip) {
-      const action = createAction(exactBackflipClip);
-      this.actions.set("backflip", action);
-      this.actionDurations.set("backflip", exactBackflipClip.duration);
-      console.log("[Moth] Bound backflip to exact clip:", exactBackflipClip.name);
-    } else {
-      console.warn("[Moth] Exact Backflip clip was not found.");
-    }
-
     Object.entries(ACTION_KEYS).forEach(([actionKey, patterns]) => {
-      if (actionKey === "backflip" && this.actions.has("backflip")) return;
-
       const clip = chooseBestClip(uniqueClips, patterns);
       if (!clip) return;
 
@@ -1193,8 +1172,6 @@ export class MothSystem {
     if (this.currentActionKey !== "backflip" && this.mode !== "backflip") return;
 
     this.flipBusy = false;
-    this.backflipState = null;
-    this.backflipGuardUntil = 0;
     this.clearCursorAttraction();
     this.frameMotionDirection.copy(this.forward);
 
@@ -1222,10 +1199,6 @@ export class MothSystem {
   }
 
   playLoop(key) {
-    if (this.mode === "backflip" && this.currentActionKey === "backflip" && key !== "backflip") {
-      return false;
-    }
-
     const next = this.getAction(key);
     if (!next) return false;
     if (this.currentActionKey === key && next.isRunning()) return true;
@@ -1260,10 +1233,6 @@ export class MothSystem {
   }
 
   playOnce(key, followUp = "") {
-    if (this.mode === "backflip" && this.currentActionKey === "backflip" && key !== "backflip") {
-      return false;
-    }
-
     const next = this.getAction(key);
     if (!next) {
       if (followUp) this.playLoop(followUp);
@@ -2322,7 +2291,6 @@ export class MothSystem {
     this.saveState(false);
   }
 
-
   updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData) {
     const hasVoid = this.voidState?.active;
     const homeTarget = this.getHomePerchTarget();
@@ -2351,7 +2319,6 @@ export class MothSystem {
       fleeTarget
       && this.inputState.aggression > 0.55
       && this.trust < 0.72
-      && this.mode !== "backflip"
     );
     const shouldAvoidVoid = this.corruption > 0.82 || wantsHome;
 
@@ -2367,7 +2334,7 @@ export class MothSystem {
 
       if (!cursorStillValid) {
         this.clearCursorAttraction();
-        if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+        if (this.mode !== "takeoff" && this.mode !== "inspectVoid") {
           this.mode = "patrol";
         }
       }
@@ -2393,7 +2360,7 @@ export class MothSystem {
     if (hasVoid && shouldAvoidVoid) {
       if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
         this.startTakeoff(elapsed);
-      } else if (this.mode !== "takeoff" && this.mode !== "backflip") {
+      } else if (this.mode !== "takeoff") {
         this.mode = wantsHome ? "approachHome" : "patrol";
       }
     } else if (hasVoid) {
@@ -2407,7 +2374,7 @@ export class MothSystem {
       if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
         this.startTakeoff(elapsed);
       }
-      if (this.mode !== "takeoff" && this.mode !== "backflip") {
+      if (this.mode !== "takeoff") {
         this.mode = "flee";
       }
     } else if (wantsHome) {
@@ -2421,7 +2388,7 @@ export class MothSystem {
       if ((this.mode === "restHome" || this.mode === "landed") && this.currentPerchTarget?.type === "home" && this.fatigue <= (this.cfg.homeLeaveThreshold || 0.34)) {
         this.startTakeoff(elapsed);
       }
-      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.hoverClock >= this.cfg.hoverPerchDelay) {
+      if (this.mode !== "takeoff" && this.hoverClock >= this.cfg.hoverPerchDelay) {
         if (this.mode !== "landed" && this.mode !== "landing" && this.mode !== "restHome") this.mode = "approachCover";
       }
     } else if (wantsCompanion) {
@@ -2647,7 +2614,6 @@ export class MothSystem {
     }
   }
 
-
   moveToward(delta, target, baseSpeed) {
     const toTarget = this.temp.e.copy(target).sub(this.root.position);
     const distance = toTarget.length();
@@ -2716,7 +2682,7 @@ export class MothSystem {
   }
 
   startTakeoff(elapsed) {
-    if (this.mode === "takeoff" || this.mode === "backflip") return;
+    if (this.mode === "takeoff") return;
     this.clearCursorAttraction();
     this.perched = false;
     this.mode = "takeoff";
@@ -2776,17 +2742,6 @@ export class MothSystem {
         -(this.cfg.visualPitchMax || 0.12),
         this.cfg.visualPitchMax || 0.12
       );
-    }
-
-    if (this.mode === "backflip") {
-      this.visualBank = 0;
-      this.visualPitch = 0;
-      this.visualRoot.rotation.set(
-        this.baseVisualPitch,
-        this.baseVisualYaw,
-        this.baseVisualRoll
-      );
-      return;
     }
 
     if (this.mode === "inspectVoid" || this.mode === "landing") {
@@ -2988,8 +2943,6 @@ export class MothSystem {
     this.updatePointerRay(event);
 
     if (this.isPointerOverMoth()) {
-      console.log("[Moth] Single left click detected on moth.");
-      this.performBackflip();
       return true;
     }
 
@@ -3061,54 +3014,3 @@ export class MothSystem {
     this.voidState.energy = 0;
     this.corruption = clamp01(this.corruption + 0.06);
   }
-
-  performBackflip() {
-    const backflipAction = this.getAction("backflip");
-
-    if (!backflipAction) {
-      console.warn("[Moth] No backflip action is bound.");
-      this.flipBusy = false;
-      this.mode = this.voidState?.active ? "approachVoid" : "patrol";
-      this.playLoop(this.getPatrolFlightAction());
-      return;
-    }
-
-    const clipDuration = backflipAction.getClip?.().duration || this.actionDurations.get("backflip") || 0;
-
-    console.log("[Moth] Playing backflip clip.", { duration: clipDuration });
-
-    this.flipBusy = true;
-    this.perched = false;
-    this.clearCursorAttraction();
-    this.mode = "backflip";
-    this.takeoffState = null;
-    this.backflipGuardUntil = this.getElapsed() + Math.max(clipDuration, 0.1);
-    this.backflipState = {
-      position: this.root.position.clone(),
-      quaternion: this.root.quaternion.clone(),
-      forward: this.forward.clone(),
-      up: this.orientationUp.clone(),
-      duration: clipDuration
-    };
-    this.root.position.copy(this.backflipState.position);
-    this.root.quaternion.copy(this.backflipState.quaternion);
-    this.forward.copy(this.backflipState.forward);
-    this.orientationUp.copy(this.backflipState.up);
-    this.smoothedHeading.copy(this.forward);
-    this.frameMotionDirection.copy(this.forward);
-    this.velocity.set(0, 0, 0);
-    this.visualBank = 0;
-    this.visualPitch = 0;
-    if (this.visualRoot) {
-      this.visualRoot.rotation.set(this.baseVisualPitch, this.baseVisualYaw, this.baseVisualRoll);
-    }
-
-    if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
-      this.flipBusy = false;
-      this.backflipState = null;
-      this.backflipGuardUntil = 0;
-      this.mode = this.voidState?.active ? "approachVoid" : "patrol";
-      this.playLoop(this.getPatrolFlightAction());
-    }
-  }
-}
