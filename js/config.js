@@ -76,7 +76,7 @@ export const SCENE_CONFIG = {
 };
 
 export const MOTH_CONFIG = {
-  storageKey: "orbitSpecterMothV3",
+  storageKey: "orbitSpecterMothV4",
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
@@ -119,6 +119,9 @@ export const MOTH_CONFIG = {
   patrolRecoveryMargin: 0.96,
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
+  stuckSpeedThreshold: 0.045,
+  stuckDistanceThreshold: 0.24,
+  stuckTimeout: 1.05,
 
   flySpeed: 1.55,
   diveSpeed: 2.00,
@@ -130,8 +133,8 @@ export const MOTH_CONFIG = {
   headingVelocityBlend: 0.82,
 
   hoverPerchDelay: 0.10,
-  perchDistance: 0.12,
-  landTriggerDistance: 0.12,
+  perchDistance: 0.16,
+  landTriggerDistance: 0.18,
   coverPerchLift: 0.065,
   coverPerchForward: 0.055,
   coverPerchLerp: 0.18,
@@ -161,7 +164,7 @@ export const MOTH_CONFIG = {
   homePerchOffset: { x: 0.0, y: 0.015, z: 0.0 },
   homePerchForward: 0.09,
   homePerchLift: 0.025,
-  homeApproachDistance: 0.12,
+  homeApproachDistance: 0.18,
   homePerchLerp: 0.16,
 
   signalDecayPerSecond: 0.070,
@@ -225,11 +228,5 @@ export const MOTH_CONFIG = {
     sketchfab: -0.12,
     "twenty-two-minutes": 0.22,
     contact: 0.25
-  },
-
-  debugOverlay: true,
-  debugOverlayTop: 10,
-  debugOverlayRight: 12,
-  debugOverlayWidth: 220,
-  debugOverlayBarHeight: 6
+  }
 };
