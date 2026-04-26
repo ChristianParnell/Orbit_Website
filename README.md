@@ -278,3 +278,16 @@ clearing the void increases corruption slightly, which pushes the moth toward re
 The moth now uses a stable world-up flight basis instead of the drifting up-vector that was making it roll upside down and “fight” itself. Its heading also now prefers its actual frame-to-frame travel direction, so it should face where it is really moving rather than changing behavior depending on where it is in the scene.
 
 For the backflip, I locked it down so it is animation-only while the clip plays. During Backflip, the code now freezes the moth’s world position and world rotation every frame, zeros its movement velocity, and disables the extra visual bank/pitch motion. So the FBX animation is the only thing driving that move now.
+
+### Cursor-attraction behavior Added
+The moth now has a low-priority, random cursor-attraction behavior. It only starts while the moth is already patrolling, only when the cursor is fairly close, and only when higher-priority needs are not taking over. So it will not override home-resting, fleeing, cover-hover landing, void behavior, takeoff, or backflip.
+
+### Stripped Backflip from code.
+stripping backflip out completely now — not just the animation trigger, but the related state/logic too, so it stops poisoning the moth behavior. left-clicking directly on the moth is now consumed and does nothing, so it should not trigger the old stuttering path anymore. Double-click void spawning is unchanged.
+
+What I removed:
+the backflip clip binding,
+the backflip state and guard logic,
+the backflip-only update block,
+and the left-click trigger that was calling the backflip.
+
