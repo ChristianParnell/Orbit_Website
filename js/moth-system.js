@@ -111,6 +111,50 @@ const DEFAULT_CONFIG = {
   vitalityRecoveryPerSecond: 0.01,
   offlineDrainPerHour: 0.05,
   sadThreshold: 0.30,
+  homePerchBoneName: "PerchBone",
+  homePerchOffset: { x: 0.0, y: 0.015, z: 0.0 },
+  homePerchForward: 0.09,
+  homePerchLift: 0.025,
+  homeApproachDistance: 0.12,
+  homePerchLerp: 0.16,
+  signalDecayPerSecond: 0.070,
+  signalHoverBoost: 0.42,
+  signalPointerBoost: 0.22,
+  signalWheelBoost: 0.08,
+  signalPanelBoost: 0.12,
+  signalAudioBoost: 0.18,
+  fatigueFlightPerSecond: 0.050,
+  fatigueStimulusPerSecond: 0.042,
+  fatigueRestRecoveryPerSecond: 0.22,
+  trustGainPerSecond: 0.12,
+  trustLossPerSecond: 0.34,
+  corruptionGainPerSecond: 0.16,
+  corruptionRestRecoveryPerSecond: 0.17,
+  corruptionSignalDamp: 0.28,
+  gentlePointerSpeed: 0.35,
+  aggressivePointerSpeed: 1.10,
+  aggressiveWheelThreshold: 620,
+  homeRestThreshold: 0.52,
+  homeLeaveThreshold: 0.34,
+  fragmentCollectPerSecond: 0.16,
+  fragmentDepositThreshold: 1.0,
+  companionTrustThreshold: 0.42,
+  companionDistance: 0.36,
+  companionLift: 0.08,
+  residueIncreasePerSecond: 0.040,
+  residueCleansePerSecond: 0.26,
+  residueOpacityMax: 0.55,
+  residueScaleMin: 0.10,
+  residueScaleMax: 0.26,
+  pagePreferences: {
+    about: 1.0,
+    gallery: 0.35,
+    achievements: -0.85,
+    fab: -0.10,
+    sketchfab: -0.12,
+    "twenty-two-minutes": 0.22,
+    contact: 0.25
+  },
   debug: false
 };
 
@@ -682,8 +726,10 @@ export class MothSystem {
 
     this.nestGroup = new THREE.Group();
     this.voidGroup = new THREE.Group();
+    this.residueGroup = new THREE.Group();
     this.scene.add(this.nestGroup);
     this.scene.add(this.voidGroup);
+    this.scene.add(this.residueGroup);
 
     this.voidPoints = null;
     this.voidGeometry = null;
@@ -695,6 +741,17 @@ export class MothSystem {
     this.nests = [];
     this.saved = this.loadSavedState();
     this.vitality = clamp01(this.saved.vitality ?? 0.82);
+    this.signalLevel = clamp01(this.saved.signalLevel ?? 0.56);
+    this.fatigue = clamp01(this.saved.fatigue ?? 0.22);
+    this.trust = clamp01(this.saved.trust ?? 0.48);
+    this.corruption = clamp01(this.saved.corruption ?? 0.08);
+    this.fragmentCharge = Math.max(0, Number(this.saved.fragmentCharge ?? 0));
+    this.coverResidue = [];
+    this.residueSprites = [];
+    this.homeBone = null;
+    this.homePerch = null;
+    this.currentPerchTarget = null;
+    this.searchUrgency = 0.0;
     this.lastSaveAt = 0;
     this.lastNestDropAt = 0;
 
@@ -726,6 +783,21 @@ export class MothSystem {
     this.takeoffState = null;
     this.backflipState = null;
     this.backflipGuardUntil = 0;
+    this.inputState = {
+      pointerWorld: null,
+      pointerMotion: 0,
+      pointerInfluence: 0,
+      aggression: 0,
+      gentleBias: 0,
+      lastClientX: null,
+      lastClientY: null,
+      lastMoveAtMs: 0,
+      lastSignalAt: 0,
+      wheelImpulse: 0,
+      panelSignal: 0,
+      currentHoveredId: "",
+      lastHoveredId: ""
+    };
 
     this.temp = {
       a: new THREE.Vector3(),
@@ -751,6 +823,7 @@ export class MothSystem {
     this.initVoidVisuals();
     this.restoreNests();
     this.applyOfflineDecay();
+    this.setupInteractionSensing();
     this.load();
   }
 
@@ -777,6 +850,12 @@ export class MothSystem {
         this.cfg.storageKey,
         JSON.stringify({
           vitality: this.vitality,
+          signalLevel: this.signalLevel,
+          fatigue: this.fatigue,
+          trust: this.trust,
+          corruption: this.corruption,
+          fragmentCharge: this.fragmentCharge,
+          coverResidue: this.coverResidue,
           lastVisit: Date.now(),
           nests: this.nests.map((nest) => ({
             id: nest.id,
@@ -803,10 +882,15 @@ export class MothSystem {
     const hours = Math.max(0, (Date.now() - lastVisit) / 3600000);
     if (hours <= 0.1) return;
     this.vitality = clamp01(this.vitality - hours * this.cfg.offlineDrainPerHour);
+    this.signalLevel = clamp01(this.signalLevel - hours * (this.cfg.offlineDrainPerHour * 0.8));
+    this.fatigue = clamp01(this.fatigue + hours * 0.05);
+    this.trust = clamp01(this.trust - hours * 0.03);
+    this.corruption = clamp01(this.corruption + hours * 0.02);
   }
 
   restoreNests() {
     const savedNests = Array.isArray(this.saved.nests) ? this.saved.nests : [];
+    this.coverResidue = Array.isArray(this.saved.coverResidue) ? this.saved.coverResidue.map((value) => clamp01(Number(value) || 0)) : [];
     savedNests.slice(0, this.cfg.nestMax).forEach((nest, index) => {
       const position = new THREE.Vector3(nest.x || 0, nest.y || 0, nest.z || 0);
       const rotation = new THREE.Euler(nest.rx || -Math.PI / 2, nest.ry || 0, nest.rz || 0);
@@ -929,6 +1013,8 @@ export class MothSystem {
     this.buildBinaryOutline();
     this.buildTrail();
     this.buildHitProxy();
+    this.ensureResidueSystem(0);
+    this.refreshHomePerch();
     this.pickNextPatrolPoint(true);
 
     this.ready = true;
@@ -1042,7 +1128,7 @@ export class MothSystem {
     if (this.currentActionKey === "land" && this.pendingActionKey === "perch") {
       this.pendingActionKey = "";
       this.perched = true;
-      this.mode = "landed";
+      this.mode = this.currentPerchTarget?.type === "home" ? "restHome" : "landed";
       this.playLoop("perch");
       return;
     }
@@ -1052,6 +1138,7 @@ export class MothSystem {
       this.pendingActionKey = "";
       this.perched = false;
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
+      this.currentPerchTarget = null;
       this.takeoffState = null;
       this.playLoop(next);
       return;
@@ -1103,7 +1190,12 @@ export class MothSystem {
   }
 
   isHungry(elapsed) {
-    return !(this.voidState?.active) && elapsed >= this.satiatedUntil;
+    if (this.voidState?.active) return false;
+    if (this.mode === "restHome") return false;
+    const timeHungry = elapsed >= this.satiatedUntil;
+    const signalHungry = this.signalLevel < 0.42;
+    const tiredHungry = this.vitality < Math.max(0.18, this.cfg.sadThreshold);
+    return timeHungry || signalHungry || tiredHungry;
   }
 
   playLoop(key) {
@@ -1318,13 +1410,14 @@ export class MothSystem {
     this.trail.positions[base + 2] = this.temp.a.z;
     this.trail.life[i] = this.cfg.trailLife;
 
+    const chaos = this.corruption * 0.12;
     this.trail.velocity[i]
       .copy(this.forward)
-      .multiplyScalar(-this.cfg.trailSpeed * (0.8 + Math.random() * 0.45))
+      .multiplyScalar(-this.cfg.trailSpeed * (0.7 + this.signalLevel * 0.5 + Math.random() * 0.45))
       .add(new THREE.Vector3(
-        (Math.random() - 0.5) * this.cfg.trailJitter,
-        (Math.random() - 0.5) * this.cfg.trailJitter,
-        (Math.random() - 0.5) * this.cfg.trailJitter
+        (Math.random() - 0.5) * (this.cfg.trailJitter + chaos),
+        (Math.random() - 0.5) * (this.cfg.trailJitter + chaos),
+        (Math.random() - 0.5) * (this.cfg.trailJitter + chaos)
       ));
   }
 
@@ -1332,12 +1425,18 @@ export class MothSystem {
     if (!this.trail) return;
 
     this.trail.material.uniforms.uTime.value = elapsed;
-    this.trail.material.uniforms.uAlpha.value = this.cfg.trailAlpha;
+    this.trail.material.uniforms.uAlpha.value = (this.cfg.trailAlpha || 0.84) * (0.38 + this.signalLevel * 0.74 + this.trust * 0.12);
 
     this.trail.emitClock += delta;
-    const moving = this.velocity.lengthSq() > 0.0025;
-    while (moving && this.trail.emitClock >= this.cfg.trailEmitInterval) {
-      this.trail.emitClock -= this.cfg.trailEmitInterval;
+    const moving = this.velocity.lengthSq() > 0.0012 || this.mode === "inspectVoid";
+    const emitInterval = THREE.MathUtils.clamp(
+      this.cfg.trailEmitInterval * THREE.MathUtils.lerp(1.5, 0.52, clamp01(this.signalLevel + this.corruption * 0.25)),
+      0.008,
+      0.08
+    );
+
+    while (moving && this.trail.emitClock >= emitInterval) {
+      this.trail.emitClock -= emitInterval;
       this.emitTrailParticle();
     }
 
@@ -1369,6 +1468,322 @@ export class MothSystem {
     proxy.name = "SpecterMothHitProxy";
     this.hitProxy = proxy;
     this.root.add(proxy);
+  }
+
+  ensureResidueSystem(count = 0) {
+    const desired = Math.max(0, count || 0);
+    if (this.residueSprites.length === desired) return;
+
+    this.residueGroup.clear();
+    this.residueSprites = [];
+    if (this.coverResidue.length !== desired) {
+      this.coverResidue = Array.from({ length: desired }, (_, index) => clamp01(this.coverResidue[index] ?? (index === 2 ? 0.28 : 0.12)));
+    }
+
+    for (let i = 0; i < desired; i += 1) {
+      const material = new THREE.SpriteMaterial({
+        map: this.messTexture,
+        color: new THREE.Color(i === 2 ? "#ff7dd1" : "#8cecff"),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.renderOrder = 4;
+      sprite.visible = this.visible;
+      this.residueGroup.add(sprite);
+      this.residueSprites.push(sprite);
+    }
+  }
+
+  setupInteractionSensing() {
+    const dom = this.renderer?.domElement;
+    if (!dom || this._interactionSensingSetup) return;
+    this._interactionSensingSetup = true;
+
+    this._onPointerMove = (event) => this.handlePointerMove(event);
+    this._onWheel = (event) => this.handleWheel(event);
+    this._onPointerDown = (event) => this.handlePointerDown(event);
+
+    dom.addEventListener("pointermove", this._onPointerMove, { passive: true });
+    window.addEventListener("wheel", this._onWheel, { passive: true });
+    window.addEventListener("pointerdown", this._onPointerDown, { passive: true });
+  }
+
+  handlePointerMove(event) {
+    const nowMs = performance.now();
+    if (typeof this.inputState.lastClientX === "number" && typeof this.inputState.lastClientY === "number") {
+      const dx = event.clientX - this.inputState.lastClientX;
+      const dy = event.clientY - this.inputState.lastClientY;
+      const dt = Math.max(8, nowMs - (this.inputState.lastMoveAtMs || nowMs));
+      const speed = Math.hypot(dx, dy) / dt;
+      const normalized = THREE.MathUtils.clamp(speed / 1.6, 0, 1.4);
+
+      this.inputState.pointerMotion = normalized;
+      this.inputState.pointerInfluence = clamp01(this.inputState.pointerInfluence + Math.min(0.22, normalized * 0.14));
+
+      if (normalized <= (this.cfg.gentlePointerSpeed || 0.35)) {
+        this.inputState.gentleBias = clamp01(this.inputState.gentleBias + 0.12);
+      } else if (normalized >= (this.cfg.aggressivePointerSpeed || 1.10)) {
+        this.inputState.aggression = clamp01(this.inputState.aggression + 0.24);
+      }
+    }
+
+    this.inputState.lastClientX = event.clientX;
+    this.inputState.lastClientY = event.clientY;
+    this.inputState.lastMoveAtMs = nowMs;
+    this.inputState.lastSignalAt = this.getElapsed();
+
+    const point = this.projectClientPointToOrbit(event.clientX, event.clientY);
+    if (point) {
+      this.inputState.pointerWorld = point;
+    }
+  }
+
+  handleWheel(event) {
+    const deltaMagnitude = Math.abs(event.deltaY || 0) + Math.abs(event.deltaX || 0) * 0.35;
+    const impulse = THREE.MathUtils.clamp(deltaMagnitude / Math.max(1, this.cfg.aggressiveWheelThreshold || 620), 0, 1.15);
+    this.inputState.wheelImpulse = Math.max(this.inputState.wheelImpulse, impulse);
+    this.inputState.pointerInfluence = clamp01(this.inputState.pointerInfluence + impulse * 0.08);
+    if (impulse > 0.72) {
+      this.inputState.aggression = clamp01(this.inputState.aggression + impulse * 0.24);
+    }
+    this.inputState.lastSignalAt = this.getElapsed();
+  }
+
+  handlePointerDown(event) {
+    if ((event.button ?? 0) !== 0) return;
+    if (event.target?.closest?.("button, a, nav, .folder-label, .quick-nav")) return;
+    this.inputState.pointerInfluence = clamp01(this.inputState.pointerInfluence + 0.06);
+    this.inputState.aggression = clamp01(this.inputState.aggression + 0.05);
+    this.inputState.lastSignalAt = this.getElapsed();
+  }
+
+  projectClientPointToOrbit(clientX, clientY) {
+    if (!this.renderer?.domElement) return null;
+    const bounds = this.renderer.domElement.getBoundingClientRect();
+    const pointer = this.temp.pointer;
+    pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1;
+    pointer.y = -((clientY - bounds.top) / bounds.height) * 2 + 1;
+    this.temp.raycaster.setFromCamera(pointer, this.camera);
+    return this.pickVoidPoint();
+  }
+
+  refreshHomePerch() {
+    if (!this.centralModel) return null;
+    if (!this.homeBone) {
+      this.homeBone = this.centralModel.getObjectByName?.(this.cfg.homePerchBoneName || "PerchBone") || null;
+    }
+
+    if (this.homeBone) {
+      this.homeBone.updateWorldMatrix(true, false);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const offset = this.cfg.homePerchOffset || { x: 0, y: 0, z: 0 };
+
+      this.homeBone.getWorldPosition(position);
+      this.homeBone.getWorldQuaternion(quaternion);
+
+      position
+        .add(new THREE.Vector3(offset.x || 0, offset.y || 0, offset.z || 0).applyQuaternion(quaternion))
+        .addScaledVector(new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize(), this.cfg.homePerchForward || 0.09)
+        .addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize(), this.cfg.homePerchLift || 0.025);
+
+      this.homePerch = {
+        type: "home",
+        position,
+        normal: new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize(),
+        up: new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize(),
+        quaternion
+      };
+      return this.homePerch;
+    }
+
+    const box = new THREE.Box3().setFromObject(this.centralModel);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const position = center.clone().add(new THREE.Vector3(0, size.y * 0.18 + 0.18, size.z * 0.06));
+    this.homePerch = {
+      type: "home",
+      position,
+      normal: new THREE.Vector3(0, 0, 1),
+      up: new THREE.Vector3(0, 1, 0),
+      quaternion: new THREE.Quaternion()
+    };
+    return this.homePerch;
+  }
+
+  getHomePerchTarget() {
+    return this.refreshHomePerch();
+  }
+
+  getActivePerchTarget(coverWorldData) {
+    if (!this.currentPerchTarget) return null;
+    if (this.currentPerchTarget.type === "home") return this.getHomePerchTarget();
+    if (this.currentPerchTarget.type === "cover" && typeof this.currentPerchTarget.coverIndex === "number") {
+      return this.getCoverPerchTarget(this.currentPerchTarget.coverIndex, coverWorldData);
+    }
+    return null;
+  }
+
+  getPagePreference(entry) {
+    const id = entry?.item?.id || entry?.id || this.inputState.currentHoveredId || "";
+    const preferences = this.cfg.pagePreferences || {};
+    return THREE.MathUtils.clamp(Number(preferences[id] || 0), -1, 1);
+  }
+
+  detectOpenPanelSignal() {
+    const selectors = [
+      ".panel.is-open",
+      ".page-panel.is-open",
+      ".overlay.is-open",
+      ".lightbox.is-open",
+      ".modal.is-open",
+      "[data-panel-open='true']",
+      "[data-open='true']",
+      ".experience-ui .is-open"
+    ];
+
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (!element) continue;
+      const style = window.getComputedStyle(element);
+      if (style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0") return 1;
+    }
+
+    return 0;
+  }
+
+  getCompanionTarget() {
+    const pointerWorld = this.inputState.pointerWorld;
+    if (!pointerWorld) return null;
+    const toCamera = this.temp.a.copy(this.camera.position).sub(pointerWorld).normalize();
+    return new THREE.Vector3()
+      .copy(pointerWorld)
+      .addScaledVector(toCamera, this.cfg.companionDistance || 0.36)
+      .add(new THREE.Vector3(0, this.cfg.companionLift || 0.08, 0));
+  }
+
+  getFleeTarget() {
+    const pointerWorld = this.inputState.pointerWorld;
+    if (!pointerWorld) return null;
+    const away = this.temp.b.copy(this.root.position).sub(pointerWorld);
+    if (away.lengthSq() <= 0.0001) away.set(0, 0.2, 1);
+    away.normalize();
+    return this.clampPointNearCenter(
+      new THREE.Vector3()
+        .copy(this.root.position)
+        .addScaledVector(away, 0.82)
+        .add(new THREE.Vector3(0, 0.18, 0))
+    );
+  }
+
+  updateGenerativeNeeds(context) {
+    const { delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData, audioReactiveLevel = 0 } = context;
+    this.ensureResidueSystem(coverWorldData?.length || 0);
+
+    const hoveredId = hoveredEntry?.item?.id || hoveredEntry?.id || "";
+    this.inputState.currentHoveredId = hoveredId;
+    if (hoveredId) this.inputState.lastHoveredId = hoveredId;
+
+    const panelSignal = this.detectOpenPanelSignal();
+    this.inputState.panelSignal = panelSignal;
+
+    this.inputState.pointerInfluence = clamp01(this.inputState.pointerInfluence - delta * 0.65);
+    this.inputState.gentleBias = clamp01(this.inputState.gentleBias - delta * 0.45);
+    this.inputState.aggression = clamp01(this.inputState.aggression - delta * 0.42);
+    this.inputState.wheelImpulse = Math.max(0, this.inputState.wheelImpulse - delta * 1.6);
+    this.inputState.pointerMotion = Math.max(0, this.inputState.pointerMotion - delta * 0.85);
+
+    const hoverSignal = hoveredEntry ? this.cfg.signalHoverBoost || 0.42 : 0;
+    const pointerSignal = (this.inputState.pointerInfluence + this.inputState.pointerMotion * 0.7) * (this.cfg.signalPointerBoost || 0.22);
+    const wheelSignal = this.inputState.wheelImpulse * (this.cfg.signalWheelBoost || 0.08);
+    const panelFeed = panelSignal * (this.cfg.signalPanelBoost || 0.12);
+    const audioFeed = clamp01(Number(audioReactiveLevel) || 0) * (this.cfg.signalAudioBoost || 0.18);
+    const pagePreference = this.getPagePreference(hoveredEntry);
+    const beautyMultiplier = 1 + Math.max(0, pagePreference) * 0.35;
+    const signalGain = (hoverSignal * beautyMultiplier) + pointerSignal + wheelSignal + panelFeed + audioFeed;
+
+    this.signalLevel = clamp01(this.signalLevel + signalGain * delta - (this.cfg.signalDecayPerSecond || 0.07) * delta);
+
+    const moving = this.velocity.lengthSq() > 0.0025 || this.mode === "approachCover" || this.mode === "approachHome" || this.mode === "approachVoid" || this.mode === "flee" || this.mode === "companion";
+    if (moving) {
+      this.fatigue = clamp01(this.fatigue + delta * ((this.cfg.fatigueFlightPerSecond || 0.05) + signalGain * (this.cfg.fatigueStimulusPerSecond || 0.042)));
+    }
+    if (this.mode === "restHome") {
+      this.fatigue = clamp01(this.fatigue - delta * (this.cfg.fatigueRestRecoveryPerSecond || 0.22));
+      this.trust = clamp01(this.trust + delta * ((this.cfg.trustGainPerSecond || 0.12) * 0.75));
+      this.corruption = clamp01(this.corruption - delta * (this.cfg.corruptionRestRecoveryPerSecond || 0.17));
+      this.signalLevel = clamp01(this.signalLevel + delta * 0.04);
+      this.vitality = clamp01(this.vitality + delta * this.cfg.vitalityRecoveryPerSecond * 1.5);
+    } else {
+      this.vitality = clamp01(this.vitality + signalGain * delta * this.cfg.vitalityRecoveryPerSecond * 0.55);
+      if (this.inputState.gentleBias > 0.04) {
+        this.trust = clamp01(this.trust + delta * (this.cfg.trustGainPerSecond || 0.12) * this.inputState.gentleBias);
+      }
+      if (this.inputState.aggression > 0.05) {
+        this.trust = clamp01(this.trust - delta * (this.cfg.trustLossPerSecond || 0.34) * this.inputState.aggression);
+      }
+    }
+
+    if (this.voidState?.active || this.mode === "inspectVoid" || this.mode === "approachVoid") {
+      this.corruption = clamp01(this.corruption + delta * (this.cfg.corruptionGainPerSecond || 0.16));
+    } else {
+      this.corruption = clamp01(this.corruption - delta * 0.02);
+    }
+
+    if (hoveredEntry || panelSignal || this.inputState.pointerInfluence > 0.12) {
+      this.fragmentCharge += delta * (this.cfg.fragmentCollectPerSecond || 0.16) * (1 + Math.max(0, pagePreference) * 0.6);
+    }
+    this.fragmentCharge = Math.max(0, Math.min(4, this.fragmentCharge));
+
+    const lowSignal = clamp01((0.52 - this.signalLevel) / 0.52);
+    const lowVitality = clamp01((0.54 - this.vitality) / 0.54);
+    this.searchUrgency = clamp01(lowSignal * 0.65 + lowVitality * 0.35 + this.corruption * 0.18);
+
+    this.updateResidueVisuals(delta, coverWorldData, hoveredIndex);
+  }
+
+  updateResidueVisuals(delta, coverWorldData, hoveredIndex) {
+    if (!Array.isArray(coverWorldData) || !this.residueSprites.length) return;
+    for (let i = 0; i < this.residueSprites.length; i += 1) {
+      const cover = coverWorldData[i];
+      const sprite = this.residueSprites[i];
+      if (!cover || !sprite) continue;
+
+      const bias = i === 2 ? 1.22 : (i === 0 ? 0.86 : 0.96);
+      const cleanse = hoveredIndex === i || (this.currentPerchTarget?.type === "cover" && this.currentPerchTarget.coverIndex === i);
+      const deltaValue = cleanse
+        ? -(this.cfg.residueCleansePerSecond || 0.26)
+        : (this.cfg.residueIncreasePerSecond || 0.04) * bias;
+
+      this.coverResidue[i] = clamp01((this.coverResidue[i] || 0) + delta * deltaValue);
+
+      sprite.visible = this.visible && cover.visible;
+      sprite.position.copy(cover.position).addScaledVector(cover.up, this.coverSize.height * 0.44 + 0.03);
+      sprite.position.addScaledVector(cover.right, Math.sin(this.getElapsed() * 0.7 + i) * 0.02);
+      const scale = THREE.MathUtils.lerp(this.cfg.residueScaleMin || 0.1, this.cfg.residueScaleMax || 0.26, this.coverResidue[i]);
+      sprite.scale.setScalar(scale);
+      sprite.material.opacity = this.coverResidue[i] * (this.cfg.residueOpacityMax || 0.55) * (cleanse ? 0.45 : 1.0);
+    }
+  }
+
+  depositFragmentAtHome(homeTarget) {
+    if (!homeTarget) return;
+    if (this.nests.length >= this.cfg.nestMax) return;
+    if (this.fragmentCharge < (this.cfg.fragmentDepositThreshold || 1.0)) return;
+    if (this.getElapsed() - this.lastNestDropAt < this.cfg.nestDepositDelay) return;
+
+    const rotation = new THREE.Euler().setFromQuaternion(homeTarget.quaternion || new THREE.Quaternion());
+    const position = homeTarget.position.clone()
+      .addScaledVector(homeTarget.up || new THREE.Vector3(0, 1, 0), 0.01)
+      .addScaledVector(homeTarget.normal || new THREE.Vector3(0, 0, 1), 0.01);
+
+    this.spawnNestAt(position, rotation, 0.07 + Math.random() * 0.05, "home", null);
+    this.fragmentCharge = Math.max(0, this.fragmentCharge - (this.cfg.fragmentDepositThreshold || 1.0));
+    this.lastNestDropAt = this.getElapsed();
+    this.saveState(true);
   }
 
   extractPointSamples(model, limit = 960) {
@@ -1568,6 +1983,8 @@ export class MothSystem {
     this.root.visible = this.visible;
     this.nestGroup.visible = this.visible;
     this.voidGroup.visible = this.visible;
+    this.residueGroup.visible = this.visible;
+    if (this.trail?.points) this.trail.points.visible = this.visible;
   }
 
   worldPointComfortablyVisible(world, margin = this.cfg.patrolViewMargin) {
@@ -1647,7 +2064,8 @@ export class MothSystem {
 
   pickNextPatrolPoint(force = false) {
     const elapsed = this.getElapsed();
-    this.nextPatrolDecisionAt = elapsed + randomFromRange(this.cfg.patrolRepickMin, this.cfg.patrolRepickMax);
+    const repickScale = THREE.MathUtils.lerp(1.0, 0.55, this.searchUrgency || 0);
+    this.nextPatrolDecisionAt = elapsed + randomFromRange(this.cfg.patrolRepickMin * repickScale, this.cfg.patrolRepickMax * repickScale);
 
     const camForward = this.temp.a.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
     camForward.y = 0;
@@ -1728,7 +2146,10 @@ export class MothSystem {
       introComplete,
       hoveredEntry,
       hoveredIndex,
-      coverWorldData
+      coverWorldData,
+      activeEntry = null,
+      audioReactiveLevel = 0,
+      currentProgress = 0
     } = context;
 
     const sceneVisible = introComplete && !introActive;
@@ -1739,29 +2160,46 @@ export class MothSystem {
 
     if (this.mixer) this.mixer.update(delta);
     this.updateAnimatedShells();
+    this.refreshHomePerch();
+
+    this.updateGenerativeNeeds({
+      delta,
+      elapsed,
+      hoveredEntry,
+      hoveredIndex,
+      coverWorldData,
+      activeEntry,
+      audioReactiveLevel,
+      currentProgress
+    });
 
     const hungry = this.isHungry(elapsed);
-    if (hungry && !this.voidState?.active) {
+    if (hungry && !this.voidState?.active && this.mode !== "restHome") {
       this.vitality = clamp01(this.vitality - delta * this.cfg.vitalityDrainPerSecond);
-    } else {
-      this.vitality = clamp01(this.vitality + delta * this.cfg.vitalityRecoveryPerSecond * 0.25);
     }
 
     const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
+    const sadness = clamp01((1 - this.signalLevel) * 0.65 + this.fatigue * 0.35);
+    const corruptionPulse = this.corruption * (0.18 + Math.abs(Math.sin(elapsed * 7.0)) * 0.22);
+    const brightnessFactor = Math.max(
+      0.82,
+      0.72 + this.vitality * 0.34 + this.signalLevel * 0.48 - this.fatigue * 0.18 + corruptionPulse
+    );
+
     if (this.binaryMaterial) {
       this.binaryMaterial.uniforms.uTime.value = elapsed;
-      this.binaryMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
-      this.binaryMaterial.uniforms.uAlphaBoost.value = hungry ? 0.96 : 1.04;
-      this.binaryMaterial.uniforms.uMotion.value = motion;
-      this.binaryMaterial.uniforms.uBrightness.value = hungry ? Math.max(1.18, (this.cfg.binaryBrightness || 1.42) - 0.10) : (this.cfg.binaryBrightness || 1.42);
+      this.binaryMaterial.uniforms.uSadness.value = sadness;
+      this.binaryMaterial.uniforms.uAlphaBoost.value = 0.82 + this.signalLevel * 0.36 + this.trust * 0.12;
+      this.binaryMaterial.uniforms.uMotion.value = motion + this.searchUrgency * 0.12 + this.corruption * 0.08;
+      this.binaryMaterial.uniforms.uBrightness.value = (this.cfg.binaryBrightness || 1.42) * brightnessFactor;
     }
 
     if (this.outlineMaterial) {
       this.outlineMaterial.uniforms.uTime.value = elapsed;
-      this.outlineMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
-      this.outlineMaterial.uniforms.uMotion.value = motion;
-      this.outlineMaterial.uniforms.uAlpha.value = hungry ? 0.86 : 1.0;
-      this.outlineMaterial.uniforms.uBrightness.value = this.cfg.outlineBrightness || 2.05;
+      this.outlineMaterial.uniforms.uSadness.value = sadness;
+      this.outlineMaterial.uniforms.uMotion.value = motion + this.corruption * 0.08;
+      this.outlineMaterial.uniforms.uAlpha.value = 0.72 + this.signalLevel * 0.28;
+      this.outlineMaterial.uniforms.uBrightness.value = (this.cfg.outlineBrightness || 2.05) * (0.85 + this.trust * 0.2 + this.corruption * 0.12);
     }
 
     this.updateVoidVisual(elapsed, delta);
@@ -1777,29 +2215,89 @@ export class MothSystem {
     this.saveState(false);
   }
 
+
   updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData) {
     const hasVoid = this.voidState?.active;
+    const homeTarget = this.getHomePerchTarget();
     const coverTarget = (!hasVoid && hoveredIndex >= 0) ? this.getCoverPerchTarget(hoveredIndex, coverWorldData) : null;
+    const activePerchTarget = this.getActivePerchTarget(coverWorldData);
     const voidTarget = hasVoid ? this.getVoidInspectTarget() : null;
+    const companionTarget = !hasVoid && !coverTarget ? this.getCompanionTarget() : null;
+    const fleeTarget = this.getFleeTarget();
 
-    if (hasVoid) {
-      if (this.mode === "landed" || this.mode === "landing") {
+    const wantsHome = Boolean(
+      homeTarget
+      && (this.fatigue >= (this.cfg.homeRestThreshold || 0.52)
+        || this.corruption >= 0.48
+        || this.vitality <= 0.42
+        || (this.fragmentCharge >= (this.cfg.fragmentDepositThreshold || 1.0) && this.signalLevel <= 0.62))
+    );
+    const wantsCompanion = Boolean(
+      companionTarget
+      && this.trust >= (this.cfg.companionTrustThreshold || 0.42)
+      && this.inputState.aggression < 0.34
+      && this.fatigue < 0.72
+      && !wantsHome
+    );
+    const shouldFlee = Boolean(
+      fleeTarget
+      && this.inputState.aggression > 0.55
+      && this.trust < 0.72
+      && this.mode !== "backflip"
+    );
+    const shouldAvoidVoid = this.corruption > 0.82 || wantsHome;
+
+    if (hasVoid && shouldAvoidVoid) {
+      if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
+        this.startTakeoff(elapsed);
+      } else if (this.mode !== "takeoff" && this.mode !== "backflip") {
+        this.mode = wantsHome ? "approachHome" : "patrol";
+      }
+    } else if (hasVoid) {
+      if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
         this.startTakeoff(elapsed);
       }
       if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
         this.mode = "approachVoid";
       }
+    } else if (shouldFlee) {
+      if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
+        this.startTakeoff(elapsed);
+      }
+      if (this.mode !== "takeoff" && this.mode !== "backflip") {
+        this.mode = "flee";
+      }
+    } else if (wantsHome) {
+      if ((this.mode === "landed" || this.mode === "landing") && this.currentPerchTarget?.type !== "home") {
+        this.startTakeoff(elapsed);
+      } else if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+        this.mode = this.currentPerchTarget?.type === "home" && this.perched ? "restHome" : "approachHome";
+      }
     } else if (coverTarget) {
       this.hoverClock += delta;
+      if ((this.mode === "restHome" || this.mode === "landed") && this.currentPerchTarget?.type === "home" && this.fatigue <= (this.cfg.homeLeaveThreshold || 0.34)) {
+        this.startTakeoff(elapsed);
+      }
       if (this.mode !== "takeoff" && this.mode !== "backflip" && this.hoverClock >= this.cfg.hoverPerchDelay) {
-        if (this.mode !== "landed" && this.mode !== "landing") this.mode = "approachCover";
+        if (this.mode !== "landed" && this.mode !== "landing" && this.mode !== "restHome") this.mode = "approachCover";
+      }
+    } else if (wantsCompanion) {
+      this.hoverClock = 0;
+      if ((this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") && this.currentPerchTarget) {
+        this.startTakeoff(elapsed);
+      }
+      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+        this.mode = "companion";
       }
     } else {
       this.hoverClock = 0;
-      if ((this.mode === "landed" || this.mode === "landing") && !hasVoid) {
+      if ((this.mode === "landed" || this.mode === "landing") && !hasVoid && this.currentPerchTarget?.type !== "home") {
         this.startTakeoff(elapsed);
       }
-      if (!hasVoid && this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+      if (!hasVoid && this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid" && this.mode !== "restHome") {
+        this.mode = "patrol";
+      }
+      if (this.mode === "restHome" && this.fatigue <= (this.cfg.homeLeaveThreshold || 0.34) && this.corruption <= 0.16 && this.fragmentCharge < (this.cfg.fragmentDepositThreshold || 1.0)) {
         this.mode = "patrol";
       }
     }
@@ -1831,17 +2329,43 @@ export class MothSystem {
       return;
     }
 
-    if (this.mode === "landed" && coverTarget) {
+    if ((this.mode === "landed" || this.mode === "restHome") && activePerchTarget) {
       this.perched = true;
-      this.root.position.lerp(coverTarget.position, this.cfg.coverPerchLerp);
-      this.lookAtPoint(coverTarget.position.clone().add(coverTarget.normal), coverTarget.up, 0.12);
+      this.root.position.lerp(activePerchTarget.position, this.currentPerchTarget?.type === "home" ? (this.cfg.homePerchLerp || 0.16) : this.cfg.coverPerchLerp);
+      this.lookAtPoint(
+        activePerchTarget.position.clone().add(activePerchTarget.normal || new THREE.Vector3(0, 0, 1)),
+        activePerchTarget.up || new THREE.Vector3(0, 1, 0),
+        this.currentPerchTarget?.type === "home" ? 0.08 : 0.12
+      );
+      this.velocity.multiplyScalar(0.78);
       if (this.currentActionKey !== "perch") this.playLoop("perch");
+
+      if (this.currentPerchTarget?.type === "home") {
+        this.depositFragmentAtHome(activePerchTarget);
+      }
+      return;
+    }
+
+    if (this.mode === "approachHome" && homeTarget) {
+      const distance = this.root.position.distanceTo(homeTarget.position);
+      if (distance <= (this.cfg.homeApproachDistance || this.cfg.landTriggerDistance || 0.12)) {
+        this.currentPerchTarget = { type: "home" };
+        this.mode = "landing";
+        this.perched = false;
+        this.playOnce("land", "perch");
+      }
+      this.moveToward(delta, homeTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.88);
+      this.lookAtDirection(this.getTravelFacingDirection(homeTarget.position), this.cfg.turnLerpFast);
+      if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
+        this.playLoop(this.getPatrolFlightAction());
+      }
       return;
     }
 
     if (this.mode === "approachCover" && coverTarget) {
       const distance = this.root.position.distanceTo(coverTarget.position);
       if (distance <= this.cfg.landTriggerDistance) {
+        this.currentPerchTarget = { type: "cover", coverIndex: hoveredIndex };
         this.mode = "landing";
         this.perched = false;
         this.playOnce("land", "perch");
@@ -1851,6 +2375,25 @@ export class MothSystem {
       this.lookAtDirection(this.getTravelFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
       if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
         this.playLoop(this.getPatrolFlightAction());
+      }
+      return;
+    }
+
+    if (this.mode === "companion" && companionTarget) {
+      this.moveToward(delta, companionTarget, this.getPatrolFlightSpeed(elapsed) * 0.96);
+      this.lookAtDirection(this.getTravelFacingDirection(companionTarget), this.cfg.turnLerpFast);
+      if (this.currentActionKey !== "fly" && this.currentActionKey !== "flySad") {
+        this.playLoop(this.getPatrolFlightAction());
+      }
+      return;
+    }
+
+    if (this.mode === "flee" && fleeTarget) {
+      this.moveToward(delta, fleeTarget, this.getPatrolFlightSpeed(elapsed) * 1.12);
+      this.lookAtDirection(this.getTravelFacingDirection(fleeTarget), this.cfg.turnLerpFast);
+      this.playLoop("flySad");
+      if (this.inputState.aggression <= 0.18) {
+        this.mode = wantsHome ? "approachHome" : "patrol";
       }
       return;
     }
@@ -1870,6 +2413,9 @@ export class MothSystem {
     }
 
     if (this.mode === "patrol") {
+      const patrolRepickScale = THREE.MathUtils.lerp(1.0, 0.58, this.searchUrgency || 0);
+      this.nextPatrolDecisionAt = Math.min(this.nextPatrolDecisionAt, elapsed + (this.cfg.patrolRepickMin * patrolRepickScale));
+
       const anchorVisible = this.worldPointComfortablyVisible(this.currentPatrolAnchor);
       if (anchorVisible) this.anchorHiddenSince = -1;
       else if (this.anchorHiddenSince < 0) this.anchorHiddenSince = elapsed;
@@ -1899,6 +2445,7 @@ export class MothSystem {
       this.playLoop(this.getPatrolFlightAction());
     }
   }
+
 
   moveToward(delta, target, baseSpeed) {
     const toTarget = this.temp.e.copy(target).sub(this.root.position);
@@ -2031,7 +2578,7 @@ export class MothSystem {
       pitchTarget *= 0.35;
     }
 
-    if (this.mode === "landed") {
+    if (this.mode === "landed" || this.mode === "restHome") {
       bankTarget = 0;
       pitchTarget = 0;
     }
@@ -2123,10 +2670,16 @@ export class MothSystem {
   }
 
   getPatrolFlightSpeed(elapsed) {
-    return this.isHungry(elapsed) ? this.cfg.flySpeed * this.cfg.flySadSpeedScale : this.cfg.flySpeed;
+    let speed = this.isHungry(elapsed) ? this.cfg.flySpeed * this.cfg.flySadSpeedScale : this.cfg.flySpeed;
+    speed *= THREE.MathUtils.lerp(0.92, 1.36, this.searchUrgency || 0);
+    if (this.mode === "flee") speed *= 1.22;
+    if (this.mode === "companion") speed *= 0.94;
+    if (this.mode === "approachHome" || this.mode === "restHome") speed *= 0.88;
+    return speed;
   }
 
   updateNestAnimations(elapsed, coverWorldData) {
+    const homeTarget = this.getHomePerchTarget();
     this.nests.forEach((nest, index) => {
       if (nest.type === "cover" && typeof nest.coverIndex === "number") {
         const cover = coverWorldData[nest.coverIndex];
@@ -2136,8 +2689,13 @@ export class MothSystem {
             .addScaledVector(cover.right, 0.03);
           nest.mesh.lookAt(this.camera.position);
         }
+      } else if (nest.type === "home" && homeTarget) {
+        nest.mesh.position.copy(homeTarget.position)
+          .addScaledVector(homeTarget.up || new THREE.Vector3(0, 1, 0), 0.012 + index * 0.002)
+          .addScaledVector(homeTarget.normal || new THREE.Vector3(0, 0, 1), 0.005);
+        nest.mesh.lookAt(this.camera.position);
       }
-      nest.mesh.material.opacity = 0.28 + Math.sin(elapsed * 1.8 + index) * 0.05 + (1 - this.vitality) * 0.18;
+      nest.mesh.material.opacity = 0.20 + Math.sin(elapsed * 1.8 + index) * 0.05 + this.signalLevel * 0.16 + this.corruption * 0.08;
     });
   }
 
@@ -2283,6 +2841,7 @@ export class MothSystem {
     if (!this.voidState) return;
     this.voidState.active = false;
     this.voidState.energy = 0;
+    this.corruption = clamp01(this.corruption + 0.06);
   }
 
   performBackflip() {
