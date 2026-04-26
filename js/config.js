@@ -217,8 +217,10 @@ export const MOTH_CONFIG = {
   residueIncreasePerSecond: 0.040,
   residueCleansePerSecond: 0.26,
   residueOpacityMax: 0.55,
-  residueScaleMin: 0.10,
-  residueScaleMax: 0.26,
+  residueCoverInset: 0.96,
+  residueForwardOffset: 0.006,
+  residueScaleMin: 0.82,
+  residueScaleMax: 1.02,
 
   pagePreferences: {
     about: 1.0,
