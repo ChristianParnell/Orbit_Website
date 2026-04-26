@@ -273,3 +273,8 @@ double-clicking empty space can still create the glitch void
 the moth can approach it and enter a feed state
 the void acts like dangerous food: attractive, but corrupting
 clearing the void increases corruption slightly, which pushes the moth toward recovery behavior at home
+
+### 25/04
+The moth now uses a stable world-up flight basis instead of the drifting up-vector that was making it roll upside down and “fight” itself. Its heading also now prefers its actual frame-to-frame travel direction, so it should face where it is really moving rather than changing behavior depending on where it is in the scene.
+
+For the backflip, I locked it down so it is animation-only while the clip plays. During Backflip, the code now freezes the moth’s world position and world rotation every frame, zeros its movement velocity, and disables the extra visual bank/pitch motion. So the FBX animation is the only thing driving that move now.
