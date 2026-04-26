@@ -3253,7 +3253,7 @@ export class MothSystem {
     this.log("binary void opened", "ALRT");
   }
 
-  clearVoid() {
+   clearVoid() {
     if (!this.voidState) return;
     this.voidState.active = false;
     this.voidState.energy = 0;
