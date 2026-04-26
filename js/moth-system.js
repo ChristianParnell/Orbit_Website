@@ -160,8 +160,10 @@ const DEFAULT_CONFIG = {
   residueIncreasePerSecond: 0.040,
   residueCleansePerSecond: 0.26,
   residueOpacityMax: 0.55,
-  residueScaleMin: 0.10,
-  residueScaleMax: 0.26,
+  residueCoverInset: 0.96,
+  residueForwardOffset: 0.006,
+  residueScaleMin: 0.82,
+  residueScaleMax: 1.02,
   pagePreferences: {
     about: 1.0,
     gallery: 0.35,
@@ -241,30 +243,45 @@ function createMessTexture(size = 256) {
   const ctx = c.getContext("2d");
   ctx.clearRect(0, 0, size, size);
 
-  const grad = ctx.createRadialGradient(size * 0.5, size * 0.5, size * 0.04, size * 0.5, size * 0.5, size * 0.5);
-  grad.addColorStop(0, "rgba(0,0,0,0.82)");
-  grad.addColorStop(0.55, "rgba(6,18,32,0.38)");
-  grad.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(size * 0.5, size * 0.5, size * 0.42, 0, Math.PI * 2);
-  ctx.fill();
+  const bg = ctx.createLinearGradient(0, 0, size, size);
+  bg.addColorStop(0, "rgba(4,10,18,0.44)");
+  bg.addColorStop(0.5, "rgba(8,16,28,0.20)");
+  bg.addColorStop(1, "rgba(2,6,12,0.42)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, size, size);
+
+  const vignette = ctx.createRadialGradient(size * 0.5, size * 0.5, size * 0.10, size * 0.5, size * 0.5, size * 0.78);
+  vignette.addColorStop(0, "rgba(255,255,255,0.10)");
+  vignette.addColorStop(0.55, "rgba(32,50,72,0.10)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.26)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, size, size);
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = '700 18px ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace';
 
-  for (let i = 0; i < 130; i += 1) {
+  for (let i = 0; i < 220; i += 1) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const alpha = 0.18 + Math.random() * 0.46;
+    const alpha = 0.12 + Math.random() * 0.30;
     const hue = ["#2fe4ff", "#4b7dff", "#ff57ce", "#33ff88"][i % 4];
     ctx.fillStyle = hexToRgba(hue, alpha);
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate((Math.random() - 0.5) * 0.8);
+    ctx.rotate((Math.random() - 0.5) * 1.0);
     ctx.fillText(Math.random() > 0.5 ? "0" : "1", 0, 0);
     ctx.restore();
+  }
+
+  for (let i = 0; i < 150; i += 1) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const radius = 0.8 + Math.random() * 2.4;
+    ctx.fillStyle = hexToRgba(i % 3 === 0 ? "#8cecff" : "#d18cff", 0.06 + Math.random() * 0.14);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   const texture = new THREE.CanvasTexture(c);
@@ -272,6 +289,8 @@ function createMessTexture(size = 256) {
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.needsUpdate = true;
   return texture;
 }
@@ -1447,17 +1466,21 @@ export class MothSystem {
     }
 
     for (let i = 0; i < desired; i += 1) {
-      const material = new THREE.SpriteMaterial({
+      const geometry = new THREE.PlaneGeometry(1, 1);
+      const material = new THREE.MeshBasicMaterial({
         map: this.messTexture,
         color: new THREE.Color(i === 2 ? "#ff7dd1" : "#8cecff"),
         transparent: true,
         opacity: 0,
         depthWrite: false,
+        depthTest: true,
+        side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending
       });
-      const sprite = new THREE.Sprite(material);
+      const sprite = new THREE.Mesh(geometry, material);
       sprite.renderOrder = 4;
       sprite.visible = this.visible;
+      sprite.frustumCulled = false;
       this.residueGroup.add(sprite);
       this.residueSprites.push(sprite);
     }
@@ -1800,10 +1823,21 @@ export class MothSystem {
       this.coverResidue[i] = clamp01((this.coverResidue[i] || 0) + delta * deltaValue);
 
       sprite.visible = this.visible && cover.visible;
-      sprite.position.copy(cover.position).addScaledVector(cover.up, this.coverSize.height * 0.44 + 0.03);
-      sprite.position.addScaledVector(cover.right, Math.sin(this.getElapsed() * 0.7 + i) * 0.02);
-      const scale = THREE.MathUtils.lerp(this.cfg.residueScaleMin || 0.1, this.cfg.residueScaleMax || 0.26, this.coverResidue[i]);
-      sprite.scale.setScalar(scale);
+
+      const normal = this.temp.a.copy(cover.right).cross(cover.up).normalize();
+      const toCamera = this.temp.b.copy(this.camera.position).sub(cover.position);
+      if (normal.dot(toCamera) < 0) normal.multiplyScalar(-1);
+
+      const basis = new THREE.Matrix4().makeBasis(cover.right.clone().normalize(), cover.up.clone().normalize(), normal);
+      sprite.quaternion.setFromRotationMatrix(basis);
+
+      const inset = this.cfg.residueCoverInset || 0.96;
+      const fill = THREE.MathUtils.lerp(this.cfg.residueScaleMin || 0.82, this.cfg.residueScaleMax || 1.02, this.coverResidue[i]);
+      const width = this.coverSize.width * inset * fill;
+      const height = this.coverSize.height * inset * fill;
+
+      sprite.position.copy(cover.position).addScaledVector(normal, this.cfg.residueForwardOffset || 0.006);
+      sprite.scale.set(width, height, 1);
       sprite.material.opacity = this.coverResidue[i] * (this.cfg.residueOpacityMax || 0.55) * (cleanse ? 0.45 : 1.0);
     }
   }
