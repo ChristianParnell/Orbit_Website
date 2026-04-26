@@ -3110,3 +3110,4 @@ export class MothSystem {
     this.voidState.energy = 0;
     this.corruption = clamp01(this.corruption + 0.06);
   }
+}
