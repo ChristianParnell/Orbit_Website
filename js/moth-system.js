@@ -141,6 +141,20 @@ const DEFAULT_CONFIG = {
   companionTrustThreshold: 0.42,
   companionDistance: 0.36,
   companionLift: 0.08,
+  cursorAttractChancePerSecond: 0.20,
+  cursorAttractDistance: 0.92,
+  cursorAttractMinDuration: 1.8,
+  cursorAttractMaxDuration: 3.6,
+  cursorAttractCooldownMin: 2.4,
+  cursorAttractCooldownMax: 5.8,
+  cursorTargetPullBack: 0.10,
+  cursorTargetLift: 0.03,
+  cursorTouchDistance: 0.11,
+  cursorTouchHoldMin: 0.65,
+  cursorTouchHoldMax: 1.05,
+  cursorTrustThreshold: 0.20,
+  cursorAggressionMax: 0.42,
+  cursorFollowSpeedScale: 0.92,
   residueIncreasePerSecond: 0.040,
   residueCleansePerSecond: 0.26,
   residueOpacityMax: 0.55,
@@ -770,6 +784,8 @@ export class MothSystem {
     this.forward = new THREE.Vector3(0, 0, -1);
     this.smoothedHeading = new THREE.Vector3(0, 0, -1);
     this.orientationUp = new THREE.Vector3(0, 1, 0);
+    this.frameMotionDirection = new THREE.Vector3(0, 0, -1);
+    this.lastRootPosition = this.root.position.clone();
     this.anchorHiddenSince = -1;
     this.recoveryHiddenSince = -1;
     this.recoveryAssist = false;
@@ -783,6 +799,11 @@ export class MothSystem {
     this.takeoffState = null;
     this.backflipState = null;
     this.backflipGuardUntil = 0;
+    this.cursorCuriousUntil = 0;
+    this.cursorInteractUntil = 0;
+    this.nextCursorAttractAt = 0;
+    this.cursorInteractionStarted = false;
+    this.cursorInteractionActionKey = "";
     this.inputState = {
       pointerWorld: null,
       pointerMotion: 0,
@@ -1174,6 +1195,8 @@ export class MothSystem {
     this.flipBusy = false;
     this.backflipState = null;
     this.backflipGuardUntil = 0;
+    this.clearCursorAttraction();
+    this.frameMotionDirection.copy(this.forward);
 
     const next = this.pendingActionKey || this.getPatrolFlightAction();
     this.pendingActionKey = "";
@@ -1665,6 +1688,79 @@ export class MothSystem {
       .add(new THREE.Vector3(0, this.cfg.companionLift || 0.08, 0));
   }
 
+  getCursorAttractionTarget() {
+    const pointerWorld = this.inputState.pointerWorld;
+    if (!pointerWorld) return null;
+
+    const toCamera = this.temp.a.copy(this.camera.position).sub(pointerWorld);
+    if (toCamera.lengthSq() <= 0.0001) {
+      toCamera.set(0, 0, 1);
+    } else {
+      toCamera.normalize();
+    }
+
+    return new THREE.Vector3()
+      .copy(pointerWorld)
+      .addScaledVector(toCamera, this.cfg.cursorTargetPullBack || 0.10)
+      .add(new THREE.Vector3(0, this.cfg.cursorTargetLift || 0.03, 0));
+  }
+
+  getCursorInteractionActionKey() {
+    if (this.getAction("feed")) return "feed";
+    if (this.getAction("perch")) return "perch";
+    return this.getPatrolFlightAction();
+  }
+
+  clearCursorAttraction() {
+    this.cursorCuriousUntil = 0;
+    this.cursorInteractUntil = 0;
+    this.cursorInteractionStarted = false;
+    this.cursorInteractionActionKey = "";
+  }
+
+  maybeStartCursorAttraction(delta, elapsed, options = {}) {
+    const {
+      hasVoid = false,
+      hoveredEntry = null,
+      coverTarget = null,
+      wantsHome = false,
+      wantsCompanion = false,
+      shouldFlee = false,
+      cursorTarget = null
+    } = options;
+
+    if (this.mode !== "patrol") return false;
+    if (hasVoid || hoveredEntry || coverTarget || wantsHome || wantsCompanion || shouldFlee) return false;
+    if (!cursorTarget) return false;
+    if (elapsed < this.nextCursorAttractAt) return false;
+    if (this.trust < (this.cfg.cursorTrustThreshold || 0.20)) return false;
+    if (this.inputState.aggression > (this.cfg.cursorAggressionMax || 0.42)) return false;
+
+    const distance = this.root.position.distanceTo(cursorTarget);
+    if (distance > (this.cfg.cursorAttractDistance || 0.92)) return false;
+
+    const baseChance = this.cfg.cursorAttractChancePerSecond || 0.20;
+    const pointerBias = 0.65 + clamp01(this.inputState.pointerInfluence + this.inputState.pointerMotion * 0.45) * 0.75;
+    const trustBias = 0.75 + this.trust * 0.55;
+    const chance = baseChance * pointerBias * trustBias * Math.max(0.001, delta);
+
+    if (Math.random() >= chance) return false;
+
+    this.mode = "cursorCurious";
+    this.cursorCuriousUntil = elapsed + randomFromRange(
+      this.cfg.cursorAttractMinDuration || 1.8,
+      this.cfg.cursorAttractMaxDuration || 3.6
+    );
+    this.cursorInteractUntil = 0;
+    this.cursorInteractionStarted = false;
+    this.cursorInteractionActionKey = "";
+    this.nextCursorAttractAt = elapsed + randomFromRange(
+      this.cfg.cursorAttractCooldownMin || 2.4,
+      this.cfg.cursorAttractCooldownMax || 5.8
+    );
+    return true;
+  }
+
   getFleeTarget() {
     const pointerWorld = this.inputState.pointerWorld;
     if (!pointerWorld) return null;
@@ -2047,18 +2143,26 @@ export class MothSystem {
   }
 
   getTravelFacingDirection(targetPoint = null) {
-    const velocityDir = this.temp.b.copy(this.velocity);
+    const travelDir = this.temp.b.copy(this.frameMotionDirection);
+    if (travelDir.lengthSq() > 0.00004) {
+      travelDir.normalize();
+      return travelDir;
+    }
+
+    const velocityDir = this.temp.c.copy(this.velocity);
     if (velocityDir.lengthSq() > 0.00004) {
       velocityDir.normalize();
-      if (targetPoint) {
-        const targetDir = this.temp.c.copy(targetPoint).sub(this.root.position);
-        if (targetDir.lengthSq() > 0.00004) {
-          targetDir.normalize();
-          velocityDir.lerp(targetDir, 0.14).normalize();
-        }
-      }
       return velocityDir;
     }
+
+    if (targetPoint) {
+      const targetDir = this.temp.d.copy(targetPoint).sub(this.root.position);
+      if (targetDir.lengthSq() > 0.00004) {
+        targetDir.normalize();
+        return targetDir;
+      }
+    }
+
     return this.getFacingDirection(targetPoint);
   }
 
@@ -2158,6 +2262,8 @@ export class MothSystem {
 
     this.lastDelta = Math.max(1 / 240, delta || 1 / 60);
 
+    this.temp.center.copy(this.root.position);
+
     if (this.mixer) this.mixer.update(delta);
     this.updateAnimatedShells();
     this.refreshHomePerch();
@@ -2205,6 +2311,7 @@ export class MothSystem {
     this.updateVoidVisual(elapsed, delta);
     this.updateNestAnimations(elapsed, coverWorldData);
     this.updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData);
+    this.updateFrameMotionDirection();
     this.updateFlightPose(delta);
     this.updateTrail(delta, elapsed);
 
@@ -2223,6 +2330,7 @@ export class MothSystem {
     const activePerchTarget = this.getActivePerchTarget(coverWorldData);
     const voidTarget = hasVoid ? this.getVoidInspectTarget() : null;
     const companionTarget = !hasVoid && !coverTarget ? this.getCompanionTarget() : null;
+    const cursorTarget = !hasVoid && !coverTarget ? this.getCursorAttractionTarget() : null;
     const fleeTarget = this.getFleeTarget();
 
     const wantsHome = Boolean(
@@ -2246,6 +2354,41 @@ export class MothSystem {
       && this.mode !== "backflip"
     );
     const shouldAvoidVoid = this.corruption > 0.82 || wantsHome;
+
+    if (this.mode === "cursorCurious" || this.mode === "cursorInteract") {
+      const cursorStillValid = Boolean(
+        cursorTarget
+        && !hasVoid
+        && !coverTarget
+        && !wantsHome
+        && !shouldFlee
+        && elapsed <= (this.mode === "cursorInteract" ? this.cursorInteractUntil : this.cursorCuriousUntil)
+      );
+
+      if (!cursorStillValid) {
+        this.clearCursorAttraction();
+        if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+          this.mode = "patrol";
+        }
+      }
+    }
+
+    this.maybeStartCursorAttraction(delta, elapsed, {
+      hasVoid,
+      hoveredEntry,
+      coverTarget,
+      wantsHome,
+      wantsCompanion,
+      shouldFlee,
+      cursorTarget
+    });
+
+    const cursorCuriousActive = this.mode === "cursorCurious"
+      && Boolean(cursorTarget)
+      && elapsed <= this.cursorCuriousUntil;
+    const cursorInteractActive = this.mode === "cursorInteract"
+      && Boolean(cursorTarget)
+      && elapsed <= this.cursorInteractUntil;
 
     if (hasVoid && shouldAvoidVoid) {
       if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
@@ -2289,6 +2432,14 @@ export class MothSystem {
       if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
         this.mode = "companion";
       }
+    } else if (cursorCuriousActive || cursorInteractActive) {
+      this.hoverClock = 0;
+      if ((this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") && this.currentPerchTarget) {
+        this.startTakeoff(elapsed);
+      }
+      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+        this.mode = cursorInteractActive ? "cursorInteract" : "cursorCurious";
+      }
     } else {
       this.hoverClock = 0;
       if ((this.mode === "landed" || this.mode === "landing") && !hasVoid && this.currentPerchTarget?.type !== "home") {
@@ -2310,6 +2461,15 @@ export class MothSystem {
     if (this.mode === "backflip") {
       this.velocity.set(0, 0, 0);
       this.recoveryAssist = false;
+
+      if (this.backflipState) {
+        this.root.position.copy(this.backflipState.position);
+        this.root.quaternion.copy(this.backflipState.quaternion);
+        this.forward.copy(this.backflipState.forward);
+        this.orientationUp.copy(this.backflipState.up);
+        this.smoothedHeading.copy(this.backflipState.forward);
+        this.frameMotionDirection.copy(this.backflipState.forward);
+      }
 
       const backflipAction = this.getAction("backflip");
       const guardDelta = Math.max(0.035, this.lastDelta * 2.0);
@@ -2383,6 +2543,47 @@ export class MothSystem {
       this.moveToward(delta, companionTarget, this.getPatrolFlightSpeed(elapsed) * 0.96);
       this.lookAtDirection(this.getTravelFacingDirection(companionTarget), this.cfg.turnLerpFast);
       if (this.currentActionKey !== "fly" && this.currentActionKey !== "flySad") {
+        this.playLoop(this.getPatrolFlightAction());
+      }
+      return;
+    }
+
+    if (this.mode === "cursorCurious" && cursorTarget) {
+      const distance = this.root.position.distanceTo(cursorTarget);
+      this.moveToward(delta, cursorTarget, this.getPatrolFlightSpeed(elapsed) * (this.cfg.cursorFollowSpeedScale || 0.92));
+      this.lookAtDirection(this.getTravelFacingDirection(cursorTarget), this.cfg.turnLerpFast);
+
+      if (distance <= (this.cfg.cursorTouchDistance || 0.11)) {
+        this.mode = "cursorInteract";
+        this.cursorInteractUntil = elapsed + randomFromRange(
+          this.cfg.cursorTouchHoldMin || 0.65,
+          this.cfg.cursorTouchHoldMax || 1.05
+        );
+        this.cursorInteractionStarted = false;
+        this.cursorInteractionActionKey = this.getCursorInteractionActionKey();
+      }
+
+      if (this.currentActionKey !== "fly" && this.currentActionKey !== "flySad") {
+        this.playLoop(this.getPatrolFlightAction());
+      }
+      return;
+    }
+
+    if (this.mode === "cursorInteract" && cursorTarget) {
+      this.velocity.multiplyScalar(0.65);
+      this.root.position.lerp(cursorTarget, 0.24);
+      this.lookAtPoint(this.camera.position, new THREE.Vector3(0, 1, 0), 0.10);
+
+      if (!this.cursorInteractionStarted) {
+        this.cursorInteractionStarted = true;
+        if (this.cursorInteractionActionKey && this.cursorInteractionActionKey !== "fly" && this.cursorInteractionActionKey !== "flySad") {
+          this.playOnce(this.cursorInteractionActionKey, "");
+        }
+      }
+
+      if (elapsed >= this.cursorInteractUntil) {
+        this.clearCursorAttraction();
+        this.mode = "patrol";
         this.playLoop(this.getPatrolFlightAction());
       }
       return;
@@ -2469,6 +2670,24 @@ export class MothSystem {
     this.clampPointNearCenter(this.root.position);
   }
 
+  updateFrameMotionDirection() {
+    const actualMotion = this.temp.d.copy(this.root.position).sub(this.temp.center);
+    if (actualMotion.lengthSq() > 0.000001) {
+      this.frameMotionDirection.copy(actualMotion).normalize();
+      this.lastRootPosition.copy(this.root.position);
+      return;
+    }
+
+    if (this.velocity.lengthSq() > 0.00004) {
+      this.frameMotionDirection.copy(this.velocity).normalize();
+      this.lastRootPosition.copy(this.root.position);
+      return;
+    }
+
+    this.frameMotionDirection.copy(this.forward);
+    this.lastRootPosition.copy(this.root.position);
+  }
+
   updateVoidInspect(delta, elapsed, voidTarget) {
     if (!this.voidState?.active) return;
     const wobble = new THREE.Vector3(
@@ -2498,6 +2717,7 @@ export class MothSystem {
 
   startTakeoff(elapsed) {
     if (this.mode === "takeoff" || this.mode === "backflip") return;
+    this.clearCursorAttraction();
     this.perched = false;
     this.mode = "takeoff";
     const duration = this.actionDurations.get("takeoff") || 0.7;
@@ -2559,16 +2779,12 @@ export class MothSystem {
     }
 
     if (this.mode === "backflip") {
-      const bankAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualBankResponse || 7.5));
-      const pitchAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualPitchResponse || 6.0));
-
-      this.visualBank = THREE.MathUtils.lerp(this.visualBank, 0, bankAlpha);
-      this.visualPitch = THREE.MathUtils.lerp(this.visualPitch, 0, pitchAlpha);
-
+      this.visualBank = 0;
+      this.visualPitch = 0;
       this.visualRoot.rotation.set(
-        this.baseVisualPitch + this.visualPitch,
+        this.baseVisualPitch,
         this.baseVisualYaw,
-        this.baseVisualRoll + this.visualBank
+        this.baseVisualRoll
       );
       return;
     }
@@ -2597,34 +2813,30 @@ export class MothSystem {
   }
 
   orientRootToDirection(direction, preferredUp = null, lerpAmount = this.cfg.turnLerp) {
-    if (direction.lengthSq() <= 0.0001) return;
+    if (!direction || direction.lengthSq() <= 0.0001) return;
 
     const forward = this.temp.a.copy(direction).normalize();
-    const up = this.temp.b.copy(preferredUp || this.orientationUp);
+    const usePreferredUp = Boolean(
+      preferredUp
+      && (this.mode === "landing" || this.mode === "landed" || this.mode === "restHome")
+    );
 
+    const up = this.temp.b.copy(usePreferredUp ? preferredUp : new THREE.Vector3(0, 1, 0));
     if (up.lengthSq() <= 0.0001) up.set(0, 1, 0);
     up.normalize();
 
-    const parallelLimit = 0.92;
+    const parallelLimit = 0.985;
     if (Math.abs(up.dot(forward)) > parallelLimit) {
-      up.set(0, 1, 0);
+      up.set(0, 0, 1);
       if (Math.abs(up.dot(forward)) > parallelLimit) {
-        up.set(0, 0, 1).applyQuaternion(this.camera.quaternion).normalize();
-        if (Math.abs(up.dot(forward)) > parallelLimit) {
-          up.set(1, 0, 0);
-          if (Math.abs(up.dot(forward)) > parallelLimit) {
-            up.set(0, 0, -1);
-          }
-        }
+        up.set(1, 0, 0);
       }
     }
 
     const right = this.temp.c.copy(up).cross(forward);
     if (right.lengthSq() <= 0.0001) {
       right.set(1, 0, 0).cross(forward);
-      if (right.lengthSq() <= 0.0001) {
-        right.set(0, 0, 1).cross(forward);
-      }
+      if (right.lengthSq() <= 0.0001) right.set(0, 0, 1).cross(forward);
     }
     right.normalize();
 
@@ -2642,6 +2854,11 @@ export class MothSystem {
     if (!direction || direction.lengthSq() <= 0.0001) return;
 
     const target = this.temp.d.copy(direction).normalize();
+
+    if (this.frameMotionDirection && this.frameMotionDirection.lengthSq() > 0.0001) {
+      target.lerp(this.frameMotionDirection, 0.82).normalize();
+    }
+
     const smoothing = 1.0 - Math.exp(-this.lastDelta * (this.cfg.headingSmoothing || 10.0));
 
     if (!this.smoothedHeading || this.smoothedHeading.lengthSq() <= 0.0001) {
@@ -2653,8 +2870,8 @@ export class MothSystem {
 
       const speedSq = this.velocity.lengthSq();
       const minSpeedSq = Math.pow(this.cfg.headingMinSpeed || 0.08, 2);
-      const blend = speedSq < minSpeedSq ? smoothing * 0.45 : smoothing;
-      this.smoothedHeading.lerp(target, THREE.MathUtils.clamp(blend, 0.02, 0.5)).normalize();
+      const blend = speedSq < minSpeedSq ? smoothing * 0.32 : smoothing;
+      this.smoothedHeading.lerp(target, THREE.MathUtils.clamp(blend, 0.02, 0.42)).normalize();
     }
 
     const angle = Math.acos(THREE.MathUtils.clamp(this.forward.dot(this.smoothedHeading), -1, 1));
@@ -2828,6 +3045,7 @@ export class MothSystem {
       energy: 1.0
     };
 
+    this.clearCursorAttraction();
     if (this.mode === "landed" || this.mode === "landing") {
       this.startTakeoff(this.getElapsed());
     } else {
@@ -2861,6 +3079,7 @@ export class MothSystem {
 
     this.flipBusy = true;
     this.perched = false;
+    this.clearCursorAttraction();
     this.mode = "backflip";
     this.takeoffState = null;
     this.backflipGuardUntil = this.getElapsed() + Math.max(clipDuration, 0.1);
@@ -2876,7 +3095,13 @@ export class MothSystem {
     this.forward.copy(this.backflipState.forward);
     this.orientationUp.copy(this.backflipState.up);
     this.smoothedHeading.copy(this.forward);
+    this.frameMotionDirection.copy(this.forward);
     this.velocity.set(0, 0, 0);
+    this.visualBank = 0;
+    this.visualPitch = 0;
+    if (this.visualRoot) {
+      this.visualRoot.rotation.set(this.baseVisualPitch, this.baseVisualYaw, this.baseVisualRoll);
+    }
 
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
       this.flipBusy = false;
