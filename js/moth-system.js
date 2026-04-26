@@ -13,7 +13,7 @@ const DEFAULT_PALETTE = [
 ];
 
 const DEFAULT_CONFIG = {
-  storageKey: "orbitSpecterMothV2",
+  storageKey: "orbitSpecterMothV4",
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
@@ -56,6 +56,9 @@ const DEFAULT_CONFIG = {
   patrolRecoveryMargin: 0.96,
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
+  stuckSpeedThreshold: 0.045,
+  stuckDistanceThreshold: 0.24,
+  stuckTimeout: 1.05,
 
   flySpeed: 1.55,
   diveSpeed: 2.00,
@@ -82,8 +85,8 @@ const DEFAULT_CONFIG = {
   visualPitchResponse: 6.0,
 
   hoverPerchDelay: 0.10,
-  perchDistance: 0.12,
-  landTriggerDistance: 0.12,
+  perchDistance: 0.16,
+  landTriggerDistance: 0.18,
   coverPerchLift: 0.065,
   coverPerchForward: 0.055,
   coverPerchLerp: 0.18,
@@ -114,7 +117,7 @@ const DEFAULT_CONFIG = {
   homePerchOffset: { x: 0.0, y: 0.015, z: 0.0 },
   homePerchForward: 0.09,
   homePerchLift: 0.025,
-  homeApproachDistance: 0.12,
+  homeApproachDistance: 0.18,
   homePerchLerp: 0.16,
   signalDecayPerSecond: 0.070,
   signalHoverBoost: 0.42,
@@ -168,12 +171,7 @@ const DEFAULT_CONFIG = {
     "twenty-two-minutes": 0.22,
     contact: 0.25
   },
-  debug: false,
-  debugOverlay: true,
-  debugOverlayTop: 10,
-  debugOverlayRight: 12,
-  debugOverlayWidth: 220,
-  debugOverlayBarHeight: 6
+  debug: false
 };
 
 const ACTION_KEYS = {
@@ -776,7 +774,6 @@ export class MothSystem {
     this.visible = true;
     this.mode = "patrol";
     this.perched = false;
-    this.flipBusy = false;
 
     this.currentPatrolAnchor = new THREE.Vector3();
     this.nextPatrolDecisionAt = 0;
@@ -800,6 +797,7 @@ export class MothSystem {
     this.lastDelta = 1 / 60;
 
     this.takeoffState = null;
+    this.lastProgressAt = 0;
     this.cursorCuriousUntil = 0;
     this.cursorInteractUntil = 0;
     this.nextCursorAttractAt = 0;
@@ -820,10 +818,6 @@ export class MothSystem {
       currentHoveredId: "",
       lastHoveredId: ""
     };
-
-    this.debugOverlay = null;
-    this.debugOverlayMetrics = new Map();
-    this.debugOverlayText = {};
 
     this.temp = {
       a: new THREE.Vector3(),
@@ -850,7 +844,6 @@ export class MothSystem {
     this.restoreNests();
     this.applyOfflineDecay();
     this.setupInteractionSensing();
-    this.setupDebugOverlay();
     this.load();
   }
 
@@ -1150,24 +1143,8 @@ export class MothSystem {
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
       this.currentPerchTarget = null;
       this.takeoffState = null;
+      this.lastProgressAt = this.getElapsed();
       this.playLoop(next);
-      return;
-    }
-
-    if (this.currentActionKey === "backflip") {
-      const backflipAction = this.getAction("backflip");
-      const guardDelta = Math.max(0.035, this.lastDelta * 2.0);
-      const guardUntil = this.backflipGuardUntil || 0;
-
-      if (finishedAction && backflipAction && finishedAction !== backflipAction) {
-        return;
-      }
-
-      if (guardUntil > 0 && this.getElapsed() + guardDelta < guardUntil) {
-        return;
-      }
-
-      this.finishBackflip();
       return;
     }
 
@@ -1176,19 +1153,6 @@ export class MothSystem {
       this.pendingActionKey = "";
       this.playLoop(next);
     }
-  }
-
-  finishBackflip() {
-    if (this.currentActionKey !== "backflip" && this.mode !== "backflip") return;
-
-    this.flipBusy = false;
-    this.clearCursorAttraction();
-    this.frameMotionDirection.copy(this.forward);
-
-    const next = this.pendingActionKey || this.getPatrolFlightAction();
-    this.pendingActionKey = "";
-    this.mode = this.voidState?.active ? "approachVoid" : "patrol";
-    this.playLoop(next);
   }
 
   getAction(key) {
@@ -1511,255 +1475,6 @@ export class MothSystem {
     dom.addEventListener("pointermove", this._onPointerMove, { passive: true });
     window.addEventListener("wheel", this._onWheel, { passive: true });
     window.addEventListener("pointerdown", this._onPointerDown, { passive: true });
-  }
-
-  setupDebugOverlay() {
-    if (typeof document === "undefined" || !this.cfg.debugOverlay) return;
-
-    this.ensureDebugOverlayStyles();
-
-    const existing = document.getElementById("orbit-moth-debug-overlay");
-    if (existing) existing.remove();
-
-    const root = document.createElement("div");
-    root.id = "orbit-moth-debug-overlay";
-    root.className = "orbit-moth-debug-overlay";
-    root.style.top = `${this.cfg.debugOverlayTop ?? 10}px`;
-    root.style.right = `${this.cfg.debugOverlayRight ?? 12}px`;
-    root.style.width = `${this.cfg.debugOverlayWidth ?? 220}px`;
-
-    const title = document.createElement("div");
-    title.className = "orbit-moth-debug-overlay__title";
-    title.textContent = "Moth Debug";
-    root.appendChild(title);
-
-    const stateGrid = document.createElement("div");
-    stateGrid.className = "orbit-moth-debug-overlay__state-grid";
-    root.appendChild(stateGrid);
-
-    const makeState = (label) => {
-      const row = document.createElement("div");
-      row.className = "orbit-moth-debug-overlay__state";
-      const labelEl = document.createElement("span");
-      labelEl.className = "orbit-moth-debug-overlay__state-label";
-      labelEl.textContent = label;
-      const valueEl = document.createElement("span");
-      valueEl.className = "orbit-moth-debug-overlay__state-value";
-      valueEl.textContent = "--";
-      row.append(labelEl, valueEl);
-      stateGrid.appendChild(row);
-      return valueEl;
-    };
-
-    this.debugOverlayText = {
-      mode: makeState("Mode"),
-      perch: makeState("Perch"),
-      page: makeState("Page"),
-      cursor: makeState("Cursor"),
-      void: makeState("Void")
-    };
-
-    const metricsWrap = document.createElement("div");
-    metricsWrap.className = "orbit-moth-debug-overlay__metrics";
-    root.appendChild(metricsWrap);
-
-    const metricDefs = [
-      ["hunger", "Hunger", "#ff8b8b"],
-      ["signal", "Signal", "#7cf7dd"],
-      ["fatigue", "Fatigue", "#ffd57d"],
-      ["trust", "Trust", "#86b7ff"],
-      ["aggression", "Aggro", "#ff6b9f"],
-      ["corruption", "Corrupt", "#b884ff"],
-      ["vitality", "Vitality", "#9eff8b"],
-      ["fragments", "Fragments", "#9be4ff"],
-      ["residue", "Residue", "#d5b7ff"]
-    ];
-
-    metricDefs.forEach(([key, label, color]) => {
-      const row = document.createElement("div");
-      row.className = "orbit-moth-debug-overlay__metric";
-
-      const top = document.createElement("div");
-      top.className = "orbit-moth-debug-overlay__metric-top";
-
-      const labelEl = document.createElement("span");
-      labelEl.className = "orbit-moth-debug-overlay__metric-label";
-      labelEl.textContent = label;
-
-      const valueEl = document.createElement("span");
-      valueEl.className = "orbit-moth-debug-overlay__metric-value";
-      valueEl.textContent = "0%";
-
-      top.append(labelEl, valueEl);
-
-      const track = document.createElement("div");
-      track.className = "orbit-moth-debug-overlay__track";
-      track.style.height = `${this.cfg.debugOverlayBarHeight ?? 6}px`;
-
-      const fill = document.createElement("div");
-      fill.className = "orbit-moth-debug-overlay__fill";
-      fill.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.92))`;
-      track.appendChild(fill);
-
-      row.append(top, track);
-      metricsWrap.appendChild(row);
-      this.debugOverlayMetrics.set(key, { fill, valueEl, track });
-    });
-
-    root.style.display = "none";
-    document.body.appendChild(root);
-    this.debugOverlay = root;
-  }
-
-  ensureDebugOverlayStyles() {
-    if (typeof document === "undefined") return;
-    if (document.getElementById("orbit-moth-debug-overlay-style")) return;
-
-    const style = document.createElement("style");
-    style.id = "orbit-moth-debug-overlay-style";
-    style.textContent = `
-      .orbit-moth-debug-overlay {
-        position: fixed;
-        z-index: 9999;
-        pointer-events: none;
-        padding: 10px 10px 9px;
-        border-radius: 14px;
-        border: 1px solid rgba(123, 238, 255, 0.26);
-        background: linear-gradient(180deg, rgba(7, 12, 18, 0.82), rgba(4, 8, 14, 0.64));
-        backdrop-filter: blur(10px);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
-        color: rgba(227, 247, 255, 0.95);
-        font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        letter-spacing: 0.03em;
-      }
-      .orbit-moth-debug-overlay__title {
-        margin-bottom: 8px;
-        color: rgba(140, 239, 255, 0.96);
-        text-transform: uppercase;
-        font-weight: 700;
-        font-size: 11px;
-      }
-      .orbit-moth-debug-overlay__state-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 4px 10px;
-        margin-bottom: 9px;
-      }
-      .orbit-moth-debug-overlay__state {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        min-width: 0;
-      }
-      .orbit-moth-debug-overlay__state-label {
-        opacity: 0.62;
-      }
-      .orbit-moth-debug-overlay__state-value {
-        color: rgba(255,255,255,0.96);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        text-align: right;
-      }
-      .orbit-moth-debug-overlay__metrics {
-        display: grid;
-        gap: 6px;
-      }
-      .orbit-moth-debug-overlay__metric {
-        display: grid;
-        gap: 3px;
-      }
-      .orbit-moth-debug-overlay__metric-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-      }
-      .orbit-moth-debug-overlay__metric-label {
-        opacity: 0.72;
-      }
-      .orbit-moth-debug-overlay__metric-value {
-        color: rgba(255,255,255,0.98);
-      }
-      .orbit-moth-debug-overlay__track {
-        position: relative;
-        overflow: hidden;
-        border-radius: 999px;
-        background: rgba(255,255,255,0.08);
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
-      }
-      .orbit-moth-debug-overlay__fill {
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 0%;
-        border-radius: inherit;
-        box-shadow: 0 0 12px rgba(255,255,255,0.12);
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  setDebugOverlayVisible(visible) {
-    if (!this.debugOverlay) return;
-    this.debugOverlay.style.display = visible && this.cfg.debugOverlay ? "block" : "none";
-  }
-
-  getDebugSnapshot(elapsed = this.getElapsed()) {
-    const residueAverage = this.coverResidue.length
-      ? this.coverResidue.reduce((sum, value) => sum + clamp01(Number(value) || 0), 0) / this.coverResidue.length
-      : 0;
-
-    const satiatedBias = elapsed < this.satiatedUntil ? -0.22 : 0;
-    const hunger = clamp01(((1 - this.signalLevel) * 0.66) + (this.fatigue * 0.22) + ((1 - this.vitality) * 0.18) + satiatedBias);
-    const fragments = clamp01(this.fragmentCharge / Math.max(0.001, this.cfg.fragmentDepositThreshold || 1));
-    const cursorState = this.mode === "cursorInteract"
-      ? "touching"
-      : this.mode === "cursorCurious"
-        ? "following"
-        : "none";
-    const perchState = this.currentPerchTarget?.type === "home"
-      ? (this.mode === "restHome" ? "home" : "returning")
-      : this.currentPerchTarget?.type === "cover"
-        ? (this.mode === "landed" || this.mode === "landing" ? "cover" : "air")
-        : "air";
-
-    return {
-      mode: this.mode || "patrol",
-      page: this.inputState.currentHoveredId || this.inputState.lastHoveredId || "none",
-      perch: perchState,
-      cursor: cursorState,
-      void: this.voidState?.active ? `${Math.round(clamp01(this.voidState.energy || 0) * 100)}%` : "none",
-      metrics: {
-        hunger,
-        signal: clamp01(this.signalLevel),
-        fatigue: clamp01(this.fatigue),
-        trust: clamp01(this.trust),
-        aggression: clamp01(this.inputState.aggression),
-        corruption: clamp01(this.corruption),
-        vitality: clamp01(this.vitality),
-        fragments,
-        residue: clamp01(residueAverage)
-      }
-    };
-  }
-
-  updateDebugOverlay(elapsed = this.getElapsed()) {
-    if (!this.debugOverlay || !this.cfg.debugOverlay) return;
-
-    const snapshot = this.getDebugSnapshot(elapsed);
-    if (this.debugOverlayText.mode) this.debugOverlayText.mode.textContent = snapshot.mode;
-    if (this.debugOverlayText.perch) this.debugOverlayText.perch.textContent = snapshot.perch;
-    if (this.debugOverlayText.page) this.debugOverlayText.page.textContent = snapshot.page;
-    if (this.debugOverlayText.cursor) this.debugOverlayText.cursor.textContent = snapshot.cursor;
-    if (this.debugOverlayText.void) this.debugOverlayText.void.textContent = snapshot.void;
-
-    Object.entries(snapshot.metrics).forEach(([key, value]) => {
-      const entry = this.debugOverlayMetrics.get(key);
-      if (!entry) return;
-      const clamped = clamp01(Number(value) || 0);
-      entry.fill.style.width = `${(clamped * 100).toFixed(1)}%`;
-      entry.valueEl.textContent = `${Math.round(clamped * 100)}%`;
-      entry.track.style.opacity = clamped > 0.02 ? "1" : "0.72";
-    });
   }
 
   handlePointerMove(event) {
@@ -2309,7 +2024,6 @@ export class MothSystem {
     this.voidGroup.visible = this.visible;
     this.residueGroup.visible = this.visible;
     if (this.trail?.points) this.trail.points.visible = this.visible;
-    this.setDebugOverlayVisible(this.visible);
   }
 
   worldPointComfortablyVisible(world, margin = this.cfg.patrolViewMargin) {
@@ -2540,6 +2254,7 @@ export class MothSystem {
     this.updateVoidVisual(elapsed, delta);
     this.updateNestAnimations(elapsed, coverWorldData);
     this.updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData);
+    this.resolveStuckState(elapsed, hoveredIndex, coverWorldData);
     this.updateFrameMotionDirection();
     this.updateFlightPose(delta);
     this.updateTrail(delta, elapsed);
@@ -2548,7 +2263,6 @@ export class MothSystem {
       this.hitProxy.position.set(0, 0, 0);
     }
 
-    this.updateDebugOverlay(elapsed);
     this.saveState(false);
   }
 
@@ -2628,7 +2342,7 @@ export class MothSystem {
       if (this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") {
         this.startTakeoff(elapsed);
       }
-      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+      if (this.mode !== "takeoff"  && this.mode !== "inspectVoid") {
         this.mode = "approachVoid";
       }
     } else if (shouldFlee) {
@@ -2641,7 +2355,7 @@ export class MothSystem {
     } else if (wantsHome) {
       if ((this.mode === "landed" || this.mode === "landing") && this.currentPerchTarget?.type !== "home") {
         this.startTakeoff(elapsed);
-      } else if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+      } else if (this.mode !== "takeoff"  && this.mode !== "inspectVoid") {
         this.mode = this.currentPerchTarget?.type === "home" && this.perched ? "restHome" : "approachHome";
       }
     } else if (coverTarget) {
@@ -2657,7 +2371,7 @@ export class MothSystem {
       if ((this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") && this.currentPerchTarget) {
         this.startTakeoff(elapsed);
       }
-      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+      if (this.mode !== "takeoff"  && this.mode !== "inspectVoid") {
         this.mode = "companion";
       }
     } else if (cursorCuriousActive || cursorInteractActive) {
@@ -2665,7 +2379,7 @@ export class MothSystem {
       if ((this.mode === "landed" || this.mode === "landing" || this.mode === "restHome") && this.currentPerchTarget) {
         this.startTakeoff(elapsed);
       }
-      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
+      if (this.mode !== "takeoff"  && this.mode !== "inspectVoid") {
         this.mode = cursorInteractActive ? "cursorInteract" : "cursorCurious";
       }
     } else {
@@ -2673,7 +2387,7 @@ export class MothSystem {
       if ((this.mode === "landed" || this.mode === "landing") && !hasVoid && this.currentPerchTarget?.type !== "home") {
         this.startTakeoff(elapsed);
       }
-      if (!hasVoid && this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid" && this.mode !== "restHome") {
+      if (!hasVoid && this.mode !== "takeoff"  && this.mode !== "inspectVoid" && this.mode !== "restHome") {
         this.mode = "patrol";
       }
       if (this.mode === "restHome" && this.fatigue <= (this.cfg.homeLeaveThreshold || 0.34) && this.corruption <= 0.16 && this.fragmentCharge < (this.cfg.fragmentDepositThreshold || 1.0)) {
@@ -2683,32 +2397,6 @@ export class MothSystem {
 
     if (this.mode === "takeoff") {
       this.updateTakeoffMotion(elapsed);
-      return;
-    }
-
-    if (this.mode === "backflip") {
-      this.velocity.set(0, 0, 0);
-      this.recoveryAssist = false;
-
-      if (this.backflipState) {
-        this.root.position.copy(this.backflipState.position);
-        this.root.quaternion.copy(this.backflipState.quaternion);
-        this.forward.copy(this.backflipState.forward);
-        this.orientationUp.copy(this.backflipState.up);
-        this.smoothedHeading.copy(this.backflipState.forward);
-        this.frameMotionDirection.copy(this.backflipState.forward);
-      }
-
-      const backflipAction = this.getAction("backflip");
-      const guardDelta = Math.max(0.035, this.lastDelta * 2.0);
-      const clipDuration = this.backflipState?.duration
-        || backflipAction?.getClip?.().duration
-        || this.actionDurations.get("backflip")
-        || 0;
-
-      if (backflipAction && clipDuration > 0 && backflipAction.time >= Math.max(0, clipDuration - guardDelta)) {
-        this.finishBackflip();
-      }
       return;
     }
 
@@ -2736,11 +2424,14 @@ export class MothSystem {
 
     if (this.mode === "approachHome" && homeTarget) {
       const distance = this.root.position.distanceTo(homeTarget.position);
-      if (distance <= (this.cfg.homeApproachDistance || this.cfg.landTriggerDistance || 0.12)) {
+      if (distance <= (this.cfg.homeApproachDistance || this.cfg.landTriggerDistance || 0.18)) {
         this.currentPerchTarget = { type: "home" };
         this.mode = "landing";
         this.perched = false;
-        this.playOnce("land", "perch");
+        if (!this.playOnce("land", "perch")) {
+          this.forcePerch({ type: "home", ...homeTarget });
+          return;
+        }
       }
       this.moveToward(delta, homeTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.88);
       this.lookAtDirection(this.getTravelFacingDirection(homeTarget.position), this.cfg.turnLerpFast);
@@ -2752,11 +2443,15 @@ export class MothSystem {
 
     if (this.mode === "approachCover" && coverTarget) {
       const distance = this.root.position.distanceTo(coverTarget.position);
-      if (distance <= this.cfg.landTriggerDistance) {
+      if (distance <= (this.cfg.landTriggerDistance || 0.18)) {
         this.currentPerchTarget = { type: "cover", coverIndex: hoveredIndex };
         this.mode = "landing";
         this.perched = false;
-        this.playOnce("land", "perch");
+        if (!this.playOnce("land", "perch")) {
+          this.forcePerch({ type: "cover", coverIndex: hoveredIndex, ...coverTarget });
+          this.maybeDropNest(coverTarget.position, hoveredIndex);
+          return;
+        }
         this.maybeDropNest(coverTarget.position, hoveredIndex);
       }
       this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.95);
@@ -2956,7 +2651,13 @@ export class MothSystem {
     };
 
     if (!this.playOnce("takeoff", this.voidState?.active ? "fly" : this.getPatrolFlightAction())) {
+      this.currentPerchTarget = null;
+      this.takeoffState = null;
+      this.perched = false;
+      this.root.position.add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight || 0.2, 0));
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
+      this.playLoop(this.voidState?.active ? "fly" : this.getPatrolFlightAction());
+      this.lastProgressAt = elapsed;
     }
   }
 
@@ -2965,6 +2666,106 @@ export class MothSystem {
     const t = clamp01((elapsed - this.takeoffState.startedAt) / Math.max(0.0001, this.takeoffState.duration));
     const ease = smooth01(t);
     this.root.position.lerpVectors(this.takeoffState.startPos, this.takeoffState.endPos, ease * this.cfg.takeoffMotionScale);
+  }
+
+  forcePerch(targetInfo) {
+    if (!targetInfo?.position) return false;
+
+    const perchType = targetInfo.type === "home" ? "home" : "cover";
+    this.clearCursorAttraction();
+    this.currentPerchTarget = perchType === "home"
+      ? { type: "home" }
+      : { type: "cover", coverIndex: typeof targetInfo.coverIndex === "number" ? targetInfo.coverIndex : null };
+
+    this.mode = perchType === "home" ? "restHome" : "landed";
+    this.perched = true;
+    this.takeoffState = null;
+    this.velocity.set(0, 0, 0);
+    this.root.position.copy(targetInfo.position);
+
+    const lookPoint = targetInfo.position.clone().add(targetInfo.normal || new THREE.Vector3(0, 0, 1));
+    this.lookAtPoint(lookPoint, targetInfo.up || new THREE.Vector3(0, 1, 0), 0.42);
+    this.playLoop("perch");
+    this.lastProgressAt = this.getElapsed();
+    return true;
+  }
+
+  resolveStuckState(elapsed, hoveredIndex, coverWorldData) {
+    const mode = this.mode;
+    const settled = mode === "restHome" || mode === "landed" || mode === "inspectVoid" || mode === "cursorInteract";
+    if (settled) {
+      this.lastProgressAt = elapsed;
+      return;
+    }
+
+    const movementDelta = this.root.position.distanceTo(this.temp.center);
+    const speed = this.velocity.length();
+
+    let target = null;
+    const coverIndex = typeof hoveredIndex === "number" && hoveredIndex >= 0
+      ? hoveredIndex
+      : (this.currentPerchTarget?.type === "cover" ? this.currentPerchTarget.coverIndex : null);
+
+    if (mode === "approachHome") {
+      target = this.getHomePerchTarget()?.position || null;
+    } else if (mode === "approachCover" || mode === "landing") {
+      if (typeof coverIndex === "number") {
+        target = this.getCoverPerchTarget(coverIndex, coverWorldData)?.position || null;
+      }
+    } else if (mode === "approachVoid") {
+      target = this.getVoidInspectTarget()?.position || null;
+    } else if (mode === "companion") {
+      target = this.getCompanionTarget();
+    } else if (mode === "cursorCurious") {
+      target = this.getCursorAttractionTarget();
+    } else if (mode === "flee") {
+      target = this.getFleeTarget();
+    } else if (mode === "patrol" || mode === "takeoff") {
+      target = this.currentPatrolAnchor;
+    }
+
+    const thresholdSpeed = this.cfg.stuckSpeedThreshold || 0.045;
+    const thresholdDistance = this.cfg.stuckDistanceThreshold || 0.24;
+    const timeout = this.cfg.stuckTimeout || 1.05;
+
+    if (!target) {
+      if (movementDelta > 0.0025 || speed > thresholdSpeed) this.lastProgressAt = elapsed;
+      return;
+    }
+
+    const distanceToTarget = this.root.position.distanceTo(target);
+    if (movementDelta > 0.0025 || speed > thresholdSpeed || distanceToTarget <= thresholdDistance) {
+      this.lastProgressAt = elapsed;
+      return;
+    }
+
+    if (elapsed - this.lastProgressAt < timeout) return;
+
+    this.lastProgressAt = elapsed;
+    this.velocity.set(0, 0, 0);
+    this.recoveryAssist = false;
+    this.smoothedHeading.copy(this.forward);
+
+    if (mode === "approachHome") {
+      const homeTarget = this.getHomePerchTarget();
+      if (homeTarget) {
+        this.forcePerch({ type: "home", ...homeTarget });
+        return;
+      }
+    }
+
+    if ((mode === "approachCover" || mode === "landing") && typeof coverIndex === "number") {
+      const perchTarget = this.getCoverPerchTarget(coverIndex, coverWorldData);
+      if (perchTarget) {
+        this.forcePerch({ type: "cover", coverIndex, ...perchTarget });
+        return;
+      }
+    }
+
+    this.currentPerchTarget = null;
+    this.mode = "patrol";
+    this.pickNextPatrolPoint(true);
+    this.playLoop(this.getPatrolFlightAction());
   }
 
   getTurnAlpha(lerpAmount = this.cfg.turnLerp) {
@@ -3275,5 +3076,3 @@ export class MothSystem {
     this.voidState.energy = 0;
     this.corruption = clamp01(this.corruption + 0.06);
   }
-
-}
