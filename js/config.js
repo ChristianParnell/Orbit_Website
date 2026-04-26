@@ -225,5 +225,11 @@ export const MOTH_CONFIG = {
     sketchfab: -0.12,
     "twenty-two-minutes": 0.22,
     contact: 0.25
-  }
+  },
+
+  debugOverlay: true,
+  debugOverlayTop: 10,
+  debugOverlayRight: 12,
+  debugOverlayWidth: 220,
+  debugOverlayBarHeight: 6
 };
