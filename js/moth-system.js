@@ -69,7 +69,12 @@ const DEFAULT_CONFIG = {
   headingTargetBlend: 0.18,
   headingVelocityBlend: 0.82,
   headingVelocityMin: 0.035,
+  headingMinSpeed: 0.08,
+  headingDeadzone: 0.03,
+  headingSmoothing: 10.0,
   velocityResponse: 5.4,
+  patrolVisibilityGrace: 0.18,
+  recoveryVisibilityGrace: 0.22,
   animationFadeLoop: 0.22,
   animationFadeOnce: 0.16,
   visualBankMax: 0.24,
@@ -706,7 +711,11 @@ export class MothSystem {
 
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
+    this.smoothedHeading = new THREE.Vector3(0, 0, -1);
     this.orientationUp = new THREE.Vector3(0, 1, 0);
+    this.anchorHiddenSince = -1;
+    this.recoveryHiddenSince = -1;
+    this.recoveryAssist = false;
     this.visualBank = 0;
     this.visualPitch = 0;
     this.baseVisualPitch = this.cfg.modelPitchOffset || 0;
@@ -1772,13 +1781,8 @@ export class MothSystem {
     }
 
     if (this.mode === "backflip") {
-      if (this.backflipState) {
-        this.root.position.copy(this.backflipState.position);
-        this.root.quaternion.copy(this.backflipState.quaternion);
-        this.forward.copy(this.backflipState.forward);
-        this.orientationUp.copy(this.backflipState.up);
-      }
       this.velocity.set(0, 0, 0);
+      this.recoveryAssist = false;
       return;
     }
 
@@ -1826,15 +1830,27 @@ export class MothSystem {
     }
 
     if (this.mode === "patrol") {
-      if (elapsed >= this.nextPatrolDecisionAt || this.root.position.distanceTo(this.currentPatrolAnchor) < 0.18 || !this.worldPointComfortablyVisible(this.currentPatrolAnchor)) {
+      const anchorVisible = this.worldPointComfortablyVisible(this.currentPatrolAnchor);
+      if (anchorVisible) this.anchorHiddenSince = -1;
+      else if (this.anchorHiddenSince < 0) this.anchorHiddenSince = elapsed;
+
+      const anchorLostLongEnough = this.anchorHiddenSince >= 0
+        && (elapsed - this.anchorHiddenSince) >= (this.cfg.patrolVisibilityGrace || 0.18);
+
+      const rootComfortablyVisible = this.worldPointComfortablyVisible(this.root.position, this.cfg.patrolRecoveryMargin);
+      if (rootComfortablyVisible) {
+        this.recoveryHiddenSince = -1;
+        this.recoveryAssist = false;
+      } else {
+        if (this.recoveryHiddenSince < 0) this.recoveryHiddenSince = elapsed;
+        this.recoveryAssist = (elapsed - this.recoveryHiddenSince) >= (this.cfg.recoveryVisibilityGrace || 0.22);
+      }
+
+      if (elapsed >= this.nextPatrolDecisionAt || this.root.position.distanceTo(this.currentPatrolAnchor) < 0.18 || anchorLostLongEnough) {
         this.pickNextPatrolPoint();
       }
 
-      if (!this.worldPointComfortablyVisible(this.root.position, 1.05)) {
-        this.pickNextPatrolPoint();
-      }
-
-      if (!this.worldPointComfortablyVisible(this.root.position, this.cfg.patrolRecoveryMargin)) {
+      if (this.recoveryAssist) {
         this.currentPatrolAnchor.copy(this.getRecoveryPatrolPoint());
       }
 
@@ -1857,7 +1873,7 @@ export class MothSystem {
 
     this.velocity.lerp(desired, 1.0 - Math.exp(-delta * (this.cfg.velocityResponse || 5.4)));
 
-    if (!this.worldPointComfortablyVisible(this.root.position, this.cfg.patrolRecoveryMargin)) {
+    if (this.recoveryAssist) {
       const recovery = this.getRecoveryPatrolPoint().sub(this.root.position).multiplyScalar(this.cfg.patrolRecoverySpeedScale * delta);
       this.velocity.add(recovery);
     }
@@ -2036,7 +2052,28 @@ export class MothSystem {
   }
 
   lookAtDirection(direction, lerpAmount = this.cfg.turnLerp) {
-    this.orientRootToDirection(direction, null, lerpAmount);
+    if (!direction || direction.lengthSq() <= 0.0001) return;
+
+    const target = this.temp.d.copy(direction).normalize();
+    const smoothing = 1.0 - Math.exp(-this.lastDelta * (this.cfg.headingSmoothing || 10.0));
+
+    if (!this.smoothedHeading || this.smoothedHeading.lengthSq() <= 0.0001) {
+      this.smoothedHeading = target.clone();
+    } else {
+      if (this.smoothedHeading.dot(target) < 0) {
+        this.smoothedHeading.copy(this.forward);
+      }
+
+      const speedSq = this.velocity.lengthSq();
+      const minSpeedSq = Math.pow(this.cfg.headingMinSpeed || 0.08, 2);
+      const blend = speedSq < minSpeedSq ? smoothing * 0.45 : smoothing;
+      this.smoothedHeading.lerp(target, THREE.MathUtils.clamp(blend, 0.02, 0.5)).normalize();
+    }
+
+    const angle = Math.acos(THREE.MathUtils.clamp(this.forward.dot(this.smoothedHeading), -1, 1));
+    if (angle <= (this.cfg.headingDeadzone || 0.03)) return;
+
+    this.orientRootToDirection(this.smoothedHeading, null, lerpAmount);
   }
 
   lookAtPoint(point, up = new THREE.Vector3(0, 1, 0), lerpAmount = 0.12) {
@@ -2231,6 +2268,11 @@ export class MothSystem {
       forward: this.forward.clone(),
       up: this.orientationUp.clone()
     };
+    this.root.position.copy(this.backflipState.position);
+    this.root.quaternion.copy(this.backflipState.quaternion);
+    this.forward.copy(this.backflipState.forward);
+    this.orientationUp.copy(this.backflipState.up);
+    this.smoothedHeading.copy(this.forward);
     this.velocity.set(0, 0, 0);
 
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
