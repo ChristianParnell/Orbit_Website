@@ -225,5 +225,7 @@ The moth may also do s sick backflip if cliked on :)
 
 I discovered the issue with the animations, The website expected seperate FBX files containing each animation, which to me seemed expsensive, so i compressed all animations into a single FBX file that also contains the model, and armeture itself. Pending test, but hopefully this will resolve any further issues. 
 
+### 24/04
+the moth now has a real home on the PerchBone, it uses land -> perch idle -> takeoff flow for resting there, it feeds on activity, gets tired and returns home, becomes cautious or trusting based on how the user moves, collects fragments and deposits them into a persistent nest, gets corrupted by the glitch void and recovers at home, and visibly changes the site by letting neglected covers gather binary dust while attention cleans them.
 
 
