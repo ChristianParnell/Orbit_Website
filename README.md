@@ -227,5 +227,49 @@ I discovered the issue with the animations, The website expected seperate FBX fi
 
 ### 24/04
 the moth now has a real home on the PerchBone, it uses land -> perch idle -> takeoff flow for resting there, it feeds on activity, gets tired and returns home, becomes cautious or trusting based on how the user moves, collects fragments and deposits them into a persistent nest, gets corrupted by the glitch void and recovers at home, and visibly changes the site by letting neglected covers gather binary dust while attention cleans them.
+### Big Update:
+the animation matcher now explicitly prioritizes the exact clip name Backflip
+animation states are mapped for fly, flySad, land, perch, takeoff, feed, and backflip
+land -> perch idle -> takeoff flow is built in, so the moth can properly settle and leave using authored animation clips rather than snapping between states
+the finished-event handling was tightened so actions only hand off when the currently active action actually finishes
 
+the moth now tracks signalLevel, fatigue, trust, corruption, vitality, and fragmentCharge
+signal rises from hovered covers, pointer movement, wheel activity, open panel presence
 
+### Interaction sensing:
+
+renderer DOM listeners were added for pointermove, wheel, and pointerdown
+pointer speed is measured to distinguish gentle vs aggressive interaction
+gentle movement increases trust
+aggressive movement increases aggression/fear state
+this makes the moth either companion-like or evasive depending on how the user behaves
+
+### Behavior priority / decision logic:
+
+if a void is active and corruption is too high, it avoids the void and heads home
+if the user is too aggressive, it flees
+if it is tired, weak, corrupted, or carrying enough fragments, it heads home
+if a hovered cover is available, it may approach and perch on it
+if trust is high and aggression is low, it enters companion behavior and follows closer to the user
+otherwise it patrols
+
+### Covers / residue / environmental change:
+
+a residue system was added for covers
+neglected covers gradually build visible dusty/glitchy residue
+active attention reduces that residue
+this gives the moth a visible effect on the site, which is important for making the generative system obvious
+
+### Nest / fragments:
+
+fragment charge accumulates while the moth is active
+when enough is collected and it returns home, it deposits fragments at the perch
+nest objects are spawned and persisted
+home nest growth and cover nest drops make its past behavior visible over time
+
+### Void behavior:
+
+double-clicking empty space can still create the glitch void
+the moth can approach it and enter a feed state
+the void acts like dangerous food: attractive, but corrupting
+clearing the void increases corruption slightly, which pushes the moth toward recovery behavior at home
