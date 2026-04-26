@@ -1,4 +1,3 @@
-
 export const ORBIT_ITEMS = [
   {
     id: "about",
@@ -77,7 +76,7 @@ export const SCENE_CONFIG = {
 };
 
 export const MOTH_CONFIG = {
-  storageKey: "orbitSpecterMothV2",
+  storageKey: "orbitSpecterMothV3",
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
@@ -121,7 +120,6 @@ export const MOTH_CONFIG = {
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
 
-
   flySpeed: 1.55,
   diveSpeed: 2.00,
   flySadSpeedScale: 0.62,
@@ -140,8 +138,6 @@ export const MOTH_CONFIG = {
 
   takeoffRiseHeight: 0.20,
   takeoffMotionScale: 1.0,
-  backflipPush: 0.25,
-  backflipLift: 0.10,
 
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.9,
@@ -150,7 +146,6 @@ export const MOTH_CONFIG = {
   voidConsumeDistance: 0.20,
   voidInspectDuration: 5.0,
   satiatedDuration: 8.0,
-
   voidParticleCount: 320,
   voidDepth: 0.88,
 
@@ -160,5 +155,60 @@ export const MOTH_CONFIG = {
   vitalityDrainPerSecond: 0.0026,
   vitalityRecoveryPerSecond: 0.01,
   offlineDrainPerHour: 0.05,
-  sadThreshold: 0.30
+  sadThreshold: 0.30,
+
+  homePerchBoneName: "PerchBone",
+  homePerchOffset: { x: 0.0, y: 0.015, z: 0.0 },
+  homePerchForward: 0.09,
+  homePerchLift: 0.025,
+  homeApproachDistance: 0.12,
+  homePerchLerp: 0.16,
+
+  signalDecayPerSecond: 0.070,
+  signalHoverBoost: 0.42,
+  signalPointerBoost: 0.22,
+  signalWheelBoost: 0.08,
+  signalPanelBoost: 0.12,
+  signalAudioBoost: 0.18,
+
+  fatigueFlightPerSecond: 0.050,
+  fatigueStimulusPerSecond: 0.042,
+  fatigueRestRecoveryPerSecond: 0.22,
+
+  trustGainPerSecond: 0.12,
+  trustLossPerSecond: 0.34,
+
+  corruptionGainPerSecond: 0.16,
+  corruptionRestRecoveryPerSecond: 0.17,
+  corruptionSignalDamp: 0.28,
+
+  gentlePointerSpeed: 0.35,
+  aggressivePointerSpeed: 1.10,
+  aggressiveWheelThreshold: 620,
+
+  homeRestThreshold: 0.52,
+  homeLeaveThreshold: 0.34,
+
+  fragmentCollectPerSecond: 0.16,
+  fragmentDepositThreshold: 1.0,
+
+  companionTrustThreshold: 0.42,
+  companionDistance: 0.36,
+  companionLift: 0.08,
+
+  residueIncreasePerSecond: 0.040,
+  residueCleansePerSecond: 0.26,
+  residueOpacityMax: 0.55,
+  residueScaleMin: 0.10,
+  residueScaleMax: 0.26,
+
+  pagePreferences: {
+    about: 1.0,
+    gallery: 0.35,
+    achievements: -0.85,
+    fab: -0.10,
+    sketchfab: -0.12,
+    "twenty-two-minutes": 0.22,
+    contact: 0.25
+  }
 };
