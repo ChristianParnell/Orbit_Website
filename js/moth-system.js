@@ -725,6 +725,7 @@ export class MothSystem {
 
     this.takeoffState = null;
     this.backflipState = null;
+    this.backflipGuardUntil = 0;
 
     this.temp = {
       a: new THREE.Vector3(),
@@ -1057,12 +1058,19 @@ export class MothSystem {
     }
 
     if (this.currentActionKey === "backflip") {
-      this.flipBusy = false;
-      this.backflipState = null;
-      const next = this.pendingActionKey || this.getPatrolFlightAction();
-      this.pendingActionKey = "";
-      this.mode = this.voidState?.active ? "approachVoid" : "patrol";
-      this.playLoop(next);
+      const backflipAction = this.getAction("backflip");
+      const guardDelta = Math.max(0.035, this.lastDelta * 2.0);
+      const guardUntil = this.backflipGuardUntil || 0;
+
+      if (finishedAction && backflipAction && finishedAction !== backflipAction) {
+        return;
+      }
+
+      if (guardUntil > 0 && this.getElapsed() + guardDelta < guardUntil) {
+        return;
+      }
+
+      this.finishBackflip();
       return;
     }
 
@@ -1071,6 +1079,19 @@ export class MothSystem {
       this.pendingActionKey = "";
       this.playLoop(next);
     }
+  }
+
+  finishBackflip() {
+    if (this.currentActionKey !== "backflip" && this.mode !== "backflip") return;
+
+    this.flipBusy = false;
+    this.backflipState = null;
+    this.backflipGuardUntil = 0;
+
+    const next = this.pendingActionKey || this.getPatrolFlightAction();
+    this.pendingActionKey = "";
+    this.mode = this.voidState?.active ? "approachVoid" : "patrol";
+    this.playLoop(next);
   }
 
   getAction(key) {
@@ -1086,6 +1107,10 @@ export class MothSystem {
   }
 
   playLoop(key) {
+    if (this.mode === "backflip" && this.currentActionKey === "backflip" && key !== "backflip") {
+      return false;
+    }
+
     const next = this.getAction(key);
     if (!next) return false;
     if (this.currentActionKey === key && next.isRunning()) return true;
@@ -1120,6 +1145,10 @@ export class MothSystem {
   }
 
   playOnce(key, followUp = "") {
+    if (this.mode === "backflip" && this.currentActionKey === "backflip" && key !== "backflip") {
+      return false;
+    }
+
     const next = this.getAction(key);
     if (!next) {
       if (followUp) this.playLoop(followUp);
@@ -1783,6 +1812,17 @@ export class MothSystem {
     if (this.mode === "backflip") {
       this.velocity.set(0, 0, 0);
       this.recoveryAssist = false;
+
+      const backflipAction = this.getAction("backflip");
+      const guardDelta = Math.max(0.035, this.lastDelta * 2.0);
+      const clipDuration = this.backflipState?.duration
+        || backflipAction?.getClip?.().duration
+        || this.actionDurations.get("backflip")
+        || 0;
+
+      if (backflipAction && clipDuration > 0 && backflipAction.time >= Math.max(0, clipDuration - guardDelta)) {
+        this.finishBackflip();
+      }
       return;
     }
 
@@ -2256,17 +2296,21 @@ export class MothSystem {
       return;
     }
 
-    console.log("[Moth] Playing backflip clip.");
+    const clipDuration = backflipAction.getClip?.().duration || this.actionDurations.get("backflip") || 0;
+
+    console.log("[Moth] Playing backflip clip.", { duration: clipDuration });
 
     this.flipBusy = true;
     this.perched = false;
     this.mode = "backflip";
     this.takeoffState = null;
+    this.backflipGuardUntil = this.getElapsed() + Math.max(clipDuration, 0.1);
     this.backflipState = {
       position: this.root.position.clone(),
       quaternion: this.root.quaternion.clone(),
       forward: this.forward.clone(),
-      up: this.orientationUp.clone()
+      up: this.orientationUp.clone(),
+      duration: clipDuration
     };
     this.root.position.copy(this.backflipState.position);
     this.root.quaternion.copy(this.backflipState.quaternion);
@@ -2278,6 +2322,7 @@ export class MothSystem {
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
       this.flipBusy = false;
       this.backflipState = null;
+      this.backflipGuardUntil = 0;
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
       this.playLoop(this.getPatrolFlightAction());
     }
