@@ -76,20 +76,20 @@ export const SCENE_CONFIG = {
 };
 
 export const MOTH_CONFIG = {
-  storageKey: "orbitSpecterMothV4",
+  storageKey: "orbitSpecterMothV5",
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
-  modelYawOffset: Math.PI,
+  modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
-  shellMotionStrength: 1.25,
+  shellMotionStrength: 1.55,
   shellPointSizeMin: 0.42,
   shellPointSizeMax: 0.82,
   shellPointAlphaMin: 0.34,
   shellPointAlphaMax: 0.72,
-  binaryBrightness: 1.42,
-  outlineBrightness: 2.05,
+  binaryBrightness: 2.25,
+  outlineBrightness: 3.05,
   outlineExpand: 0.018,
   outlinePointSizeMin: 0.82,
   outlinePointSizeMax: 1.48,
@@ -133,10 +133,11 @@ export const MOTH_CONFIG = {
   headingVelocityBlend: 0.82,
 
   hoverPerchDelay: 0.10,
-  perchDistance: 0.16,
-  landTriggerDistance: 0.18,
-  coverPerchLift: 0.065,
-  coverPerchForward: 0.055,
+  perchDistance: 0.22,
+  landTriggerDistance: 0.26,
+  coverPerchLift: 0.015,
+  coverPerchForward: 0.018,
+  coverPerchVerticalRatio: 0.10,
   coverPerchLerp: 0.18,
 
   takeoffRiseHeight: 0.20,
@@ -161,11 +162,11 @@ export const MOTH_CONFIG = {
   sadThreshold: 0.30,
 
   homePerchBoneName: "PerchBone",
-  homePerchOffset: { x: 0.0, y: 0.015, z: 0.0 },
-  homePerchForward: 0.09,
-  homePerchLift: 0.025,
-  homeApproachDistance: 0.18,
-  homePerchLerp: 0.16,
+  homePerchOffset: { x: 0.0, y: 0.0, z: 0.0 },
+  homePerchForward: 0.008,
+  homePerchLift: 0.0,
+  homeApproachDistance: 0.24,
+  homePerchLerp: 0.22,
 
   signalDecayPerSecond: 0.070,
   signalHoverBoost: 0.42,
@@ -216,11 +217,9 @@ export const MOTH_CONFIG = {
 
   residueIncreasePerSecond: 0.040,
   residueCleansePerSecond: 0.26,
-  residueOpacityMax: 0.55,
-  residueCoverInset: 0.96,
-  residueForwardOffset: 0.006,
-  residueScaleMin: 0.82,
-  residueScaleMax: 1.02,
+  residueOpacityMax: 0.72,
+  residueScaleMin: 1.0,
+  residueScaleMax: 1.0,
 
   pagePreferences: {
     about: 1.0,
