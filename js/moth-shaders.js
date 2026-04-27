@@ -65,11 +65,14 @@ export function createMothPointMaterial({ atlas, palette, brightness = 2.7, alph
       uBrightness: { value: brightness },
       uPointScale: { value: pointScale },
       uMood: { value: 0.0 },
+      uInstability: { value: 0.0 },
+      uPatchiness: { value: 0.0 },
       ...paletteUniforms(palette)
     },
     vertexShader: `
       uniform float uTime;
       uniform float uPointScale;
+      uniform float uInstability;
       attribute float aSeed;
       attribute float aSize;
       attribute float aAlpha;
@@ -83,7 +86,10 @@ export function createMothPointMaterial({ atlas, palette, brightness = 2.7, alph
         vDigit = mod(floor(uTime * (3.0 + fract(aSeed * 17.31) * 4.0) + aSeed * 67.0), 2.0);
         vAlpha = aAlpha * (0.82 + sin(uTime * 5.2 + aSeed * 40.0) * 0.18);
         vPalette = fract(aPalette + uTime * 0.035 + sin(aSeed * 9.0) * 0.08);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float twitchGate = step(0.72, sin(uTime * (10.0 + fract(aSeed) * 9.0) + aSeed * 77.0));
+        vec3 dir = normalize(position + vec3(0.001, 0.002, 0.003));
+        vec3 unstablePosition = position + dir * twitchGate * uInstability * 0.018;
+        vec4 mvPosition = modelViewMatrix * vec4(unstablePosition, 1.0);
         float perspective = 42.0 / max(1.0, -mvPosition.z);
         gl_PointSize = max(1.4, aSize * uPointScale * perspective);
         gl_Position = projectionMatrix * mvPosition;
@@ -94,6 +100,8 @@ export function createMothPointMaterial({ atlas, palette, brightness = 2.7, alph
       uniform float uAlpha;
       uniform float uBrightness;
       uniform float uMood;
+      uniform float uInstability;
+      uniform float uPatchiness;
       uniform vec3 uColor0;
       uniform vec3 uColor1;
       uniform vec3 uColor2;
@@ -113,9 +121,14 @@ export function createMothPointMaterial({ atlas, palette, brightness = 2.7, alph
         vec2 atlasUv = vec2((uv.x + vDigit) * 0.5, uv.y);
         vec4 glyph = texture2D(uAtlas, atlasUv);
         float scan = 0.74 + sin((uv.y + vSeed) * 38.0) * 0.08;
+        float patchNoise = fract(sin(vSeed * 437.17 + floor(uTime * (7.0 + uInstability * 8.0)) * 13.91) * 9731.77);
+        float dropout = step(1.0 - uPatchiness, patchNoise);
+        float unstablePulse = 0.72 + sin(uTime * (14.0 + uInstability * 18.0) + vSeed * 90.0) * 0.28;
         float alpha = glyph.a * radial * scan * vAlpha * uAlpha;
+        alpha *= mix(1.0, 0.12 + unstablePulse * 0.24, dropout * uPatchiness);
+        alpha *= 1.0 - uPatchiness * 0.18;
         if (alpha < 0.018) discard;
-        vec3 color = getPalette(vPalette) * uBrightness;
+        vec3 color = getPalette(vPalette) * uBrightness * mix(1.0, 0.72 + unstablePulse * 0.36, uInstability * 0.35);
         vec3 hot = vec3(1.0, 1.0, 1.0) * pow(glyph.a, 3.0) * 0.42;
         gl_FragColor = vec4(color + hot, alpha);
       }
