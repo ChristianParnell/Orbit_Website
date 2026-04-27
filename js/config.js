@@ -1,3 +1,4 @@
+
 export const ORBIT_ITEMS = [
   {
     id: "about",
@@ -76,20 +77,26 @@ export const SCENE_CONFIG = {
 };
 
 export const MOTH_CONFIG = {
-  storageKey: "orbitSpecterMothV5",
+  storageKey: "orbitSpecterMothV2",
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
+  // FBX visibility/orientation is kept from the original working moth setup.
+  // If the moth still flies sideways in your browser, press [ or ] with the debug HUD open,
+  // then copy the displayed yaw value back here.
   modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
-  shellMotionStrength: 1.55,
+  meshOpacity: 0.38,
+  meshEmissiveIntensity: 0.34,
+  debugOverlay: true,
+  shellMotionStrength: 1.25,
   shellPointSizeMin: 0.42,
   shellPointSizeMax: 0.82,
   shellPointAlphaMin: 0.34,
   shellPointAlphaMax: 0.72,
-  binaryBrightness: 2.25,
-  outlineBrightness: 3.05,
+  binaryBrightness: 1.42,
+  outlineBrightness: 2.05,
   outlineExpand: 0.018,
   outlinePointSizeMin: 0.82,
   outlinePointSizeMax: 1.48,
@@ -119,9 +126,7 @@ export const MOTH_CONFIG = {
   patrolRecoveryMargin: 0.96,
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
-  stuckSpeedThreshold: 0.045,
-  stuckDistanceThreshold: 0.24,
-  stuckTimeout: 1.05,
+
 
   flySpeed: 1.55,
   diveSpeed: 2.00,
@@ -133,15 +138,16 @@ export const MOTH_CONFIG = {
   headingVelocityBlend: 0.82,
 
   hoverPerchDelay: 0.10,
-  perchDistance: 0.22,
-  landTriggerDistance: 0.26,
-  coverPerchLift: 0.015,
-  coverPerchForward: 0.018,
-  coverPerchVerticalRatio: 0.10,
+  perchDistance: 0.12,
+  landTriggerDistance: 0.12,
+  coverPerchLift: 0.065,
+  coverPerchForward: 0.055,
   coverPerchLerp: 0.18,
 
   takeoffRiseHeight: 0.20,
   takeoffMotionScale: 1.0,
+  backflipPush: 0.25,
+  backflipLift: 0.10,
 
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.9,
@@ -150,8 +156,14 @@ export const MOTH_CONFIG = {
   voidConsumeDistance: 0.20,
   voidInspectDuration: 5.0,
   satiatedDuration: 8.0,
-  voidParticleCount: 320,
-  voidDepth: 0.88,
+
+  voidParticleCount: 920,
+  voidDepth: 1.08,
+  voidVortexRadius: 1.08,
+  voidVortexArms: 7,
+  voidVortexTwist: 11.5,
+  voidVortexSpin: 2.25,
+  voidVortexCollapseSpeed: 0.42,
 
   nestMax: 5,
   nestChancePerPerch: 0.22,
@@ -159,75 +171,5 @@ export const MOTH_CONFIG = {
   vitalityDrainPerSecond: 0.0026,
   vitalityRecoveryPerSecond: 0.01,
   offlineDrainPerHour: 0.05,
-  sadThreshold: 0.30,
-
-  homePerchBoneName: "PerchBone",
-  homePerchOffset: { x: 0.0, y: 0.0, z: 0.0 },
-  homePerchForward: 0.008,
-  homePerchLift: 0.0,
-  homeApproachDistance: 0.24,
-  homePerchLerp: 0.22,
-
-  signalDecayPerSecond: 0.070,
-  signalHoverBoost: 0.42,
-  signalPointerBoost: 0.22,
-  signalWheelBoost: 0.08,
-  signalPanelBoost: 0.12,
-  signalAudioBoost: 0.18,
-
-  fatigueFlightPerSecond: 0.050,
-  fatigueStimulusPerSecond: 0.042,
-  fatigueRestRecoveryPerSecond: 0.22,
-
-  trustGainPerSecond: 0.12,
-  trustLossPerSecond: 0.34,
-
-  corruptionGainPerSecond: 0.16,
-  corruptionRestRecoveryPerSecond: 0.17,
-  corruptionSignalDamp: 0.28,
-
-  gentlePointerSpeed: 0.35,
-  aggressivePointerSpeed: 1.10,
-  aggressiveWheelThreshold: 620,
-
-  homeRestThreshold: 0.52,
-  homeLeaveThreshold: 0.34,
-
-  fragmentCollectPerSecond: 0.16,
-  fragmentDepositThreshold: 1.0,
-
-  companionTrustThreshold: 0.42,
-  companionDistance: 0.36,
-  companionLift: 0.08,
-
-  cursorAttractChancePerSecond: 0.20,
-  cursorAttractDistance: 0.92,
-  cursorAttractMinDuration: 1.8,
-  cursorAttractMaxDuration: 3.6,
-  cursorAttractCooldownMin: 2.4,
-  cursorAttractCooldownMax: 5.8,
-  cursorTargetPullBack: 0.10,
-  cursorTargetLift: 0.03,
-  cursorTouchDistance: 0.11,
-  cursorTouchHoldMin: 0.65,
-  cursorTouchHoldMax: 1.05,
-  cursorTrustThreshold: 0.20,
-  cursorAggressionMax: 0.42,
-  cursorFollowSpeedScale: 0.92,
-
-  residueIncreasePerSecond: 0.040,
-  residueCleansePerSecond: 0.26,
-  residueOpacityMax: 0.72,
-  residueScaleMin: 1.0,
-  residueScaleMax: 1.0,
-
-  pagePreferences: {
-    about: 1.0,
-    gallery: 0.35,
-    achievements: -0.85,
-    fab: -0.10,
-    sketchfab: -0.12,
-    "twenty-two-minutes": 0.22,
-    contact: 0.25
-  }
+  sadThreshold: 0.30
 };
