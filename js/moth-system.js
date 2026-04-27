@@ -13,20 +13,20 @@ const DEFAULT_PALETTE = [
 ];
 
 const DEFAULT_CONFIG = {
-  storageKey: "orbitSpecterMothV5",
+  storageKey: "orbitSpecterMothV4",
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
   modelYawOffset: 0,
   modelPitchOffset: 0,
   modelRollOffset: 0,
-  shellMotionStrength: 1.55,
+  shellMotionStrength: 1.25,
   shellPointSizeMin: 0.42,
   shellPointSizeMax: 0.82,
   shellPointAlphaMin: 0.34,
   shellPointAlphaMax: 0.72,
-  binaryBrightness: 2.25,
-  outlineBrightness: 3.05,
+  binaryBrightness: 1.42,
+  outlineBrightness: 2.05,
   outlineExpand: 0.018,
   outlinePointSizeMin: 0.82,
   outlinePointSizeMax: 1.48,
@@ -77,19 +77,18 @@ const DEFAULT_CONFIG = {
   velocityResponse: 5.4,
   patrolVisibilityGrace: 0.18,
   recoveryVisibilityGrace: 0.22,
-  animationFadeLoop: 0.28,
-  animationFadeOnce: 0.24,
+  animationFadeLoop: 0.22,
+  animationFadeOnce: 0.16,
   visualBankMax: 0.24,
   visualBankResponse: 7.5,
   visualPitchMax: 0.12,
   visualPitchResponse: 6.0,
 
   hoverPerchDelay: 0.10,
-  perchDistance: 0.22,
-  landTriggerDistance: 0.26,
-  coverPerchLift: 0.015,
-  coverPerchForward: 0.018,
-  coverPerchVerticalRatio: 0.10,
+  perchDistance: 0.16,
+  landTriggerDistance: 0.18,
+  coverPerchLift: 0.065,
+  coverPerchForward: 0.055,
   coverPerchLerp: 0.18,
 
   takeoffRiseHeight: 0.20,
@@ -115,11 +114,11 @@ const DEFAULT_CONFIG = {
   offlineDrainPerHour: 0.05,
   sadThreshold: 0.30,
   homePerchBoneName: "PerchBone",
-  homePerchOffset: { x: 0.0, y: 0.0, z: 0.0 },
-  homePerchForward: 0.008,
-  homePerchLift: 0.0,
-  homeApproachDistance: 0.24,
-  homePerchLerp: 0.22,
+  homePerchOffset: { x: 0.0, y: 0.015, z: 0.0 },
+  homePerchForward: 0.09,
+  homePerchLift: 0.025,
+  homeApproachDistance: 0.18,
+  homePerchLerp: 0.16,
   signalDecayPerSecond: 0.070,
   signalHoverBoost: 0.42,
   signalPointerBoost: 0.22,
@@ -160,9 +159,9 @@ const DEFAULT_CONFIG = {
   cursorFollowSpeedScale: 0.92,
   residueIncreasePerSecond: 0.040,
   residueCleansePerSecond: 0.26,
-  residueOpacityMax: 0.72,
-  residueScaleMin: 1.0,
-  residueScaleMax: 1.0,
+  residueOpacityMax: 0.55,
+  residueScaleMin: 0.10,
+  residueScaleMax: 0.26,
   pagePreferences: {
     about: 1.0,
     gallery: 0.35,
@@ -204,47 +203,6 @@ function smooth01(v) {
 
 function randomFromRange(min, max) {
   return min + Math.random() * (max - min);
-}
-
-
-function ensureColor(value, fallback = "#ffffff") {
-  if (value?.isColor) return value.clone();
-  try {
-    return new THREE.Color(value || fallback);
-  } catch {
-    return new THREE.Color(fallback);
-  }
-}
-
-function ensureColorArray(values, fallback = DEFAULT_PALETTE) {
-  const source = Array.isArray(values) && values.length ? values : fallback;
-  return source.map((value, index) => ensureColor(value, fallback[index % fallback.length] || "#ffffff"));
-}
-
-function buildAccentPalette(accentValue) {
-  const accent = ensureColor(accentValue, "#49d8ff");
-  const hsl = { h: 0, s: 0, l: 0 };
-  accent.getHSL(hsl);
-  const offsets = [-0.20, -0.11, -0.04, 0.0, 0.06, 0.13, 0.21];
-  return offsets.map((offset, index) => {
-    const color = new THREE.Color();
-    color.setHSL(
-      (hsl.h + offset + 1.0) % 1.0,
-      THREE.MathUtils.clamp(hsl.s * (0.88 + (index % 3) * 0.06), 0.0, 1.0),
-      THREE.MathUtils.clamp(0.24 + index * 0.075 + hsl.l * 0.28, 0.14, 0.82)
-    );
-    return color;
-  });
-}
-
-function copyPalette(target, source) {
-  const out = Array.isArray(target) ? target : [];
-  for (let i = 0; i < source.length; i += 1) {
-    if (!out[i]) out[i] = new THREE.Color();
-    out[i].copy(source[i]);
-  }
-  out.length = source.length;
-  return out;
 }
 
 function hexToRgba(hex, alpha) {
@@ -745,7 +703,7 @@ export class MothSystem {
     this.renderer = options.renderer;
     this.orbitRoot = options.orbitRoot || options.scene;
     this.centralModel = options.centralModel;
-    this.palette = ensureColorArray(Array.isArray(options.palette) && options.palette.length ? options.palette : DEFAULT_PALETTE, DEFAULT_PALETTE);
+    this.palette = Array.isArray(options.palette) && options.palette.length ? options.palette : DEFAULT_PALETTE;
     this.lightDir = options.lightDir || new THREE.Vector3(0.75, 1.1, 0.55).normalize();
     this.assets = options.assets || {};
     this.cfg = { ...DEFAULT_CONFIG, ...(options.config || {}) };
@@ -805,25 +763,12 @@ export class MothSystem {
     this.fragmentCharge = Math.max(0, Number(this.saved.fragmentCharge ?? 0));
     this.coverResidue = [];
     this.residueSprites = [];
-    this.residueMaterials = [];
     this.homeBone = null;
     this.homePerch = null;
     this.currentPerchTarget = null;
     this.searchUrgency = 0.0;
     this.lastSaveAt = 0;
     this.lastNestDropAt = 0;
-
-    this.defaultPalette = ensureColorArray(this.cfg.defaultPaletteHex, this.palette);
-    this.sadPalette = ensureColorArray(this.cfg.sadPaletteHex, this.defaultPalette);
-    this.homePalette = ensureColorArray(this.cfg.homePaletteHex, this.defaultPalette);
-    this.corruptedPalette = ensureColorArray(this.cfg.corruptedPaletteHex, this.defaultPalette);
-    this.companionPalette = ensureColorArray(this.cfg.companionPaletteHex, this.defaultPalette);
-    this.cursorPalette = ensureColorArray(this.cfg.cursorPaletteHex, this.defaultPalette);
-    this.coverAccentPalettes = Array.isArray(this.cfg.coverAccentColors)
-      ? this.cfg.coverAccentColors.map((value) => buildAccentPalette(value))
-      : [];
-    this.currentPalette = copyPalette([], this.defaultPalette);
-    this.targetPalette = copyPalette([], this.defaultPalette);
 
     this.ready = false;
     this.visible = true;
@@ -852,8 +797,6 @@ export class MothSystem {
     this.lastDelta = 1 / 60;
 
     this.takeoffState = null;
-    this.actionLockedKey = "";
-    this.actionLockedUntil = 0;
     this.lastProgressAt = 0;
     this.cursorCuriousUntil = 0;
     this.cursorInteractUntil = 0;
@@ -1185,8 +1128,6 @@ export class MothSystem {
       return;
     }
 
-    this.clearActionLock(this.currentActionKey);
-
     if (this.currentActionKey === "land" && this.pendingActionKey === "perch") {
       this.pendingActionKey = "";
       this.perched = true;
@@ -1202,8 +1143,6 @@ export class MothSystem {
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
       this.currentPerchTarget = null;
       this.takeoffState = null;
-    this.actionLockedKey = "";
-    this.actionLockedUntil = 0;
       this.lastProgressAt = this.getElapsed();
       this.playLoop(next);
       return;
@@ -1233,89 +1172,10 @@ export class MothSystem {
     return timeHungry || signalHungry || tiredHungry;
   }
 
-
-  isActionLocked(nextKey = "") {
-    if (!this.actionLockedKey) return false;
-    if (this.currentActionKey !== this.actionLockedKey) return false;
-    if (this.getElapsed() >= this.actionLockedUntil) return false;
-    return !nextKey || nextKey !== this.currentActionKey;
-  }
-
-  lockAction(key) {
-    const duration = this.actionDurations.get(key) || 0;
-    if (!duration) return;
-    if (key === "land" || key === "takeoff" || key === "feed") {
-      this.actionLockedKey = key;
-      this.actionLockedUntil = this.getElapsed() + Math.max(0.08, duration - 0.02);
-    }
-  }
-
-  clearActionLock(key = "") {
-    if (!key || this.actionLockedKey === key) {
-      this.actionLockedKey = "";
-      this.actionLockedUntil = 0;
-    }
-  }
-
-  getCoverAccentPalette(index) {
-    if (typeof index !== "number") return this.defaultPalette;
-    return this.coverAccentPalettes[index] || this.defaultPalette;
-  }
-
-  getMoodPalette(elapsed, hoveredIndex = null) {
-    if (this.currentPerchTarget?.type === "cover" && (this.mode === "landed" || this.mode === "landing" || this.mode === "approachCover")) {
-      return this.getCoverAccentPalette(this.currentPerchTarget.coverIndex);
-    }
-    if ((typeof hoveredIndex === "number") && this.mode === "approachCover") {
-      return this.getCoverAccentPalette(hoveredIndex);
-    }
-    if (this.mode === "restHome" || this.currentPerchTarget?.type === "home") {
-      return this.homePalette;
-    }
-    if (this.mode === "inspectVoid" || this.corruption > 0.44) {
-      return this.corruptedPalette;
-    }
-    if (this.mode === "cursorCurious" || this.mode === "cursorInteract") {
-      return this.cursorPalette;
-    }
-    if (this.mode === "companion") {
-      return this.companionPalette;
-    }
-    if (this.isHungry(elapsed) || this.mode === "flee") {
-      return this.sadPalette;
-    }
-    return this.defaultPalette;
-  }
-
-  updatePaletteTransition(delta, elapsed, hoveredIndex = null) {
-    const target = this.getMoodPalette(elapsed, hoveredIndex);
-    const alpha = 1.0 - Math.exp(-delta * (this.cfg.paletteTransitionSpeed || 4.2));
-
-    for (let i = 0; i < target.length; i += 1) {
-      if (!this.currentPalette[i]) this.currentPalette[i] = target[i].clone();
-      this.currentPalette[i].lerp(target[i], alpha);
-    }
-
-    const applyUniformPalette = (material) => {
-      const paletteUniform = material?.uniforms?.uPalette?.value;
-      if (!Array.isArray(paletteUniform)) return;
-      for (let i = 0; i < this.currentPalette.length; i += 1) {
-        if (!paletteUniform[i]) paletteUniform[i] = new THREE.Color();
-        paletteUniform[i].copy(this.currentPalette[i]);
-      }
-    };
-
-    applyUniformPalette(this.binaryMaterial);
-    applyUniformPalette(this.outlineMaterial);
-    applyUniformPalette(this.trail?.material);
-    applyUniformPalette(this.voidMaterial);
-  }
-
   playLoop(key) {
     const next = this.getAction(key);
     if (!next) return false;
     if (this.currentActionKey === key && next.isRunning()) return true;
-    if (this.isActionLocked(key)) return false;
 
     const fade = this.cfg.animationFadeLoop || 0.22;
     const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
@@ -1343,7 +1203,6 @@ export class MothSystem {
     });
 
     this.currentActionKey = key;
-    this.lockAction(key);
     return true;
   }
 
@@ -1353,7 +1212,6 @@ export class MothSystem {
       if (followUp) this.playLoop(followUp);
       return false;
     }
-    if (this.isActionLocked(key) && key !== this.currentActionKey) return false;
 
     const fade = this.cfg.animationFadeOnce || 0.16;
     const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
@@ -1381,7 +1239,6 @@ export class MothSystem {
     });
 
     this.currentActionKey = key;
-    this.lockAction(key);
     return true;
   }
 
@@ -1585,39 +1442,24 @@ export class MothSystem {
 
     this.residueGroup.clear();
     this.residueSprites = [];
-    this.residueMaterials = [];
-
     if (this.coverResidue.length !== desired) {
       this.coverResidue = Array.from({ length: desired }, (_, index) => clamp01(this.coverResidue[index] ?? (index === 2 ? 0.28 : 0.12)));
     }
 
-    const width = this.coverSize.width * (this.cfg.residuePlaneWidthScale || 1.02);
-    const height = this.coverSize.height * (this.cfg.residuePlaneHeightScale || 1.02);
-
     for (let i = 0; i < desired; i += 1) {
-      const texture = this.messTexture.clone();
-      texture.needsUpdate = true;
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(1.0, 1.0);
-
-      const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        color: new THREE.Color(i === 2 ? "#b47dff" : "#8cecff"),
+      const material = new THREE.SpriteMaterial({
+        map: this.messTexture,
+        color: new THREE.Color(i === 2 ? "#ff7dd1" : "#8cecff"),
         transparent: true,
         opacity: 0,
-        side: THREE.DoubleSide,
         depthWrite: false,
-        depthTest: true,
         blending: THREE.AdditiveBlending
       });
-
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
-      mesh.renderOrder = 4;
-      mesh.visible = this.visible;
-      this.residueGroup.add(mesh);
-      this.residueSprites.push(mesh);
-      this.residueMaterials.push(material);
+      const sprite = new THREE.Sprite(material);
+      sprite.renderOrder = 4;
+      sprite.visible = this.visible;
+      this.residueGroup.add(sprite);
+      this.residueSprites.push(sprite);
     }
   }
 
@@ -1944,13 +1786,10 @@ export class MothSystem {
 
   updateResidueVisuals(delta, coverWorldData, hoveredIndex) {
     if (!Array.isArray(coverWorldData) || !this.residueSprites.length) return;
-
-    const elapsed = this.getElapsed();
-
     for (let i = 0; i < this.residueSprites.length; i += 1) {
       const cover = coverWorldData[i];
-      const mesh = this.residueSprites[i];
-      if (!cover || !mesh) continue;
+      const sprite = this.residueSprites[i];
+      if (!cover || !sprite) continue;
 
       const bias = i === 2 ? 1.22 : (i === 0 ? 0.86 : 0.96);
       const cleanse = hoveredIndex === i || (this.currentPerchTarget?.type === "cover" && this.currentPerchTarget.coverIndex === i);
@@ -1960,25 +1799,12 @@ export class MothSystem {
 
       this.coverResidue[i] = clamp01((this.coverResidue[i] || 0) + delta * deltaValue);
 
-      const normal = this.temp.c.copy(cover.right).cross(cover.up).normalize();
-      const toCamera = this.temp.d.copy(this.camera.position).sub(cover.position);
-      if (normal.dot(toCamera) < 0) normal.multiplyScalar(-1);
-
-      mesh.visible = this.visible && cover.visible && this.coverResidue[i] > 0.001;
-      mesh.position.copy(cover.position).addScaledVector(normal, this.cfg.residueZOffset || 0.006);
-      this.temp.m.makeBasis(cover.right.clone().normalize(), cover.up.clone().normalize(), normal);
-      mesh.quaternion.setFromRotationMatrix(this.temp.m);
-      mesh.scale.set(1, 1, 1);
-
-      const accentPalette = this.getCoverAccentPalette(i);
-      const accentColor = accentPalette[3] || accentPalette[0] || new THREE.Color("#8cecff");
-      mesh.material.color.copy(accentColor).multiplyScalar(cleanse ? 0.95 : 1.22);
-      mesh.material.opacity = this.coverResidue[i] * (this.cfg.residueOpacityMax || 0.72) * (cleanse ? 0.36 : 1.0);
-
-      if (mesh.material.map) {
-        mesh.material.map.offset.x = (elapsed * (this.cfg.residueScrollSpeedX || 0.045) + i * 0.17) % 1;
-        mesh.material.map.offset.y = (elapsed * (this.cfg.residueScrollSpeedY || 0.065) + i * 0.09) % 1;
-      }
+      sprite.visible = this.visible && cover.visible;
+      sprite.position.copy(cover.position).addScaledVector(cover.up, this.coverSize.height * 0.44 + 0.03);
+      sprite.position.addScaledVector(cover.right, Math.sin(this.getElapsed() * 0.7 + i) * 0.02);
+      const scale = THREE.MathUtils.lerp(this.cfg.residueScaleMin || 0.1, this.cfg.residueScaleMax || 0.26, this.coverResidue[i]);
+      sprite.scale.setScalar(scale);
+      sprite.material.opacity = this.coverResidue[i] * (this.cfg.residueOpacityMax || 0.55) * (cleanse ? 0.45 : 1.0);
     }
   }
 
@@ -2336,14 +2162,13 @@ export class MothSystem {
     const toCamera = this.temp.d.copy(this.camera.position).sub(cover.position);
     if (normal.dot(toCamera) < 0) normal.multiplyScalar(-1);
 
-    const verticalRatio = this.cfg.coverPerchVerticalRatio ?? 0.10;
-    const verticalOffset = this.coverSize.height * verticalRatio + (this.cfg.coverPerchLift || 0.015);
+    const lift = this.coverSize.height * 0.5 + this.cfg.coverPerchLift;
     const position = new THREE.Vector3()
       .copy(cover.position)
-      .addScaledVector(cover.up, verticalOffset)
-      .addScaledVector(normal, this.cfg.coverPerchForward || 0.018);
+      .addScaledVector(cover.up, lift)
+      .addScaledVector(normal, this.cfg.coverPerchForward);
 
-    return { position, normal, up: cover.up.clone(), right: cover.right.clone() };
+    return { position, normal, up: cover.up.clone() };
   }
 
   getVoidInspectTarget() {
@@ -2402,8 +2227,6 @@ export class MothSystem {
       this.vitality = clamp01(this.vitality - delta * this.cfg.vitalityDrainPerSecond);
     }
 
-    this.updatePaletteTransition(delta, elapsed, hoveredIndex);
-
     const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
     const sadness = clamp01((1 - this.signalLevel) * 0.65 + this.fatigue * 0.35);
     const corruptionPulse = this.corruption * (0.18 + Math.abs(Math.sin(elapsed * 7.0)) * 0.22);
@@ -2415,7 +2238,7 @@ export class MothSystem {
     if (this.binaryMaterial) {
       this.binaryMaterial.uniforms.uTime.value = elapsed;
       this.binaryMaterial.uniforms.uSadness.value = sadness;
-      this.binaryMaterial.uniforms.uAlphaBoost.value = 1.08 + this.signalLevel * 0.42 + this.trust * 0.18;
+      this.binaryMaterial.uniforms.uAlphaBoost.value = 0.82 + this.signalLevel * 0.36 + this.trust * 0.12;
       this.binaryMaterial.uniforms.uMotion.value = motion + this.searchUrgency * 0.12 + this.corruption * 0.08;
       this.binaryMaterial.uniforms.uBrightness.value = (this.cfg.binaryBrightness || 1.42) * brightnessFactor;
     }
@@ -2424,8 +2247,8 @@ export class MothSystem {
       this.outlineMaterial.uniforms.uTime.value = elapsed;
       this.outlineMaterial.uniforms.uSadness.value = sadness;
       this.outlineMaterial.uniforms.uMotion.value = motion + this.corruption * 0.08;
-      this.outlineMaterial.uniforms.uAlpha.value = 0.90 + this.signalLevel * 0.34;
-      this.outlineMaterial.uniforms.uBrightness.value = (this.cfg.outlineBrightness || 3.05) * (0.96 + this.trust * 0.24 + this.corruption * 0.12);
+      this.outlineMaterial.uniforms.uAlpha.value = 0.72 + this.signalLevel * 0.28;
+      this.outlineMaterial.uniforms.uBrightness.value = (this.cfg.outlineBrightness || 2.05) * (0.85 + this.trust * 0.2 + this.corruption * 0.12);
     }
 
     this.updateVoidVisual(elapsed, delta);
@@ -2830,8 +2653,6 @@ export class MothSystem {
     if (!this.playOnce("takeoff", this.voidState?.active ? "fly" : this.getPatrolFlightAction())) {
       this.currentPerchTarget = null;
       this.takeoffState = null;
-    this.actionLockedKey = "";
-    this.actionLockedUntil = 0;
       this.perched = false;
       this.root.position.add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight || 0.2, 0));
       this.mode = this.voidState?.active ? "approachVoid" : "patrol";
@@ -2859,8 +2680,6 @@ export class MothSystem {
     this.mode = perchType === "home" ? "restHome" : "landed";
     this.perched = true;
     this.takeoffState = null;
-    this.actionLockedKey = "";
-    this.actionLockedUntil = 0;
     this.velocity.set(0, 0, 0);
     this.root.position.copy(targetInfo.position);
 
@@ -3053,10 +2872,8 @@ export class MothSystem {
 
     const target = this.temp.d.copy(direction).normalize();
 
-    if (this.velocity.lengthSq() > 0.0004 && this.mode !== "landing" && this.mode !== "landed" && this.mode !== "restHome") {
-      target.copy(this.velocity).normalize();
-    } else if (this.frameMotionDirection && this.frameMotionDirection.lengthSq() > 0.0001) {
-      target.copy(this.frameMotionDirection).normalize();
+    if (this.frameMotionDirection && this.frameMotionDirection.lengthSq() > 0.0001) {
+      target.lerp(this.frameMotionDirection, 0.82).normalize();
     }
 
     const smoothing = 1.0 - Math.exp(-this.lastDelta * (this.cfg.headingSmoothing || 10.0));
@@ -3064,14 +2881,14 @@ export class MothSystem {
     if (!this.smoothedHeading || this.smoothedHeading.lengthSq() <= 0.0001) {
       this.smoothedHeading = target.clone();
     } else {
-      if (this.smoothedHeading.dot(target) < -0.2) {
+      if (this.smoothedHeading.dot(target) < 0) {
         this.smoothedHeading.copy(this.forward);
       }
 
       const speedSq = this.velocity.lengthSq();
       const minSpeedSq = Math.pow(this.cfg.headingMinSpeed || 0.08, 2);
-      const blend = speedSq < minSpeedSq ? smoothing * 0.28 : smoothing;
-      this.smoothedHeading.lerp(target, THREE.MathUtils.clamp(blend, 0.03, 0.48)).normalize();
+      const blend = speedSq < minSpeedSq ? smoothing * 0.32 : smoothing;
+      this.smoothedHeading.lerp(target, THREE.MathUtils.clamp(blend, 0.02, 0.42)).normalize();
     }
 
     const angle = Math.acos(THREE.MathUtils.clamp(this.forward.dot(this.smoothedHeading), -1, 1));
@@ -3253,7 +3070,7 @@ export class MothSystem {
     this.log("binary void opened", "ALRT");
   }
 
-   clearVoid() {
+  clearVoid() {
     if (!this.voidState) return;
     this.voidState.active = false;
     this.voidState.energy = 0;
