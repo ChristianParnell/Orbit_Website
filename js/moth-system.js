@@ -54,36 +54,36 @@ const DEFAULT_CONFIG = {
   patrolViewMargin: 0.78,
   patrolViewYMin: -0.48,
   patrolViewYMax: 0.46,
-  patrolRepickMin: 2.8,
-  patrolRepickMax: 5.2,
+  patrolRepickMin: 1.8,
+  patrolRepickMax: 3.4,
   patrolRecoveryMargin: 0.96,
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
 
 
-  flySpeed: 1.18,
-  diveSpeed: 1.46,
-  flySadSpeedScale: 0.72,
-  approachSlowRadius: 0.68,
-  turnLerp: 0.14,
-  turnLerpFast: 0.20,
-  turnResponse: 7.0,
-  turnResponseFast: 10.0,
+  flySpeed: 1.55,
+  diveSpeed: 2.00,
+  flySadSpeedScale: 0.62,
+  approachSlowRadius: 0.42,
+  turnLerp: 0.22,
+  turnLerpFast: 0.28,
+  turnResponse: 12.0,
+  turnResponseFast: 17.0,
   headingTargetBlend: 0.18,
   headingVelocityBlend: 0.82,
   headingVelocityMin: 0.035,
   headingMinSpeed: 0.08,
   headingDeadzone: 0.03,
-  headingSmoothing: 5.4,
-  velocityResponse: 2.25,
+  headingSmoothing: 10.0,
+  velocityResponse: 5.4,
   patrolVisibilityGrace: 0.18,
   recoveryVisibilityGrace: 0.22,
   animationFadeLoop: 0.22,
   animationFadeOnce: 0.16,
-  visualBankMax: 0.10,
-  visualBankResponse: 3.6,
-  visualPitchMax: 0.055,
-  visualPitchResponse: 3.2,
+  visualBankMax: 0.24,
+  visualBankResponse: 7.5,
+  visualPitchMax: 0.12,
+  visualPitchResponse: 6.0,
 
   hoverPerchDelay: 0.10,
   perchDistance: 0.12,
@@ -145,35 +145,20 @@ const DEFAULT_CONFIG = {
   pointerCuriosityCooldown: 0.18,
   investigateCoverDuration: 1.15,
   investigateCoverRadius: 0.20,
-  investigateCoverSpeed: 2.0,
+  investigateCoverSpeed: 3.2,
   perchEdgeWalk: 0.055,
   shelterCoverIndex: 0,
   shelterAvoidCoverIndex: 2,
   shelterLandDistance: 0.16,
   nestTrustMin: 0.48,
   voidCautionOrbitDuration: 1.35,
-  voidCautionOrbitRadius: 0.26,
+  voidCautionOrbitRadius: 0.32,
   voidCorruptionGain: 0.055,
   voidCorruptionDecay: 0.018,
   voidCorruptionFleeThreshold: 0.82,
   trailHungryScale: 0.46,
   trailFedScale: 1.32,
   visualHungryPatchiness: 0.42,
-
-  // [MOTH STABILITY PATCH 2026-04-27]
-  // These values intentionally remove scene jitter while preserving readable creature behaviour.
-  movementJitterScale: 0.0,
-  restlessTargetDriftScale: 0.18,
-  fleeTwitchScale: 0.0,
-  pointerBreatheScale: 0.22,
-  patrolEarlyRepickEnabled: false,
-  smoothMaxAcceleration: 2.35,
-  smoothMaxSpeed: 1.38,
-  arrivalStopDistance: 0.045,
-  arrivalBrakeResponse: 7.0,
-  recoveryAssistScale: 0.45,
-  softBoundaryClamp: true,
-  softBoundaryStrength: 0.18,
   debug: false
 };
 
@@ -863,10 +848,6 @@ export class MothSystem {
     this.boundInteractionPointerDown = (event) => this.handleInteractionPointerDown(event);
     this.boundInteractionWheel = (event) => this.handleInteractionWheel(event);
 
-    // [MOTH RESCUE PATCH 2026-04-27]
-    // The previous stability patch accidentally removed these HUD fields before initDebugOverlay().
-    // That made addEventListener receive an undefined key handler and stopped the moth constructor,
-    // which is why the moth + debug HUD both disappeared. These are initialized before the HUD is built.
     this.debugOverlayVisible = this.cfg.debugOverlay !== false;
     this.debugOverlayElement = null;
     this.debugOverlayBody = null;
@@ -1117,15 +1098,14 @@ export class MothSystem {
     if (!this.fleeState) this.startFleeOverwhelmed(elapsed, "panic recovery");
 
     const target = this.fleeState?.target || this.currentPatrolAnchor;
-    const twitchScale = this.cfg.fleeTwitchScale ?? 0.0;
     const twitch = new THREE.Vector3(
-      Math.sin(elapsed * 4.2) * 0.045 * twitchScale,
-      Math.sin(elapsed * 5.0) * 0.034 * twitchScale,
-      Math.cos(elapsed * 4.7) * 0.045 * twitchScale
+      Math.sin(elapsed * 17.0) * 0.045,
+      Math.sin(elapsed * 23.0) * 0.034,
+      Math.cos(elapsed * 19.0) * 0.045
     );
 
     const fleeTarget = target.clone().add(twitch);
-    this.moveToward(delta, fleeTarget, this.cfg.flySpeed * 1.08);
+    this.moveToward(delta, fleeTarget, this.cfg.flySpeed * 1.28);
     this.lookAtDirection(this.getTravelFacingDirection(fleeTarget), this.cfg.turnLerpFast);
     this.playLoop(this.getPatrolFlightAction());
 
@@ -1238,7 +1218,7 @@ export class MothSystem {
     }
 
     const target = this.pointerWorldTarget.clone();
-    const breathe = Math.sin(elapsed * 1.8) * 0.035 * (this.cfg.pointerBreatheScale ?? 0.22);
+    const breathe = Math.sin(elapsed * 3.1) * 0.035;
     target.y += breathe;
 
     this.moveToward(delta, target, this.getPatrolFlightSpeed(elapsed) * 0.84);
@@ -1348,14 +1328,6 @@ export class MothSystem {
   initDebugOverlay() {
     if (typeof document === "undefined") return;
 
-    // [MOTH RESCUE PATCH 2026-04-27]
-    // Defensive initialization so the HUD can never break the moth boot sequence again.
-    if (typeof this.debugOverlayVisible !== "boolean") this.debugOverlayVisible = this.cfg.debugOverlay !== false;
-    if (!Array.isArray(this.debugHistory)) this.debugHistory = [];
-    if (!this.boundDebugKeyHandler) this.boundDebugKeyHandler = (event) => this.handleDebugKey(event);
-    if (!this.lastDebugMode) this.lastDebugMode = this.mode || "boot";
-    if (!this.lastDebugAction) this.lastDebugAction = this.currentActionKey || "none";
-
     let panel = document.getElementById("orbit-moth-debug-hud");
     if (!panel) {
       panel = document.createElement("aside");
@@ -1419,7 +1391,6 @@ export class MothSystem {
   }
 
   pushDebugLine(level, message) {
-    if (!Array.isArray(this.debugHistory)) this.debugHistory = [];
     const safeLevel = String(level || "MOTH");
     const safeMessage = String(message || "");
     this.debugHistory.unshift({ level: safeLevel, message: safeMessage, time: this.getElapsed ? this.getElapsed() : 0 });
@@ -1432,7 +1403,6 @@ export class MothSystem {
   }
 
   updateDebugOverlay(elapsed, hoveredIndex = -1) {
-    if (typeof this.debugOverlayVisible !== "boolean") this.debugOverlayVisible = this.cfg.debugOverlay !== false;
     if (!this.debugOverlayBody || !this.debugOverlayVisible) return;
 
     const action = this.currentActionKey || "none";
@@ -1801,6 +1771,15 @@ export class MothSystem {
     this.flipBusy = false;
     this.backflipState = null;
     this.backflipGuardUntil = 0;
+
+    this.debugOverlayVisible = this.cfg.debugOverlay !== false;
+    this.debugOverlayElement = null;
+    this.debugOverlayBody = null;
+    this.debugOverlayLog = null;
+    this.debugHistory = [];
+    this.lastDebugMode = this.mode;
+    this.lastDebugAction = this.currentActionKey || "none";
+    this.boundDebugKeyHandler = (event) => this.handleDebugKey(event);
 
     const next = this.pendingActionKey || this.getPatrolFlightAction();
     this.pendingActionKey = "";
@@ -2500,9 +2479,7 @@ export class MothSystem {
     }
 
     if (this.mode === "backflip") {
-      // [MOTH STABILITY PATCH 2026-04-27]
-      // Backflip is now 100% animation-only. No code-driven movement, rotation,
-      // position freezing, push, lift, or visual pose correction is applied here.
+      this.velocity.set(0, 0, 0);
       this.recoveryAssist = false;
 
       const backflipAction = this.getAction("backflip");
@@ -2673,9 +2650,7 @@ export class MothSystem {
       }
 
       const hungryRestless = this.hunger > 0.55;
-      const repickEarly = this.cfg.patrolEarlyRepickEnabled === true
-        && hungryRestless
-        && Math.sin(elapsed * 1.7) > 0.96;
+      const repickEarly = hungryRestless && Math.sin(elapsed * 1.7) > 0.92;
 
       if (elapsed >= this.nextPatrolDecisionAt || this.root.position.distanceTo(this.currentPatrolAnchor) < 0.18 || anchorLostLongEnough || repickEarly) {
         this.pickNextPatrolPoint();
@@ -2686,15 +2661,13 @@ export class MothSystem {
       }
 
       const patrolTarget = this.currentPatrolAnchor.clone();
-      const driftScale = this.cfg.restlessTargetDriftScale ?? 0.18;
-      if (hungryRestless && driftScale > 0) {
-        // [MOTH STABILITY PATCH 2026-04-27] Hungry still feels searching, but uses slow drift instead of jitter.
-        patrolTarget.x += Math.sin(elapsed * 1.55) * 0.08 * this.hunger * driftScale;
-        patrolTarget.y += Math.cos(elapsed * 1.25) * 0.04 * this.hunger * driftScale;
-        patrolTarget.z += Math.cos(elapsed * 1.70) * 0.08 * this.hunger * driftScale;
+      if (hungryRestless) {
+        patrolTarget.x += Math.sin(elapsed * 5.7) * 0.08 * this.hunger;
+        patrolTarget.y += Math.cos(elapsed * 4.8) * 0.04 * this.hunger;
+        patrolTarget.z += Math.cos(elapsed * 6.3) * 0.08 * this.hunger;
       } else if (this.mood === "fed / bright") {
-        patrolTarget.x += Math.sin(elapsed * 0.55) * 0.035;
-        patrolTarget.z += Math.cos(elapsed * 0.55) * 0.035;
+        patrolTarget.x += Math.sin(elapsed * 0.85) * 0.05;
+        patrolTarget.z += Math.cos(elapsed * 0.85) * 0.05;
       }
 
       this.moveToward(delta, patrolTarget, this.getPatrolFlightSpeed(elapsed));
@@ -2705,69 +2678,43 @@ export class MothSystem {
   }
 
   moveToward(delta, target, baseSpeed) {
-    // [MOTH STABILITY PATCH 2026-04-27]
-    // Stable arrival movement. This replaces the old high-frequency jitter injection with
-    // acceleration-limited velocity, soft arrival braking, and optional very-low-frequency drift.
-    if (this.mode === "backflip") return;
-
-    const dt = THREE.MathUtils.clamp(delta || 0, 0.001, 0.05);
-    const targetPoint = this.temp.a.copy(target);
-    const toTarget = this.temp.e.copy(targetPoint).sub(this.root.position);
+    const toTarget = this.temp.e.copy(target).sub(this.root.position);
     const distance = toTarget.length();
-    const stopDistance = this.cfg.arrivalStopDistance ?? 0.045;
 
-    if (distance <= stopDistance) {
-      const brake = 1.0 - Math.exp(-dt * (this.cfg.arrivalBrakeResponse || 7.0));
-      this.velocity.lerp(this.temp.b.set(0, 0, 0), brake);
-      if (this.velocity.lengthSq() < 0.000004) this.velocity.set(0, 0, 0);
-      this.root.position.addScaledVector(this.velocity, dt);
-      return;
-    }
+    if (distance <= 0.0001) return;
 
     const dir = toTarget.normalize();
-    const approachRadius = Math.max(stopDistance + 0.001, this.cfg.approachSlowRadius || 0.68);
-    const arrive01 = smooth01(THREE.MathUtils.clamp(distance / approachRadius, 0, 1));
-    const slowMul = THREE.MathUtils.lerp(0.12, 1.0, arrive01);
-    const maxSpeed = this.cfg.smoothMaxSpeed || Math.max(0.85, this.cfg.flySpeed || 1.18);
-    const speed = Math.min(baseSpeed * slowMul, maxSpeed);
-    const desired = this.temp.b.copy(dir).multiplyScalar(speed);
+    const slowMul = distance < this.cfg.approachSlowRadius ? THREE.MathUtils.mapLinear(distance, 0, this.cfg.approachSlowRadius, 0.18, 1.0) : 1.0;
+    const speed = baseSpeed * slowMul;
+    const desired = dir.multiplyScalar(speed);
 
-    const jitterScale = this.cfg.movementJitterScale ?? 0.0;
-    if (jitterScale > 0.0001 && this.mode !== "landed" && this.mode !== "landing") {
-      const elapsed = this.getElapsed();
-      const restless = this.hunger > 0.55 ? this.hunger : 0;
-      const corrupt = this.corruption > 0.45 ? this.corruption * 0.45 : 0;
-      const strength = jitterScale * (restless + corrupt);
-      desired.x += Math.sin(elapsed * 2.1 + this.root.position.y) * strength;
-      desired.y += Math.sin(elapsed * 1.7 + this.root.position.x) * strength * 0.45;
-      desired.z += Math.cos(elapsed * 2.3 + this.root.position.z) * strength;
+    // [MOTH PATCH 2026-04-27] Mood-based micro-motion:
+    // hungry = broken search twitches, fed = smoother elegant drift, overwhelmed = nervous jitter.
+    const elapsed = this.getElapsed();
+    const jitterStrength =
+      (this.hunger > 0.55 ? this.hunger * 0.105 : 0)
+      + (this.mode === "fleeOverwhelmed" ? 0.15 : 0)
+      + (this.corruption > 0.45 ? this.corruption * 0.055 : 0);
+
+    if (jitterStrength > 0.001) {
+      desired.x += Math.sin(elapsed * 18.7 + this.root.position.y * 3.0) * jitterStrength;
+      desired.y += Math.sin(elapsed * 23.1 + this.root.position.x * 2.0) * jitterStrength * 0.55;
+      desired.z += Math.cos(elapsed * 16.2 + this.root.position.z * 2.0) * jitterStrength;
     }
 
-    const acceleration = this.cfg.smoothMaxAcceleration || 2.35;
-    const desiredDelta = this.temp.c.copy(desired).sub(this.velocity);
-    const maxDelta = Math.max(0.001, acceleration * dt);
-    if (desiredDelta.length() > maxDelta) desiredDelta.setLength(maxDelta);
-    this.velocity.add(desiredDelta);
-    this.velocity.clampLength(0, maxSpeed);
+    const response = (this.mood === "fed / bright" && this.mode === "patrol")
+      ? (this.cfg.velocityResponse || 5.4) * 0.72
+      : (this.cfg.velocityResponse || 5.4);
+
+    this.velocity.lerp(desired, 1.0 - Math.exp(-delta * response));
 
     if (this.recoveryAssist) {
-      const recovery = this.getRecoveryPatrolPoint()
-        .sub(this.root.position)
-        .multiplyScalar((this.cfg.patrolRecoverySpeedScale || 1.2) * (this.cfg.recoveryAssistScale ?? 0.45) * dt);
+      const recovery = this.getRecoveryPatrolPoint().sub(this.root.position).multiplyScalar(this.cfg.patrolRecoverySpeedScale * delta);
       this.velocity.add(recovery);
-      this.velocity.clampLength(0, maxSpeed);
     }
 
-    this.root.position.addScaledVector(this.velocity, dt);
-
-    if (this.cfg.softBoundaryClamp !== false && (this.mode === "patrol" || this.mode === "followPointer" || this.mode === "fleeOverwhelmed")) {
-      const before = this.root.position.clone();
-      this.clampPointNearCenter(this.temp.d.copy(this.root.position));
-      this.root.position.lerp(this.temp.d, this.cfg.softBoundaryStrength ?? 0.18);
-      if (before.distanceToSquared(this.root.position) > 0.0001) {
-        this.velocity.multiplyScalar(0.92);
-      }
-    }
+    this.root.position.addScaledVector(this.velocity, delta);
+    this.clampPointNearCenter(this.root.position);
   }
 
   updateVoidInspect(delta, elapsed, voidTarget) {
@@ -2779,9 +2726,8 @@ export class MothSystem {
     );
 
     const hoverPos = voidTarget.position.clone().add(wobble);
-    const inspectAlpha = 1.0 - Math.exp(-delta * 4.5);
-    this.root.position.lerp(hoverPos, inspectAlpha);
-    this.lookAtPoint(voidTarget.lookAt, new THREE.Vector3(0, 1, 0), 0.12);
+    this.root.position.lerp(hoverPos, 0.18);
+    this.lookAtPoint(voidTarget.lookAt, new THREE.Vector3(0, 1, 0), 0.16);
 
     if (this.currentActionKey !== "feed") this.playLoop("feed");
 
@@ -2862,8 +2808,17 @@ export class MothSystem {
     }
 
     if (this.mode === "backflip") {
-      // [MOTH STABILITY PATCH 2026-04-27]
-      // Do not touch visualRoot rotation during F_Backflip. The FBX clip owns the motion.
+      const bankAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualBankResponse || 7.5));
+      const pitchAlpha = 1.0 - Math.exp(-delta * (this.cfg.visualPitchResponse || 6.0));
+
+      this.visualBank = THREE.MathUtils.lerp(this.visualBank, 0, bankAlpha);
+      this.visualPitch = THREE.MathUtils.lerp(this.visualPitch, 0, pitchAlpha);
+
+      this.visualRoot.rotation.set(
+        this.baseVisualPitch + this.visualPitch,
+        this.baseVisualYaw,
+        this.baseVisualRoll + this.visualBank
+      );
       return;
     }
 
@@ -3151,21 +3106,26 @@ export class MothSystem {
 
     const clipDuration = backflipAction.getClip?.().duration || this.actionDurations.get("backflip") || 0;
 
-    console.log("[Moth] Playing animation-only backflip clip.", { duration: clipDuration });
-    this.pushDebugLine("ANIM", "F_Backflip animation only · no code motion");
+    console.log("[Moth] Playing backflip clip.", { duration: clipDuration });
 
-    // [MOTH STABILITY PATCH 2026-04-27]
-    // 100% animation-only backflip:
-    // - no root.position change
-    // - no root.quaternion change
-    // - no forward/up/smoothedHeading correction
-    // - no push, lift, procedural flip, or velocity reset
     this.flipBusy = true;
     this.perched = false;
     this.mode = "backflip";
     this.takeoffState = null;
     this.backflipGuardUntil = this.getElapsed() + Math.max(clipDuration, 0.1);
-    this.backflipState = { duration: clipDuration };
+    this.backflipState = {
+      position: this.root.position.clone(),
+      quaternion: this.root.quaternion.clone(),
+      forward: this.forward.clone(),
+      up: this.orientationUp.clone(),
+      duration: clipDuration
+    };
+    this.root.position.copy(this.backflipState.position);
+    this.root.quaternion.copy(this.backflipState.quaternion);
+    this.forward.copy(this.backflipState.forward);
+    this.orientationUp.copy(this.backflipState.up);
+    this.smoothedHeading.copy(this.forward);
+    this.velocity.set(0, 0, 0);
 
     if (!this.playOnce("backflip", this.getPatrolFlightAction())) {
       this.flipBusy = false;
