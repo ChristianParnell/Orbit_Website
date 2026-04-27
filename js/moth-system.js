@@ -119,6 +119,46 @@ const DEFAULT_CONFIG = {
   vitalityRecoveryPerSecond: 0.01,
   offlineDrainPerHour: 0.05,
   sadThreshold: 0.30,
+
+  // [MOTH PATCH 2026-04-27] Generative behaviour tuning.
+  // These values make the moth react to user activity instead of only following fixed patrol points.
+  interactionTracking: true,
+  moodUpdateRate: 0.12,
+  signalIdleDecay: 0.055,
+  signalHoverGain: 0.52,
+  signalPointerGain: 0.22,
+  hungerSignalWeight: 0.36,
+  fatigueFlightGain: 0.055,
+  fatigueRestRecovery: 0.18,
+  fatigueIdleRecovery: 0.055,
+  fatigueShelterThreshold: 0.72,
+  overwhelmAggressionThreshold: 0.58,
+  overwhelmFatigueThreshold: 0.88,
+  overwhelmCorruptionThreshold: 0.72,
+  overwhelmDurationMin: 1.35,
+  overwhelmDurationMax: 2.75,
+  trustGainGentle: 0.035,
+  trustLossAggressive: 0.12,
+  pointerCuriosityTrustMin: 0.34,
+  pointerCuriositySignalMin: 0.22,
+  pointerCuriosityDistance: 0.34,
+  pointerCuriosityCooldown: 0.18,
+  investigateCoverDuration: 1.15,
+  investigateCoverRadius: 0.20,
+  investigateCoverSpeed: 3.2,
+  perchEdgeWalk: 0.055,
+  shelterCoverIndex: 0,
+  shelterAvoidCoverIndex: 2,
+  shelterLandDistance: 0.16,
+  nestTrustMin: 0.48,
+  voidCautionOrbitDuration: 1.35,
+  voidCautionOrbitRadius: 0.32,
+  voidCorruptionGain: 0.055,
+  voidCorruptionDecay: 0.018,
+  voidCorruptionFleeThreshold: 0.82,
+  trailHungryScale: 0.46,
+  trailFedScale: 1.32,
+  visualHungryPatchiness: 0.42,
   debug: false
 };
 
@@ -777,6 +817,37 @@ export class MothSystem {
     this.backflipState = null;
     this.backflipGuardUntil = 0;
 
+    // [MOTH PATCH 2026-04-27] Needs / wants / interaction state.
+    // Kept inside the existing visible FBX system so the actual moth mesh and animation clips stay intact.
+    this.mood = "waking";
+    this.behaviourNote = "booting";
+    this.hunger = clamp01(1.0 - this.vitality);
+    this.signal = 0.36;
+    this.fatigue = 0.10;
+    this.trust = clamp01(this.saved.trust ?? 0.48);
+    this.corruption = clamp01(this.saved.corruption ?? 0);
+    this.aggression = 0;
+    this.pointerEnergy = 0;
+    this.pointerGentle = 0;
+    this.scrollEnergy = 0;
+    this.inputEnergy = 0;
+    this.lastInputAt = -999;
+    this.lastPointerEventAt = -999;
+    this.lastPointerClient = { x: 0, y: 0 };
+    this.pointerWorldTarget = new THREE.Vector3();
+    this.pointerWorldTargetValid = false;
+    this.investigationState = null;
+    this.fleeState = null;
+    this.shelterState = null;
+    this.voidOrbitState = null;
+    this.lastHoveredIndex = -1;
+    this.fragmentCount = Number(this.saved.fragments || 0);
+    this.currentTrailAlpha = this.cfg.trailAlpha;
+    this.lastMoodLogAt = 0;
+    this.boundInteractionPointerMove = (event) => this.handleInteractionPointerMove(event);
+    this.boundInteractionPointerDown = (event) => this.handleInteractionPointerDown(event);
+    this.boundInteractionWheel = (event) => this.handleInteractionWheel(event);
+
     this.debugOverlayVisible = this.cfg.debugOverlay !== false;
     this.debugOverlayElement = null;
     this.debugOverlayBody = null;
@@ -808,6 +879,7 @@ export class MothSystem {
     this.root.position.copy(this.orbitCenter).add(new THREE.Vector3(0.25, 0.95, 0.55));
 
     this.initDebugOverlay();
+    this.initInteractionTracking();
     this.initVoidVisuals();
     this.restoreNests();
     this.applyOfflineDecay();
@@ -817,6 +889,439 @@ export class MothSystem {
   log(message, level = "MOTH") {
     if (this.debug) this.debug(message, level);
     this.pushDebugLine(level, message);
+  }
+
+  // [MOTH PATCH 2026-04-27] User input becomes creature signal.
+  // Gentle mouse movement builds trust/curiosity. Fast movement, scroll-spikes and click-spam make it flee.
+  initInteractionTracking() {
+    if (typeof window === "undefined" || this.cfg.interactionTracking === false) return;
+
+    const target = this.renderer?.domElement || window;
+    target.removeEventListener?.("pointermove", this.boundInteractionPointerMove);
+    target.addEventListener?.("pointermove", this.boundInteractionPointerMove, { passive: true });
+
+    target.removeEventListener?.("pointerdown", this.boundInteractionPointerDown);
+    target.addEventListener?.("pointerdown", this.boundInteractionPointerDown, { passive: true });
+
+    window.removeEventListener("wheel", this.boundInteractionWheel);
+    window.addEventListener("wheel", this.boundInteractionWheel, { passive: true });
+  }
+
+  handleInteractionPointerMove(event) {
+    if (!event || !this.renderer?.domElement) return;
+
+    const now = this.getElapsed();
+    const bounds = this.renderer.domElement.getBoundingClientRect();
+    const x = Number(event.clientX || 0);
+    const y = Number(event.clientY || 0);
+
+    let speed01 = 0;
+    if (this.lastPointerEventAt > -900) {
+      const dt = Math.max(0.016, now - this.lastPointerEventAt);
+      const dx = x - this.lastPointerClient.x;
+      const dy = y - this.lastPointerClient.y;
+      const diagonal = Math.max(1, Math.hypot(bounds.width || 1, bounds.height || 1));
+      speed01 = THREE.MathUtils.clamp((Math.hypot(dx, dy) / diagonal) / dt * 1.8, 0, 1);
+    }
+
+    this.lastPointerClient.x = x;
+    this.lastPointerClient.y = y;
+    this.lastPointerEventAt = now;
+    this.lastInputAt = now;
+
+    const gentle = smooth01(1.0 - Math.abs(speed01 - 0.22) * 3.4);
+    const aggressive = smooth01((speed01 - 0.52) / 0.42);
+
+    this.pointerEnergy = Math.max(this.pointerEnergy, speed01);
+    this.pointerGentle = Math.max(this.pointerGentle, gentle * (1.0 - aggressive));
+    this.aggression = Math.max(this.aggression, aggressive);
+    this.inputEnergy = Math.max(this.inputEnergy, Math.max(speed01, gentle * 0.55));
+
+    this.temp.pointer.x = ((x - bounds.left) / Math.max(1, bounds.width)) * 2 - 1;
+    this.temp.pointer.y = -((y - bounds.top) / Math.max(1, bounds.height)) * 2 + 1;
+    this.temp.raycaster.setFromCamera(this.temp.pointer, this.camera);
+
+    const target = this.pickPointFromCurrentRay(this.cfg.pointerCuriosityDistance || 0.34);
+    if (target) {
+      this.pointerWorldTarget.copy(target);
+      this.pointerWorldTargetValid = true;
+    }
+  }
+
+  handleInteractionPointerDown(event) {
+    if (!event || (typeof event.button === "number" && event.button !== 0)) return;
+    const now = this.getElapsed();
+    this.lastInputAt = now;
+    this.inputEnergy = Math.max(this.inputEnergy, 0.55);
+    this.aggression = Math.max(this.aggression, 0.20);
+  }
+
+  handleInteractionWheel(event) {
+    const amount = Math.abs(Number(event?.deltaY || 0)) / 900;
+    const wheel01 = THREE.MathUtils.clamp(amount, 0, 1);
+    this.scrollEnergy = Math.max(this.scrollEnergy, wheel01);
+    this.inputEnergy = Math.max(this.inputEnergy, wheel01 * 0.85);
+    this.aggression = Math.max(this.aggression, smooth01((wheel01 - 0.36) / 0.54));
+    this.lastInputAt = this.getElapsed();
+  }
+
+  pickPointFromCurrentRay(preferredOffset = 0.34) {
+    const hit = new THREE.Vector3();
+    const ray = this.temp.raycaster.ray;
+    this.temp.sphere.center.copy(this.orbitCenter);
+    this.temp.sphere.radius = this.cfg.voidSpawnRadius;
+
+    if (!ray.intersectSphere(this.temp.sphere, hit)) {
+      if (!ray.intersectPlane(this.temp.plane, hit)) return null;
+    }
+
+    const local = hit.clone().sub(this.orbitCenter);
+    if (local.length() > this.cfg.voidSpawnRadius) local.setLength(this.cfg.voidSpawnRadius);
+    hit.copy(this.orbitCenter).add(local);
+
+    // Do not let the moth chase the exact pointer. Keep a cautious, readable distance.
+    const fromCamera = hit.clone().sub(this.camera.position);
+    if (fromCamera.lengthSq() > 0.0001) hit.addScaledVector(fromCamera.normalize(), -preferredOffset);
+
+    hit.y = THREE.MathUtils.clamp(hit.y, this.orbitCenter.y + this.cfg.patrolHeightMin, this.orbitCenter.y + this.cfg.patrolHeightMax);
+    return this.clampPointNearCenter(hit);
+  }
+
+  decayInteractionEnergy(delta) {
+    const pointerDecay = Math.exp(-delta * 4.5);
+    const gentleDecay = Math.exp(-delta * 2.6);
+    const scrollDecay = Math.exp(-delta * 3.4);
+    const aggressionDecay = Math.exp(-delta * 2.2);
+    const inputDecay = Math.exp(-delta * 2.0);
+
+    this.pointerEnergy *= pointerDecay;
+    this.pointerGentle *= gentleDecay;
+    this.scrollEnergy *= scrollDecay;
+    this.aggression *= aggressionDecay;
+    this.inputEnergy *= inputDecay;
+
+    if (this.getElapsed() - this.lastPointerEventAt > 2.0) {
+      this.pointerWorldTargetValid = false;
+    }
+  }
+
+  updateNeedsAndMood(delta, elapsed, hoveredIndex, hasVoid) {
+    this.decayInteractionEnergy(delta);
+
+    const hoveredSignal = hoveredIndex >= 0 ? this.cfg.signalHoverGain : 0;
+    const pointerSignal = this.pointerGentle * (this.cfg.signalPointerGain || 0.22);
+    const voidSignal = hasVoid ? 0.30 : 0;
+    const activeSignal = hoveredSignal + pointerSignal + voidSignal + this.inputEnergy * 0.16;
+
+    this.signal = clamp01(
+      this.signal
+        + delta * activeSignal
+        - delta * (this.cfg.signalIdleDecay || 0.055) * (activeSignal > 0 ? 0.35 : 1.0)
+    );
+
+    const signalWeight = this.cfg.hungerSignalWeight || 0.36;
+    this.hunger = clamp01((1.0 - this.vitality) * (1.0 - signalWeight) + (1.0 - this.signal) * signalWeight);
+
+    const moving = this.velocity.length() / Math.max(0.001, this.cfg.flySpeed || 1.0);
+    const flightFatigue = moving * (this.cfg.fatigueFlightGain || 0.055);
+    const restRecovery = this.mode === "landed" ? (this.cfg.fatigueRestRecovery || 0.18) : (this.cfg.fatigueIdleRecovery || 0.055);
+    this.fatigue = clamp01(this.fatigue + delta * flightFatigue + this.aggression * delta * 0.10 - delta * restRecovery);
+
+    const gentleTrust = this.pointerGentle > 0.12 && this.aggression < 0.18;
+    this.trust = clamp01(
+      this.trust
+        + delta * (gentleTrust ? (this.cfg.trustGainGentle || 0.035) : 0)
+        - delta * this.aggression * (this.cfg.trustLossAggressive || 0.12)
+    );
+
+    const corruptionGain = (this.mode === "inspectVoid" ? this.cfg.voidCorruptionGain : this.mode === "orbitVoid" ? this.cfg.voidCorruptionGain * 0.32 : 0) || 0;
+    this.corruption = clamp01(this.corruption + delta * corruptionGain - delta * (this.cfg.voidCorruptionDecay || 0.018));
+
+    let nextMood = "patrolling";
+    if (this.mode === "landed" || this.mode === "seekShelter") nextMood = "safe / nesting";
+    else if (this.corruption >= (this.cfg.overwhelmCorruptionThreshold || 0.72)) nextMood = "corrupted";
+    else if (this.aggression >= (this.cfg.overwhelmAggressionThreshold || 0.58) || this.fatigue >= (this.cfg.overwhelmFatigueThreshold || 0.88)) nextMood = "overwhelmed";
+    else if (hasVoid) nextMood = "void drawn";
+    else if (this.hunger > 0.62) nextMood = "hungry / searching";
+    else if (elapsed < this.satiatedUntil || this.vitality > 0.74) nextMood = "fed / bright";
+    else if (hoveredIndex >= 0 || this.pointerGentle > 0.18) nextMood = "curious";
+    else if (this.signal < 0.24) nextMood = "under-stimulated";
+
+    if (nextMood !== this.mood && elapsed - this.lastMoodLogAt > (this.cfg.moodUpdateRate || 0.12)) {
+      this.pushDebugLine("MOOD", `${this.mood} → ${nextMood}`);
+      this.lastMoodLogAt = elapsed;
+    }
+    this.mood = nextMood;
+  }
+
+  setMode(nextMode, reason = "") {
+    if (!nextMode || this.mode === nextMode) return false;
+    const previous = this.mode;
+    this.mode = nextMode;
+    this.behaviourNote = reason || nextMode;
+    this.pushDebugLine("STATE", `${previous} → ${nextMode}${reason ? ` · ${reason}` : ""}`);
+    return true;
+  }
+
+  shouldFleeFromOverwhelm() {
+    if (this.mode === "backflip" || this.mode === "takeoff" || this.mode === "inspectVoid") return false;
+    if (this.corruption >= (this.cfg.voidCorruptionFleeThreshold || 0.82)) return true;
+    if (this.aggression >= (this.cfg.overwhelmAggressionThreshold || 0.58)) return true;
+    return this.fatigue >= (this.cfg.overwhelmFatigueThreshold || 0.88) && this.signal > 0.64;
+  }
+
+  startFleeOverwhelmed(elapsed, reason = "overwhelmed") {
+    const camForward = this.temp.a.set(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+    const camRight = this.temp.b.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+    const side = Math.random() > 0.5 ? 1 : -1;
+
+    const target = new THREE.Vector3()
+      .copy(this.orbitCenter)
+      .addScaledVector(camForward, randomFromRange(0.48, 0.92))
+      .addScaledVector(camRight, side * randomFromRange(0.44, 1.05));
+    target.y = this.orbitCenter.y + randomFromRange(this.cfg.patrolHeightMax * 0.60, this.cfg.patrolHeightMax + 0.20);
+    this.clampPointNearCenter(target);
+
+    this.fleeState = {
+      startedAt: elapsed,
+      endsAt: elapsed + randomFromRange(this.cfg.overwhelmDurationMin, this.cfg.overwhelmDurationMax),
+      target,
+      reason
+    };
+
+    if (this.mode === "landed" || this.mode === "landing") this.startTakeoff(elapsed);
+    if (this.mode !== "takeoff") this.setMode("fleeOverwhelmed", reason);
+    this.playLoop(this.getPatrolFlightAction());
+  }
+
+  updateFleeOverwhelmed(delta, elapsed) {
+    if (!this.fleeState) this.startFleeOverwhelmed(elapsed, "panic recovery");
+
+    const target = this.fleeState?.target || this.currentPatrolAnchor;
+    const twitch = new THREE.Vector3(
+      Math.sin(elapsed * 17.0) * 0.045,
+      Math.sin(elapsed * 23.0) * 0.034,
+      Math.cos(elapsed * 19.0) * 0.045
+    );
+
+    const fleeTarget = target.clone().add(twitch);
+    this.moveToward(delta, fleeTarget, this.cfg.flySpeed * 1.28);
+    this.lookAtDirection(this.getTravelFacingDirection(fleeTarget), this.cfg.turnLerpFast);
+    this.playLoop(this.getPatrolFlightAction());
+
+    this.fatigue = clamp01(this.fatigue - delta * 0.09);
+    this.aggression = Math.max(0, this.aggression - delta * 0.28);
+
+    if (elapsed >= (this.fleeState?.endsAt || 0) || this.root.position.distanceTo(target) < 0.16) {
+      this.fleeState = null;
+      this.pickNextPatrolPoint();
+      this.setMode("patrol", "calmed down");
+    }
+  }
+
+  startCoverInvestigation(index, coverTarget, elapsed) {
+    this.investigationState = {
+      coverIndex: index,
+      startedAt: elapsed,
+      duration: this.cfg.investigateCoverDuration || 1.15,
+      phaseOffset: Math.random() * Math.PI * 2
+    };
+    this.setMode("investigateCover", `inspecting cover ${index}`);
+    this.playLoop(this.getPatrolFlightAction());
+  }
+
+  updateCoverInvestigation(delta, elapsed, coverTarget) {
+    if (!coverTarget || !this.investigationState) {
+      this.investigationState = null;
+      this.setMode("patrol", "lost cover target");
+      return;
+    }
+
+    const t = clamp01((elapsed - this.investigationState.startedAt) / Math.max(0.001, this.investigationState.duration));
+    const phase = this.investigationState.phaseOffset + elapsed * (this.cfg.investigateCoverSpeed || 3.2);
+    const radius = (this.cfg.investigateCoverRadius || 0.20) * (1.0 - t * 0.32);
+
+    const target = coverTarget.position.clone()
+      .addScaledVector(coverTarget.normal, Math.cos(phase) * radius + 0.06)
+      .addScaledVector(coverTarget.right || new THREE.Vector3(1, 0, 0), Math.sin(phase) * radius)
+      .addScaledVector(coverTarget.up, Math.sin(phase * 1.7) * 0.035);
+
+    this.moveToward(delta, target, this.getPatrolFlightSpeed(elapsed) * 0.92);
+    this.lookAtPoint(coverTarget.position, coverTarget.up, this.cfg.turnLerpFast);
+    this.playLoop(this.getPatrolFlightAction());
+
+    this.behaviourNote = "circle → inspect → decide";
+    if (t >= 1.0) {
+      this.setMode("approachCover", "inspection complete");
+    }
+  }
+
+  getShelterTarget(coverWorldData) {
+    if (!Array.isArray(coverWorldData) || !coverWorldData.length) return null;
+
+    const prefer = Number.isFinite(this.cfg.shelterCoverIndex) ? this.cfg.shelterCoverIndex : 0;
+    const avoid = Number.isFinite(this.cfg.shelterAvoidCoverIndex) ? this.cfg.shelterAvoidCoverIndex : -1;
+    const order = [prefer, ...coverWorldData.map((_, i) => i).filter((i) => i !== prefer && i !== avoid), avoid].filter((i) => i >= 0);
+
+    for (const index of order) {
+      const cover = coverWorldData[index];
+      if (!cover?.visible) continue;
+      const target = this.getCoverPerchTarget(index, coverWorldData);
+      if (target) return { ...target, index };
+    }
+    return null;
+  }
+
+  shouldSeekShelter(hasVoid, hoveredIndex) {
+    if (hasVoid || hoveredIndex >= 0) return false;
+    if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter") return false;
+    return this.fatigue >= (this.cfg.fatigueShelterThreshold || 0.72) || (this.trust > 0.56 && this.signal < 0.22);
+  }
+
+  updateSeekShelter(delta, elapsed, coverWorldData) {
+    const shelter = this.getShelterTarget(coverWorldData);
+    if (!shelter) {
+      this.setMode("patrol", "no shelter visible");
+      return;
+    }
+
+    const distance = this.root.position.distanceTo(shelter.position);
+    if (distance <= (this.cfg.shelterLandDistance || 0.16)) {
+      this.perched = false;
+      this.setMode("landing", `shelter ${shelter.index}`);
+      this.playOnce("land", "perch");
+      this.maybeDropNest(shelter.position, shelter.index);
+      this.fragmentCount += 1;
+      return;
+    }
+
+    this.moveToward(delta, shelter.position, this.getPatrolFlightSpeed(elapsed) * 0.72);
+    this.lookAtDirection(this.getTravelFacingDirection(shelter.position), this.cfg.turnLerpFast);
+    this.playLoop(this.getPatrolFlightAction());
+    this.behaviourNote = `seeking shelter cover ${shelter.index}`;
+  }
+
+  shouldFollowPointer(elapsed, hoveredIndex, hasVoid) {
+    if (hasVoid || hoveredIndex >= 0) return false;
+    if (!this.pointerWorldTargetValid) return false;
+    if (this.mode === "landed" || this.mode === "landing" || this.mode === "takeoff" || this.mode === "backflip") return false;
+    if (elapsed - this.lastPointerEventAt > 1.2) return false;
+    if (this.trust < (this.cfg.pointerCuriosityTrustMin || 0.34)) return false;
+    if (this.signal < (this.cfg.pointerCuriositySignalMin || 0.22) && this.pointerGentle < 0.20) return false;
+    return this.aggression < 0.30;
+  }
+
+  updatePointerCuriosity(delta, elapsed) {
+    if (!this.pointerWorldTargetValid) {
+      this.setMode("patrol", "pointer signal lost");
+      return;
+    }
+
+    const target = this.pointerWorldTarget.clone();
+    const breathe = Math.sin(elapsed * 3.1) * 0.035;
+    target.y += breathe;
+
+    this.moveToward(delta, target, this.getPatrolFlightSpeed(elapsed) * 0.84);
+    this.lookAtDirection(this.getTravelFacingDirection(target), this.cfg.turnLerpFast);
+    this.playLoop(this.getPatrolFlightAction());
+    this.behaviourNote = "cautious pointer curiosity";
+
+    if (this.root.position.distanceTo(target) < 0.13 || this.aggression > 0.36 || elapsed - this.lastPointerEventAt > 1.5) {
+      this.setMode("patrol", "pointer curiosity complete");
+      this.pickNextPatrolPoint();
+    }
+  }
+
+  startVoidOrbit(elapsed) {
+    this.voidOrbitState = {
+      startedAt: elapsed,
+      duration: this.cfg.voidCautionOrbitDuration || 1.35,
+      phaseOffset: Math.random() * Math.PI * 2
+    };
+    this.setMode("orbitVoid", "hesitating before feeding");
+    this.playLoop("feed");
+  }
+
+  updateVoidOrbit(delta, elapsed, voidTarget) {
+    if (!this.voidState?.active || !voidTarget) {
+      this.setMode("patrol", "void lost");
+      return;
+    }
+
+    const orbit = this.voidOrbitState || { startedAt: elapsed, duration: 1, phaseOffset: 0 };
+    const t = clamp01((elapsed - orbit.startedAt) / Math.max(0.001, orbit.duration));
+    const phase = orbit.phaseOffset + elapsed * 3.8;
+    const radius = (this.cfg.voidCautionOrbitRadius || 0.32) * (1.0 - t * 0.26);
+
+    const right = this.temp.b.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+    const up = this.temp.c.set(0, 1, 0);
+
+    const target = this.voidState.position.clone()
+      .addScaledVector(right, Math.cos(phase) * radius)
+      .addScaledVector(up, Math.sin(phase) * radius * 0.60)
+      .addScaledVector(this.camera.position.clone().sub(this.voidState.position).normalize(), this.cfg.voidHoverRadius);
+
+    this.moveToward(delta, target, this.cfg.diveSpeed * 0.72);
+    this.lookAtPoint(this.voidState.position, up, this.cfg.turnLerpFast);
+    this.playLoop("feed");
+    this.behaviourNote = "orbiting dangerous food";
+
+    if (this.corruption >= (this.cfg.voidCorruptionFleeThreshold || 0.82)) {
+      this.startFleeOverwhelmed(elapsed, "void corruption spike");
+      return;
+    }
+
+    if (t >= 1.0 || this.root.position.distanceTo(target) < 0.10) {
+      this.setMode("inspectVoid", "feeding from void");
+      this.voidState.inspectStartedAt = elapsed;
+      this.playLoop("feed");
+    }
+  }
+
+  updateNeedVisuals(delta, elapsed, hungry) {
+    const speedRatio = this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed || 1.0);
+    const motion = clamp01(speedRatio * (this.cfg.shellMotionStrength || 1.0));
+    const fed = clamp01((this.vitality - 0.55) / 0.45);
+    const overwhelmed = this.mood === "overwhelmed" || this.mode === "fleeOverwhelmed";
+    const corrupted = this.mood === "corrupted" || this.corruption > 0.45;
+    const patchy = clamp01(this.hunger * (this.cfg.visualHungryPatchiness || 0.42) + this.aggression * 0.28 + this.corruption * 0.32);
+    const flicker = 0.72 + Math.sin(elapsed * (hungry ? 15.0 : 5.4)) * patchy * 0.22 + Math.sin(elapsed * 31.0) * this.aggression * 0.06;
+
+    const shellAlpha = THREE.MathUtils.clamp(
+      (hungry ? 0.72 : 1.0) * flicker * (overwhelmed ? 0.82 : 1.0),
+      0.30,
+      1.24
+    );
+
+    const brightnessBase = this.cfg.binaryBrightness || 1.42;
+    const brightness = Math.max(
+      0.72,
+      brightnessBase * (1.0 + fed * 0.18 + this.signal * 0.10 - this.hunger * 0.18 + this.corruption * 0.10)
+    );
+
+    if (this.binaryMaterial) {
+      this.binaryMaterial.uniforms.uTime.value = elapsed;
+      this.binaryMaterial.uniforms.uSadness.value = clamp01(this.hunger * 0.90 + this.corruption * 0.60 + (overwhelmed ? 0.30 : 0));
+      this.binaryMaterial.uniforms.uAlphaBoost.value = shellAlpha;
+      this.binaryMaterial.uniforms.uMotion.value = clamp01(motion + this.aggression * 0.32 + this.corruption * 0.18);
+      this.binaryMaterial.uniforms.uBrightness.value = brightness;
+    }
+
+    if (this.outlineMaterial) {
+      this.outlineMaterial.uniforms.uTime.value = elapsed;
+      this.outlineMaterial.uniforms.uSadness.value = clamp01(this.hunger * 0.70 + this.corruption * 0.40);
+      this.outlineMaterial.uniforms.uMotion.value = clamp01(motion + this.aggression * 0.25);
+      this.outlineMaterial.uniforms.uAlpha.value = THREE.MathUtils.clamp(shellAlpha + fed * 0.12, 0.42, 1.18);
+      this.outlineMaterial.uniforms.uBrightness.value = (this.cfg.outlineBrightness || 2.05) * (1.0 + fed * 0.16 + corrupted * 0.12);
+    }
+
+    this.currentTrailAlpha = THREE.MathUtils.clamp(
+      (this.cfg.trailAlpha || 0.84)
+        * THREE.MathUtils.lerp(this.cfg.trailHungryScale || 0.46, this.cfg.trailFedScale || 1.32, fed)
+        * (overwhelmed ? 0.62 : 1.0),
+      0.18,
+      1.35
+    );
   }
 
 
@@ -901,8 +1406,7 @@ export class MothSystem {
     if (!this.debugOverlayBody || !this.debugOverlayVisible) return;
 
     const action = this.currentActionKey || "none";
-    const target = this.voidState?.active ? "void" : hoveredIndex >= 0 ? `cover ${hoveredIndex}` : "patrol";
-    const hungry = this.isHungry(elapsed) && !this.voidState?.active;
+    const target = this.voidState?.active ? "void" : hoveredIndex >= 0 ? `cover ${hoveredIndex}` : this.pointerWorldTargetValid ? "pointer signal" : "patrol";
     const speed = this.velocity.length();
     const yaw = this.baseVisualYaw || 0;
     const voidEnergy = this.voidState?.active ? clamp01(this.voidState.energy).toFixed(2) : "0.00";
@@ -919,11 +1423,19 @@ export class MothSystem {
 
     const rows = [
       ["mode", this.mode],
+      ["mood", this.mood],
       ["anim", action],
-      ["need", hungry ? "hungry / searching" : this.voidState?.active ? "feeding on void" : "fed / stable"],
-      ["vitality", this.vitality.toFixed(2)],
-      ["speed", speed.toFixed(2)],
+      ["behaviour", this.behaviourNote || "—"],
       ["target", target],
+      ["vitality", this.vitality.toFixed(2)],
+      ["hunger", this.hunger.toFixed(2)],
+      ["signal", this.signal.toFixed(2)],
+      ["fatigue", this.fatigue.toFixed(2)],
+      ["trust", this.trust.toFixed(2)],
+      ["corrupt", this.corruption.toFixed(2)],
+      ["aggression", this.aggression.toFixed(2)],
+      ["fragments", String(this.fragmentCount || 0)],
+      ["speed", speed.toFixed(2)],
       ["void", voidEnergy],
       ["yaw", `${yaw.toFixed(3)} rad`],
       ["pos", `${this.root.position.x.toFixed(2)}, ${this.root.position.y.toFixed(2)}, ${this.root.position.z.toFixed(2)}`]
@@ -953,6 +1465,9 @@ export class MothSystem {
         this.cfg.storageKey,
         JSON.stringify({
           vitality: this.vitality,
+          trust: this.trust,
+          corruption: this.corruption,
+          fragments: this.fragmentCount,
           lastVisit: Date.now(),
           nests: this.nests.map((nest) => ({
             id: nest.id,
@@ -1514,7 +2029,7 @@ export class MothSystem {
     if (!this.trail) return;
 
     this.trail.material.uniforms.uTime.value = elapsed;
-    this.trail.material.uniforms.uAlpha.value = this.cfg.trailAlpha;
+    this.trail.material.uniforms.uAlpha.value = this.currentTrailAlpha ?? this.cfg.trailAlpha;
 
     this.trail.emitClock += delta;
     const moving = this.velocity.lengthSq() > 0.0025;
@@ -1886,7 +2401,7 @@ export class MothSystem {
       .addScaledVector(cover.up, lift)
       .addScaledVector(normal, this.cfg.coverPerchForward);
 
-    return { position, normal, up: cover.up.clone() };
+    return { position, normal, up: cover.up.clone(), right: cover.right.clone() };
   }
 
   getVoidInspectTarget() {
@@ -1911,7 +2426,7 @@ export class MothSystem {
       introComplete,
       hoveredEntry,
       hoveredIndex,
-      coverWorldData
+      coverWorldData = []
     } = context;
 
     const sceneVisible = introComplete && !introActive;
@@ -1923,29 +2438,17 @@ export class MothSystem {
     if (this.mixer) this.mixer.update(delta);
     this.updateAnimatedShells();
 
+    const hasVoid = this.voidState?.active;
     const hungry = this.isHungry(elapsed);
-    if (hungry && !this.voidState?.active) {
+    if (hungry && !hasVoid) {
       this.vitality = clamp01(this.vitality - delta * this.cfg.vitalityDrainPerSecond);
     } else {
-      this.vitality = clamp01(this.vitality + delta * this.cfg.vitalityRecoveryPerSecond * 0.25);
+      const recoveryMultiplier = this.mode === "inspectVoid" ? 1.25 : this.mode === "landed" ? 0.55 : 0.25;
+      this.vitality = clamp01(this.vitality + delta * this.cfg.vitalityRecoveryPerSecond * recoveryMultiplier);
     }
 
-    const motion = clamp01((this.velocity.length() / Math.max(0.0001, this.cfg.flySpeed)) * (this.cfg.shellMotionStrength || 1.0));
-    if (this.binaryMaterial) {
-      this.binaryMaterial.uniforms.uTime.value = elapsed;
-      this.binaryMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
-      this.binaryMaterial.uniforms.uAlphaBoost.value = hungry ? 0.96 : 1.04;
-      this.binaryMaterial.uniforms.uMotion.value = motion;
-      this.binaryMaterial.uniforms.uBrightness.value = hungry ? Math.max(1.18, (this.cfg.binaryBrightness || 1.42) - 0.10) : (this.cfg.binaryBrightness || 1.42);
-    }
-
-    if (this.outlineMaterial) {
-      this.outlineMaterial.uniforms.uTime.value = elapsed;
-      this.outlineMaterial.uniforms.uSadness.value = hungry ? 1.0 : 0.0;
-      this.outlineMaterial.uniforms.uMotion.value = motion;
-      this.outlineMaterial.uniforms.uAlpha.value = hungry ? 0.86 : 1.0;
-      this.outlineMaterial.uniforms.uBrightness.value = this.cfg.outlineBrightness || 2.05;
-    }
+    this.updateNeedsAndMood(delta, elapsed, hoveredIndex, Boolean(hasVoid));
+    this.updateNeedVisuals(delta, elapsed, hungry);
 
     this.updateVoidVisual(elapsed, delta);
     this.updateNestAnimations(elapsed, coverWorldData);
@@ -1963,29 +2466,11 @@ export class MothSystem {
 
   updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData) {
     const hasVoid = this.voidState?.active;
-    const coverTarget = (!hasVoid && hoveredIndex >= 0) ? this.getCoverPerchTarget(hoveredIndex, coverWorldData) : null;
+    const coverTarget = (!hasVoid && hoveredIndex >= 0 && Array.isArray(coverWorldData)) ? this.getCoverPerchTarget(hoveredIndex, coverWorldData) : null;
     const voidTarget = hasVoid ? this.getVoidInspectTarget() : null;
 
-    if (hasVoid) {
-      if (this.mode === "landed" || this.mode === "landing") {
-        this.startTakeoff(elapsed);
-      }
-      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
-        this.mode = "approachVoid";
-      }
-    } else if (coverTarget) {
-      this.hoverClock += delta;
-      if (this.mode !== "takeoff" && this.mode !== "backflip" && this.hoverClock >= this.cfg.hoverPerchDelay) {
-        if (this.mode !== "landed" && this.mode !== "landing") this.mode = "approachCover";
-      }
-    } else {
-      this.hoverClock = 0;
-      if ((this.mode === "landed" || this.mode === "landing") && !hasVoid) {
-        this.startTakeoff(elapsed);
-      }
-      if (!hasVoid && this.mode !== "takeoff" && this.mode !== "backflip" && this.mode !== "inspectVoid") {
-        this.mode = "patrol";
-      }
+    if (this.shouldFleeFromOverwhelm()) {
+      this.startFleeOverwhelmed(elapsed, this.corruption > 0.72 ? "corruption overload" : "aggressive input");
     }
 
     if (this.mode === "takeoff") {
@@ -2010,47 +2495,141 @@ export class MothSystem {
       return;
     }
 
-    if (this.mode === "inspectVoid" && voidTarget) {
-      this.updateVoidInspect(delta, elapsed, voidTarget);
+    if (this.mode === "fleeOverwhelmed") {
+      this.updateFleeOverwhelmed(delta, elapsed);
       return;
     }
 
-    if (this.mode === "landed" && coverTarget) {
-      this.perched = true;
-      this.root.position.lerp(coverTarget.position, this.cfg.coverPerchLerp);
-      this.lookAtPoint(coverTarget.position.clone().add(coverTarget.normal), coverTarget.up, 0.12);
-      if (this.currentActionKey !== "perch") this.playLoop("perch");
+    if (hasVoid) {
+      this.hoverClock = 0;
+      this.investigationState = null;
+
+      if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter") {
+        this.startTakeoff(elapsed);
+        return;
+      }
+
+      if (this.mode === "inspectVoid" && voidTarget) {
+        this.updateVoidInspect(delta, elapsed, voidTarget);
+        return;
+      }
+
+      if (this.mode === "orbitVoid" && voidTarget) {
+        this.updateVoidOrbit(delta, elapsed, voidTarget);
+        return;
+      }
+
+      if (voidTarget) {
+        if (this.mode !== "approachVoid") this.setMode("approachVoid", "void signal detected");
+
+        const distance = this.root.position.distanceTo(voidTarget.position);
+        this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed * (this.corruption > 0.55 ? 0.78 : 1.0));
+        this.lookAtDirection(this.getTravelFacingDirection(voidTarget.position), this.cfg.turnLerpFast);
+
+        if (distance <= this.cfg.voidConsumeDistance) {
+          this.startVoidOrbit(elapsed);
+        } else {
+          this.playLoop(this.corruption > 0.48 ? this.getPatrolFlightAction() : "fly");
+          this.behaviourNote = "drawn toward glitch void";
+        }
+        return;
+      }
+    }
+
+    if (coverTarget) {
+      this.hoverClock += delta;
+
+      if (this.lastHoveredIndex !== hoveredIndex) {
+        this.investigationState = null;
+        this.lastHoveredIndex = hoveredIndex;
+      }
+
+      if (this.mode === "landed") {
+        this.perched = true;
+        const walk = Math.sin(elapsed * 1.45) * (this.cfg.perchEdgeWalk || 0.055);
+        const aliveOffset = coverTarget.right ? coverTarget.right.clone().multiplyScalar(walk) : new THREE.Vector3();
+        const settle = coverTarget.position.clone().add(aliveOffset).addScaledVector(coverTarget.up, Math.sin(elapsed * 2.0) * 0.006);
+        this.root.position.lerp(settle, this.cfg.coverPerchLerp);
+        this.lookAtPoint(coverTarget.position.clone().add(coverTarget.normal), coverTarget.up, 0.12);
+        if (this.currentActionKey !== "perch") this.playLoop("perch");
+
+        if (this.trust >= (this.cfg.nestTrustMin || 0.48)) {
+          this.maybeDropNest(coverTarget.position, hoveredIndex);
+        }
+
+        this.fatigue = clamp01(this.fatigue - delta * (this.cfg.fatigueRestRecovery || 0.18));
+        this.behaviourNote = "perched / edge-walking / nesting";
+        return;
+      }
+
+      if (this.mode === "landing") {
+        this.lookAtPoint(coverTarget.position.clone().add(coverTarget.normal), coverTarget.up, 0.12);
+        return;
+      }
+
+      if (this.mode === "investigateCover") {
+        this.updateCoverInvestigation(delta, elapsed, coverTarget);
+        return;
+      }
+
+      if (this.mode === "approachCover") {
+        const distance = this.root.position.distanceTo(coverTarget.position);
+        if (distance <= this.cfg.landTriggerDistance) {
+          this.setMode("landing", `landing on cover ${hoveredIndex}`);
+          this.perched = false;
+          this.playOnce("land", "perch");
+          if (this.trust >= (this.cfg.nestTrustMin || 0.48)) {
+            this.maybeDropNest(coverTarget.position, hoveredIndex);
+          }
+        }
+        this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * (this.mood === "hungry / searching" ? 1.04 : 0.90));
+        this.lookAtDirection(this.getTravelFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
+        if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
+          this.playLoop(this.getPatrolFlightAction());
+        }
+        this.behaviourNote = "approaching perch point";
+        return;
+      }
+
+      if (this.hoverClock >= this.cfg.hoverPerchDelay && this.mode !== "takeoff" && this.mode !== "backflip") {
+        this.startCoverInvestigation(hoveredIndex, coverTarget, elapsed);
+        return;
+      }
+    } else {
+      this.hoverClock = 0;
+      this.lastHoveredIndex = -1;
+      this.investigationState = null;
+
+      if ((this.mode === "landed" || this.mode === "landing") && !hasVoid) {
+        this.startTakeoff(elapsed);
+        return;
+      }
+
+      if (this.mode === "investigateCover" || this.mode === "approachCover") {
+        this.setMode("patrol", "cover signal lost");
+      }
+    }
+
+    if (this.shouldSeekShelter(Boolean(hasVoid), hoveredIndex)) {
+      this.setMode("seekShelter", "needs rest / shelter");
+    }
+
+    if (this.mode === "seekShelter") {
+      this.updateSeekShelter(delta, elapsed, coverWorldData);
       return;
     }
 
-    if (this.mode === "approachCover" && coverTarget) {
-      const distance = this.root.position.distanceTo(coverTarget.position);
-      if (distance <= this.cfg.landTriggerDistance) {
-        this.mode = "landing";
-        this.perched = false;
-        this.playOnce("land", "perch");
-        this.maybeDropNest(coverTarget.position, hoveredIndex);
-      }
-      this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.95);
-      this.lookAtDirection(this.getTravelFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
-      if (this.currentActionKey !== "land" && this.currentActionKey !== "perch") {
-        this.playLoop(this.getPatrolFlightAction());
-      }
+    if (this.shouldFollowPointer(elapsed, hoveredIndex, Boolean(hasVoid))) {
+      if (this.mode !== "followPointer") this.setMode("followPointer", "gentle pointer curiosity");
+    }
+
+    if (this.mode === "followPointer") {
+      this.updatePointerCuriosity(delta, elapsed);
       return;
     }
 
-    if (this.mode === "approachVoid" && voidTarget) {
-      const distance = this.root.position.distanceTo(voidTarget.position);
-      this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed);
-      this.lookAtDirection(this.getTravelFacingDirection(voidTarget.position), this.cfg.turnLerpFast);
-      if (distance <= this.cfg.voidConsumeDistance) {
-        this.mode = "inspectVoid";
-        this.voidState.inspectStartedAt = elapsed;
-        this.playLoop("feed");
-      } else if (this.currentActionKey !== "feed") {
-        this.playLoop("fly");
-      }
-      return;
+    if (this.mode !== "patrol") {
+      this.setMode("patrol", "returning to ambient loop");
     }
 
     if (this.mode === "patrol") {
@@ -2070,7 +2649,10 @@ export class MothSystem {
         this.recoveryAssist = (elapsed - this.recoveryHiddenSince) >= (this.cfg.recoveryVisibilityGrace || 0.22);
       }
 
-      if (elapsed >= this.nextPatrolDecisionAt || this.root.position.distanceTo(this.currentPatrolAnchor) < 0.18 || anchorLostLongEnough) {
+      const hungryRestless = this.hunger > 0.55;
+      const repickEarly = hungryRestless && Math.sin(elapsed * 1.7) > 0.92;
+
+      if (elapsed >= this.nextPatrolDecisionAt || this.root.position.distanceTo(this.currentPatrolAnchor) < 0.18 || anchorLostLongEnough || repickEarly) {
         this.pickNextPatrolPoint();
       }
 
@@ -2078,9 +2660,20 @@ export class MothSystem {
         this.currentPatrolAnchor.copy(this.getRecoveryPatrolPoint());
       }
 
-      this.moveToward(delta, this.currentPatrolAnchor, this.getPatrolFlightSpeed(elapsed));
-      this.lookAtDirection(this.getTravelFacingDirection(this.currentPatrolAnchor), this.cfg.turnLerpFast);
+      const patrolTarget = this.currentPatrolAnchor.clone();
+      if (hungryRestless) {
+        patrolTarget.x += Math.sin(elapsed * 5.7) * 0.08 * this.hunger;
+        patrolTarget.y += Math.cos(elapsed * 4.8) * 0.04 * this.hunger;
+        patrolTarget.z += Math.cos(elapsed * 6.3) * 0.08 * this.hunger;
+      } else if (this.mood === "fed / bright") {
+        patrolTarget.x += Math.sin(elapsed * 0.85) * 0.05;
+        patrolTarget.z += Math.cos(elapsed * 0.85) * 0.05;
+      }
+
+      this.moveToward(delta, patrolTarget, this.getPatrolFlightSpeed(elapsed));
+      this.lookAtDirection(this.getTravelFacingDirection(patrolTarget), this.cfg.turnLerpFast);
       this.playLoop(this.getPatrolFlightAction());
+      this.behaviourNote = hungryRestless ? "restless broken search pattern" : this.mood === "fed / bright" ? "smooth fed patrol" : "ambient patrol";
     }
   }
 
@@ -2095,7 +2688,25 @@ export class MothSystem {
     const speed = baseSpeed * slowMul;
     const desired = dir.multiplyScalar(speed);
 
-    this.velocity.lerp(desired, 1.0 - Math.exp(-delta * (this.cfg.velocityResponse || 5.4)));
+    // [MOTH PATCH 2026-04-27] Mood-based micro-motion:
+    // hungry = broken search twitches, fed = smoother elegant drift, overwhelmed = nervous jitter.
+    const elapsed = this.getElapsed();
+    const jitterStrength =
+      (this.hunger > 0.55 ? this.hunger * 0.105 : 0)
+      + (this.mode === "fleeOverwhelmed" ? 0.15 : 0)
+      + (this.corruption > 0.45 ? this.corruption * 0.055 : 0);
+
+    if (jitterStrength > 0.001) {
+      desired.x += Math.sin(elapsed * 18.7 + this.root.position.y * 3.0) * jitterStrength;
+      desired.y += Math.sin(elapsed * 23.1 + this.root.position.x * 2.0) * jitterStrength * 0.55;
+      desired.z += Math.cos(elapsed * 16.2 + this.root.position.z * 2.0) * jitterStrength;
+    }
+
+    const response = (this.mood === "fed / bright" && this.mode === "patrol")
+      ? (this.cfg.velocityResponse || 5.4) * 0.72
+      : (this.cfg.velocityResponse || 5.4);
+
+    this.velocity.lerp(desired, 1.0 - Math.exp(-delta * response));
 
     if (this.recoveryAssist) {
       const recovery = this.getRecoveryPatrolPoint().sub(this.root.position).multiplyScalar(this.cfg.patrolRecoverySpeedScale * delta);
@@ -2127,7 +2738,8 @@ export class MothSystem {
     if (this.voidState.remaining <= 0) {
       this.clearVoid();
       this.satiatedUntil = elapsed + this.cfg.satiatedDuration;
-      this.mode = "patrol";
+      this.fragmentCount += 2;
+      this.setMode("patrol", "void consumed / fed");
       this.pickNextPatrolPoint();
       this.playLoop("fly");
     }
@@ -2307,7 +2919,10 @@ export class MothSystem {
   }
 
   getPatrolFlightSpeed(elapsed) {
-    return this.isHungry(elapsed) ? this.cfg.flySpeed * this.cfg.flySadSpeedScale : this.cfg.flySpeed;
+    if (this.mode === "fleeOverwhelmed") return this.cfg.flySpeed * 1.18;
+    if (this.isHungry(elapsed)) return this.cfg.flySpeed * this.cfg.flySadSpeedScale;
+    if (this.mood === "fed / bright") return this.cfg.flySpeed * 1.06;
+    return this.cfg.flySpeed;
   }
 
   updateNestAnimations(elapsed, coverWorldData) {
