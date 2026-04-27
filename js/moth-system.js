@@ -863,6 +863,19 @@ export class MothSystem {
     this.boundInteractionPointerDown = (event) => this.handleInteractionPointerDown(event);
     this.boundInteractionWheel = (event) => this.handleInteractionWheel(event);
 
+    // [MOTH RESCUE PATCH 2026-04-27]
+    // The previous stability patch accidentally removed these HUD fields before initDebugOverlay().
+    // That made addEventListener receive an undefined key handler and stopped the moth constructor,
+    // which is why the moth + debug HUD both disappeared. These are initialized before the HUD is built.
+    this.debugOverlayVisible = this.cfg.debugOverlay !== false;
+    this.debugOverlayElement = null;
+    this.debugOverlayBody = null;
+    this.debugOverlayLog = null;
+    this.debugHistory = [];
+    this.lastDebugMode = this.mode;
+    this.lastDebugAction = this.currentActionKey || "none";
+    this.boundDebugKeyHandler = (event) => this.handleDebugKey(event);
+
     this.temp = {
       a: new THREE.Vector3(),
       b: new THREE.Vector3(),
@@ -1335,6 +1348,14 @@ export class MothSystem {
   initDebugOverlay() {
     if (typeof document === "undefined") return;
 
+    // [MOTH RESCUE PATCH 2026-04-27]
+    // Defensive initialization so the HUD can never break the moth boot sequence again.
+    if (typeof this.debugOverlayVisible !== "boolean") this.debugOverlayVisible = this.cfg.debugOverlay !== false;
+    if (!Array.isArray(this.debugHistory)) this.debugHistory = [];
+    if (!this.boundDebugKeyHandler) this.boundDebugKeyHandler = (event) => this.handleDebugKey(event);
+    if (!this.lastDebugMode) this.lastDebugMode = this.mode || "boot";
+    if (!this.lastDebugAction) this.lastDebugAction = this.currentActionKey || "none";
+
     let panel = document.getElementById("orbit-moth-debug-hud");
     if (!panel) {
       panel = document.createElement("aside");
@@ -1398,6 +1419,7 @@ export class MothSystem {
   }
 
   pushDebugLine(level, message) {
+    if (!Array.isArray(this.debugHistory)) this.debugHistory = [];
     const safeLevel = String(level || "MOTH");
     const safeMessage = String(message || "");
     this.debugHistory.unshift({ level: safeLevel, message: safeMessage, time: this.getElapsed ? this.getElapsed() : 0 });
@@ -1410,6 +1432,7 @@ export class MothSystem {
   }
 
   updateDebugOverlay(elapsed, hoveredIndex = -1) {
+    if (typeof this.debugOverlayVisible !== "boolean") this.debugOverlayVisible = this.cfg.debugOverlay !== false;
     if (!this.debugOverlayBody || !this.debugOverlayVisible) return;
 
     const action = this.currentActionKey || "none";
