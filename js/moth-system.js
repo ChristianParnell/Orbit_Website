@@ -28,6 +28,7 @@ import {
   updateMaterialPalette
 } from "./moth-shaders.js";
 import { MothAnimationController } from "./moth-animation.js";
+import { MothDebugConsole } from "./moth-debug-console.js";
 
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV6_modular",
@@ -117,7 +118,28 @@ const DEFAULT_CONFIG = {
   homePerchBoneName: "PerchBone",
   homePerchOffset: { x: 0, y: 0, z: 0 },
   pagePreferences: {},
-  coverAccentColors: ["#2fe4ff", "#b04dff", "#33ff88", "#ff57ce", "#ff8b2d", "#ffe166", "#4b7dff"]
+  coverAccentColors: ["#2fe4ff", "#b04dff", "#33ff88", "#ff57ce", "#ff8b2d", "#ffe166", "#4b7dff"],
+  debugOverlay: true,
+  debugCollapsed: false,
+  debugSnapshotInterval: 0.12,
+  trailSpeed: 0.18,
+  hungrySignalThreshold: 0.22,
+  hungryVitalityThreshold: 0.38,
+  fedVitalityThreshold: 0.68,
+  overwhelmedFatigueThreshold: 0.82,
+  overwhelmedCorruptionThreshold: 0.68,
+  safeTrustThreshold: 0.56,
+  safeFatigueThreshold: 0.42,
+  hungryJitterStrength: 0.085,
+  overwhelmedJerkStrength: 0.18,
+  fedOrbitRadius: 0.38,
+  fedOrbitSpeed: 1.15,
+  shelterSearchInterval: 5.0,
+  shelterHeightBoost: 0.58,
+  fragmentChargePerHoverSecond: 0.028,
+  fragmentChargePerVoid: 0.65,
+  fragmentDepositCost: 0.34,
+  uiResidueClassName: "moth-nested"
 };
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -142,6 +164,11 @@ export class MothSystem {
     this.orbitCenter = options.orbitCenter ? options.orbitCenter.clone() : new THREE.Vector3(0, 0, 0);
     this.getElapsed = typeof options.getElapsed === "function" ? options.getElapsed : () => performance.now() / 1000;
     this.debug = typeof options.debug === "function" ? options.debug : null;
+    this.debugPanel = this.cfg.debugOverlay === false ? null : new MothDebugConsole({
+      title: "SPECTER MOTH // NEEDS + WANTS",
+      maxEvents: 14,
+      collapsed: Boolean(this.cfg.debugCollapsed)
+    });
 
     this.paletteBase = ensurePalette(options.palette || DEFAULT_MOTH_PALETTE);
     this.currentPalette = clonePalette(this.paletteBase);
@@ -210,9 +237,17 @@ export class MothSystem {
     this.ready = false;
     this.disposed = false;
     this.mode = "loading";
+    this.mood = "booting";
+    this.lastMood = "booting";
+    this.behaviour = "loading model";
     this.visible = true;
     this.perched = false;
     this.satiatedUntil = 0;
+    this.nextShelterSearchAt = 0;
+    this.shelterTarget = null;
+    this.lastDebugSnapshotAt = -Infinity;
+    this.lastMoodLogAt = -Infinity;
+    this.visualProfile = this.getVisualProfile("booting");
     this.target = this.orbitCenter.clone().add(new THREE.Vector3(0.4, 0.95, 0.9));
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
@@ -254,7 +289,24 @@ export class MothSystem {
   }
 
   log(message, level = "MOTH") {
+    this.debugPanel?.push(message, level);
     if (this.debug) this.debug(message, level);
+  }
+
+  setMode(nextMode, reason = "") {
+    if (this.mode === nextMode) return;
+    const previous = this.mode;
+    this.mode = nextMode;
+    this.log(`${previous} → ${nextMode}${reason ? ` :: ${reason}` : ""}`, "STATE");
+  }
+
+  setMood(nextMood, reason = "") {
+    if (this.mood === nextMood) return;
+    const previous = this.mood;
+    this.lastMood = previous;
+    this.mood = nextMood;
+    this.visualProfile = this.getVisualProfile(nextMood);
+    this.log(`${previous} → ${nextMood}${reason ? ` :: ${reason}` : ""}`, "MOOD");
   }
 
   loadSavedState() {
@@ -387,7 +439,7 @@ export class MothSystem {
     this.rebuildBinaryShells();
     this.createHitProxy(targetHeight);
     this.ready = true;
-    this.mode = "patrol";
+    this.setMode("patrol", "model ready");
     this.pickPatrolTarget(this.getElapsed(), true);
   }
 
@@ -788,6 +840,7 @@ export class MothSystem {
     this.updateVoid(delta, elapsed);
     this.updateMaterials(delta, elapsed);
     this.updateAnimations(delta, elapsed);
+    this.updateDebugSnapshot(elapsed);
     this.saveState(false);
   }
 
@@ -795,37 +848,93 @@ export class MothSystem {
     const aggressivePointer = this.pointerState.speed > this.cfg.aggressivePointerSpeed;
     const aggressiveWheel = this.pointerState.wheelImpulse > this.cfg.aggressiveWheelThreshold;
     this.pointerState.wheelImpulse = Math.max(0, this.pointerState.wheelImpulse - delta * 1800);
-    this.signalLevel = clamp01(this.signalLevel - this.cfg.signalDecayPerSecond * delta);
+
+    const stimulation = (hovered ? 1 : 0) + (this.voidState?.active ? 0.8 : 0) + Math.min(1, this.pointerState.speed * 0.55);
+    this.signalLevel = clamp01(this.signalLevel - this.cfg.signalDecayPerSecond * delta + stimulation * 0.018 * delta);
     this.vitality = clamp01(this.vitality - this.cfg.vitalityDrainPerSecond * delta + (hovered ? this.cfg.vitalityRecoveryPerSecond * delta : 0));
     this.fatigue = clamp01(this.fatigue + (aggressivePointer || aggressiveWheel ? this.cfg.fatigueStimulusPerSecond * delta : this.cfg.fatigueFlightPerSecond * delta) - (!hovered ? this.cfg.fatigueRestRecoveryPerSecond * delta * 0.35 : 0));
-    this.trust = clamp01(this.trust + (hovered ? this.cfg.trustGainPerSecond * delta : -this.cfg.trustLossPerSecond * delta * (aggressivePointer ? 1.2 : 0.16)));
-    this.corruption = clamp01(this.corruption + (this.voidState ? this.cfg.corruptionGainPerSecond * delta : -this.cfg.corruptionRestRecoveryPerSecond * delta));
+    this.trust = clamp01(this.trust + (hovered && !aggressivePointer ? this.cfg.trustGainPerSecond * delta : -this.cfg.trustLossPerSecond * delta * (aggressivePointer ? 1.2 : 0.16)));
+    this.corruption = clamp01(this.corruption + (this.voidState?.active ? this.cfg.corruptionGainPerSecond * delta : -this.cfg.corruptionRestRecoveryPerSecond * delta));
+
+    if (hovered) this.fragmentCharge += this.cfg.fragmentChargePerHoverSecond * delta;
 
     if (elapsed < this.satiatedUntil) {
       this.vitality = clamp01(this.vitality + this.cfg.vitalityRecoveryPerSecond * delta * 2.2);
       this.fatigue = clamp01(this.fatigue - this.cfg.fatigueRestRecoveryPerSecond * delta);
     }
+
+    const nextMood = this.computeMood({ elapsed, hovered, aggressivePointer, aggressiveWheel });
+    this.setMood(nextMood, this.getMoodReason(nextMood));
+  }
+
+  computeMood({ elapsed, hovered, aggressivePointer, aggressiveWheel } = {}) {
+    if (this.voidState?.active) return "curious";
+    if (this.corruption > this.cfg.overwhelmedCorruptionThreshold) return "corrupted";
+    if (this.fatigue > this.cfg.overwhelmedFatigueThreshold || aggressivePointer || aggressiveWheel) return "overwhelmed";
+    if (this.vitality < this.cfg.hungryVitalityThreshold || this.signalLevel < this.cfg.hungrySignalThreshold) return "hungry";
+    if (elapsed < this.satiatedUntil || (this.vitality > this.cfg.fedVitalityThreshold && this.signalLevel > 0.46 && this.fatigue < 0.62)) return "fed";
+    if (!hovered && this.trust > this.cfg.safeTrustThreshold && this.fatigue < this.cfg.safeFatigueThreshold && this.vitality > 0.48) return "safe";
+    if (hovered || this.pointerState.speed > 0.20) return "curious";
+    return "watchful";
+  }
+
+  getMoodReason(mood) {
+    switch (mood) {
+      case "hungry": return "low signal / weak vitality";
+      case "fed": return "activity absorbed";
+      case "overwhelmed": return "too much movement / fatigue";
+      case "safe": return "trust high enough to nest";
+      case "corrupted": return "void residue too high";
+      case "curious": return "active target detected";
+      default: return "ambient patrol";
+    }
+  }
+
+  getVisualProfile(mood = this.mood) {
+    const profiles = {
+      booting: { alpha: 0.72, brightness: 2.3, trailAlpha: 0.45, trailBrightness: 1.7, instability: 0.18, patchiness: 0.12, pointScale: 1.0, motion: 0.9, trailLifeStart: 0.72, jitter: 0.02 },
+      hungry: { alpha: 0.43, brightness: 1.55, trailAlpha: 0.28, trailBrightness: 1.15, instability: 0.86, patchiness: 0.58, pointScale: 0.86, motion: 1.75, trailLifeStart: 0.46, jitter: this.cfg.hungryJitterStrength },
+      fed: { alpha: 1.0, brightness: 3.45, trailAlpha: 0.96, trailBrightness: 2.85, instability: 0.08, patchiness: 0.03, pointScale: 1.15, motion: 0.72, trailLifeStart: 1.0, jitter: 0.006 },
+      overwhelmed: { alpha: 0.78, brightness: 2.6, trailAlpha: 0.34, trailBrightness: 1.55, instability: 1.0, patchiness: 0.36, pointScale: 1.0, motion: 2.25, trailLifeStart: 0.58, jitter: this.cfg.overwhelmedJerkStrength },
+      safe: { alpha: 0.92, brightness: 2.85, trailAlpha: 0.64, trailBrightness: 2.05, instability: 0.12, patchiness: 0.05, pointScale: 1.05, motion: 0.55, trailLifeStart: 0.80, jitter: 0.004 },
+      curious: { alpha: 0.96, brightness: 3.15, trailAlpha: 0.80, trailBrightness: 2.45, instability: 0.22, patchiness: 0.08, pointScale: 1.08, motion: 1.08, trailLifeStart: 0.92, jitter: 0.025 },
+      corrupted: { alpha: 0.86, brightness: 3.0, trailAlpha: 0.52, trailBrightness: 2.25, instability: 0.98, patchiness: 0.42, pointScale: 1.12, motion: 1.9, trailLifeStart: 0.72, jitter: 0.11 },
+      watchful: { alpha: 0.82, brightness: 2.35, trailAlpha: 0.50, trailBrightness: 1.75, instability: 0.16, patchiness: 0.08, pointScale: 1.0, motion: 0.82, trailLifeStart: 0.74, jitter: 0.012 }
+    };
+    return profiles[mood] || profiles.watchful;
   }
 
   chooseBehaviour(delta, elapsed, hovered) {
     if (this.voidState?.active) {
-      this.mode = "void";
+      this.setMode("void", "glitch food detected");
+      this.behaviour = "investigating dangerous glitch food";
       this.target.copy(this.voidState.position);
       this.perched = false;
       this.hasLandedOnCurrentTarget = false;
       return;
     }
 
+    if (this.mood === "overwhelmed" || this.mood === "corrupted") {
+      this.setMode("flee", this.mood === "corrupted" ? "purging void residue" : "searching for shelter");
+      this.behaviour = this.mood === "corrupted" ? "climbing into dark air to purge corruption" : "hiding behind folders / climbing away";
+      this.perched = false;
+      this.currentPerchTarget = null;
+      this.pickShelterTarget(elapsed, true, true);
+      return;
+    }
+
     if (hovered && this.hoverClock >= this.cfg.hoverPerchDelay) {
       const perch = this.getCoverPerchPosition(hovered);
-      this.mode = "cover";
+      this.setMode("cover", "active folder signal");
+      this.behaviour = this.perched ? "perched / reading folder signal" : "approaching hovered folder";
       this.currentPerchTarget = hovered;
       this.target.copy(perch.position);
       return;
     }
 
-    if (this.perched && !hovered) {
-      this.mode = "takeoff";
+    if (this.perched && !hovered && this.mood !== "safe") {
+      this.setMode("takeoff", "signal moved away");
+      this.behaviour = "leaving perch";
       this.target.copy(this.root.position).add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight, 0));
       this.perched = false;
       this.hasLandedOnCurrentTarget = false;
@@ -834,9 +943,109 @@ export class MothSystem {
       return;
     }
 
-    this.mode = this.vitality < this.cfg.sadThreshold || this.fatigue > 0.78 ? "sadPatrol" : "patrol";
+    if (this.mood === "safe" && this.fragmentCharge >= this.cfg.fragmentDepositCost * 0.5) {
+      this.setMode("nest", "trust + fragments available");
+      this.behaviour = this.perched ? "nesting / leaving binary dust" : "seeking a safe nesting folder";
+      const shelter = this.pickShelterTarget(elapsed, false, false);
+      if (shelter) {
+        this.currentPerchTarget = shelter;
+        this.target.copy(this.getCoverPerchPosition(shelter).position);
+        return;
+      }
+    }
+
+    if (this.mood === "hungry") {
+      this.setMode("hungrySearch", "needs light / signal");
+      this.behaviour = "restless broken search toward glowing folders";
+      const signal = this.pickSignalTarget(elapsed);
+      if (signal) {
+        this.currentPerchTarget = signal;
+        const perch = this.getCoverPerchPosition(signal);
+        this.target.copy(perch.position).add(this.temp.b.set(
+          Math.sin(elapsed * 5.7) * this.cfg.hungryJitterStrength,
+          Math.sin(elapsed * 8.2) * this.cfg.hungryJitterStrength * 0.7,
+          Math.cos(elapsed * 4.9) * this.cfg.hungryJitterStrength
+        ));
+        return;
+      }
+    }
+
+    if (this.mood === "fed" && this.currentPerchTarget) {
+      this.setMode("gracefulOrbit", "fed and confident");
+      this.behaviour = "smooth confident circling";
+      this.updateCoverTargetWorld(this.currentPerchTarget);
+      const angle = elapsed * this.cfg.fedOrbitSpeed;
+      this.target.copy(this.currentPerchTarget.position)
+        .addScaledVector(this.currentPerchTarget.right, Math.cos(angle) * this.cfg.fedOrbitRadius)
+        .addScaledVector(this.currentPerchTarget.up, Math.sin(angle * 0.8) * this.cfg.fedOrbitRadius * 0.55)
+        .addScaledVector(this.currentPerchTarget.normal, 0.18 + Math.sin(angle * 0.6) * 0.05);
+      return;
+    }
+
+    const sad = this.vitality < this.cfg.sadThreshold || this.fatigue > 0.78;
+    this.setMode(sad ? "sadPatrol" : "patrol", sad ? "energy low" : "ambient watch");
+    this.behaviour = sad ? "slow blue searching flight" : "ambient patrol / curious waiting";
     this.currentPerchTarget = null;
     this.pickPatrolTarget(elapsed, false);
+  }
+
+  pickSignalTarget(elapsed) {
+    this.scanCoverTargets(false);
+    let best = null;
+    let bestScore = -Infinity;
+    for (const target of this.coverTargets) {
+      this.updateCoverTargetWorld(target);
+      const distance = target.position.distanceTo(this.root.position);
+      const name = String(target.item?.title || target.item?.id || "").toLowerCase();
+      const glowBias = name.includes("gallery") || name.includes("contact") ? 0.08 : 0;
+      const score = target.hover * 2.5 + glowBias + 1 / Math.max(0.45, distance);
+      if (score > bestScore) {
+        best = target;
+        bestScore = score;
+      }
+    }
+    if (best) this.nextPatrolDecisionAt = Math.min(this.nextPatrolDecisionAt, elapsed + 0.42);
+    return best;
+  }
+
+  pickShelterTarget(elapsed, force = false, hideBehind = false) {
+    this.scanCoverTargets(false);
+    if (!force && this.shelterTarget && elapsed < this.nextShelterSearchAt) {
+      const perch = this.getCoverPerchPosition(this.shelterTarget);
+      this.target.copy(perch.position);
+      return this.shelterTarget;
+    }
+    this.nextShelterSearchAt = elapsed + this.cfg.shelterSearchInterval;
+    let best = null;
+    let bestScore = -Infinity;
+    for (const target of this.coverTargets) {
+      this.updateCoverTargetWorld(target);
+      const title = String(target.item?.title || target.item?.id || "").toLowerCase();
+      let score = 0;
+      if (title.includes("about")) score += 1.2;
+      if (title.includes("gallery")) score += 0.45;
+      if (title.includes("contact")) score += 0.20;
+      if (title.includes("achievement")) score -= 0.65;
+      score += 1 / Math.max(0.5, target.position.distanceTo(this.root.position));
+      score -= target.hover * 0.25;
+      if (score > bestScore) { bestScore = score; best = target; }
+    }
+    if (!best) {
+      this.pickPatrolTarget(elapsed, true);
+      if (hideBehind) this.target.y += this.cfg.shelterHeightBoost;
+      return null;
+    }
+    this.shelterTarget = best;
+    const perch = this.getCoverPerchPosition(best);
+    if (hideBehind) {
+      this.target.copy(perch.position)
+        .addScaledVector(best.normal, -0.48)
+        .addScaledVector(best.up, this.cfg.shelterHeightBoost)
+        .addScaledVector(best.right, Math.sin(elapsed * 2.2) * 0.24);
+    } else {
+      this.target.copy(perch.position);
+    }
+    return best;
   }
 
   getCoverPerchPosition(target) {
@@ -853,16 +1062,17 @@ export class MothSystem {
     const distance = toTarget.length();
     if (distance < 0.0001) return;
 
-    const isSad = this.mode === "sadPatrol";
+    const isSad = this.mode === "sadPatrol" || this.mood === "hungry";
     const speedBase = this.mode === "void" ? this.cfg.diveSpeed : this.cfg.flySpeed;
-    const speed = speedBase * (isSad ? this.cfg.flySadSpeedScale : 1.0);
+    const moodSpeed = this.mood === "overwhelmed" || this.mode === "flee" ? 1.24 : this.mood === "fed" ? 1.06 : 1.0;
+    const speed = speedBase * (isSad ? this.cfg.flySadSpeedScale : 1.0) * moodSpeed;
     const slow = smoothStep(0.02, this.cfg.approachSlowRadius, distance);
     const step = Math.min(distance, speed * delta * THREE.MathUtils.lerp(0.32, 1.0, slow));
     const previous = this.temp.b.copy(this.root.position);
     this.root.position.addScaledVector(toTarget.normalize(), step);
     this.velocity.copy(this.root.position).sub(previous).divideScalar(Math.max(delta, 0.001));
 
-    if (this.mode === "cover" && this.currentPerchTarget) {
+    if ((this.mode === "cover" || this.mode === "nest") && this.currentPerchTarget) {
       const perch = this.getCoverPerchPosition(this.currentPerchTarget);
       if (distance < this.cfg.landTriggerDistance) {
         this.root.position.lerp(perch.position, this.cfg.coverPerchLerp);
@@ -871,7 +1081,8 @@ export class MothSystem {
           this.hasLandedOnCurrentTarget = true;
           this.perched = true;
           this.animation?.playLand(elapsed);
-          this.maybeDropNest(perch.position, elapsed);
+          if (this.mode === "nest" || this.mood === "safe") this.depositFragmentNest(perch.position, elapsed, this.currentPerchTarget);
+          else this.maybeDropNest(perch.position, elapsed);
         }
       }
     }
@@ -883,7 +1094,7 @@ export class MothSystem {
 
   updateOrientation(delta) {
     let desired = this.temp.a;
-    if (this.mode === "cover" && this.currentPerchTarget && this.perched) {
+    if ((this.mode === "cover" || this.mode === "nest") && this.currentPerchTarget && this.perched) {
       desired.copy(this.getCoverPerchPosition(this.currentPerchTarget).direction);
     } else if (this.velocity.lengthSq() > 0.0004) {
       desired.copy(this.velocity).normalize();
@@ -897,7 +1108,7 @@ export class MothSystem {
     const lookTarget = this.temp.b.copy(this.root.position).add(this.forward);
     _tmpMat.lookAt(this.root.position, lookTarget, WORLD_UP);
     const desiredQ = this.temp.q.setFromRotationMatrix(_tmpMat);
-    this.root.quaternion.slerp(desiredQ, this.mode === "cover" && this.perched ? 0.34 : 0.22);
+    this.root.quaternion.slerp(desiredQ, (this.mode === "cover" || this.mode === "nest") && this.perched ? 0.34 : 0.22);
 
     const bankAmount = THREE.MathUtils.clamp(this.velocity.x * -0.10, -0.36, 0.36);
     const pitchAmount = THREE.MathUtils.clamp(this.velocity.y * 0.05, -0.18, 0.22);
@@ -917,14 +1128,17 @@ export class MothSystem {
     const attr = geometry?.attributes?.position;
     if (!attr || !samples) return;
     const arr = attr.array;
-    const strength = outline ? this.cfg.shellMotionStrength * 0.35 : this.cfg.shellMotionStrength;
+    const profile = this.visualProfile || this.getVisualProfile(this.mood);
+    const strength = (outline ? this.cfg.shellMotionStrength * 0.35 : this.cfg.shellMotionStrength) * profile.motion;
     for (let i = 0; i < samples.length; i += 1) {
       const sample = samples[i];
       const flutter = Math.sin(elapsed * (6.5 + sample.seed * 3.0) + sample.seed * 40.0) * 0.006 * strength;
       const ripple = Math.sin(elapsed * 2.0 + sample.base.x * 19.0 + sample.seed) * 0.004 * strength;
-      arr[i * 3] = sample.base.x + sample.normal.x * flutter;
-      arr[i * 3 + 1] = sample.base.y + sample.normal.y * flutter + ripple;
-      arr[i * 3 + 2] = sample.base.z + sample.normal.z * flutter;
+      const twitchGate = Math.sin(elapsed * (13.0 + sample.seed * 7.0) + sample.seed * 80.0) > 0.72 ? 1 : 0;
+      const twitch = twitchGate * profile.jitter * (outline ? 0.25 : 1.0);
+      arr[i * 3] = sample.base.x + sample.normal.x * flutter + Math.sin(sample.seed * 61.0 + elapsed * 9.0) * twitch;
+      arr[i * 3 + 1] = sample.base.y + sample.normal.y * flutter + ripple + Math.cos(sample.seed * 57.0 + elapsed * 11.0) * twitch * 0.65;
+      arr[i * 3 + 2] = sample.base.z + sample.normal.z * flutter + Math.sin(sample.seed * 53.0 + elapsed * 7.0) * twitch;
     }
     attr.needsUpdate = true;
   }
@@ -958,8 +1172,9 @@ export class MothSystem {
       trail.positions[i * 3] = p.x;
       trail.positions[i * 3 + 1] = p.y;
       trail.positions[i * 3 + 2] = p.z;
-      trail.lifes[i] = 1;
-      trail.velocities[i].copy(this.forward).multiplyScalar(-this.cfg.trailSpeed).add(jitter);
+      const profile = this.visualProfile || this.getVisualProfile(this.mood);
+      trail.lifes[i] = profile.trailLifeStart;
+      trail.velocities[i].copy(this.forward).multiplyScalar(-this.cfg.trailSpeed * (this.mood === "fed" ? 1.35 : this.mood === "hungry" ? 0.72 : 1.0)).add(jitter);
     }
 
     trail.geometry.attributes.position.needsUpdate = true;
@@ -988,11 +1203,12 @@ export class MothSystem {
   }
 
   updateMaterials(delta, elapsed) {
-    const sad = this.vitality < this.cfg.sadThreshold || this.mode === "sadPatrol";
-    if (this.mode === "void") this.targetPalette = clonePalette(this.voidPalette);
-    else if (this.mode === "cover" && this.currentPerchTarget) this.targetPalette = clonePalette(this.getCoverPalette(this.currentPerchTarget));
+    const profile = this.visualProfile || this.getVisualProfile(this.mood);
+    const sad = this.vitality < this.cfg.sadThreshold || this.mode === "sadPatrol" || this.mood === "hungry";
+    if (this.mode === "void" || this.mood === "corrupted") this.targetPalette = clonePalette(this.voidPalette);
+    else if ((this.mode === "cover" || this.mode === "nest") && this.currentPerchTarget) this.targetPalette = clonePalette(this.getCoverPalette(this.currentPerchTarget));
     else if (sad) this.targetPalette = clonePalette(this.sadPalette);
-    else if (elapsed < this.satiatedUntil) this.targetPalette = clonePalette(this.homePalette);
+    else if (this.mood === "safe" || elapsed < this.satiatedUntil) this.targetPalette = clonePalette(this.homePalette);
     else this.targetPalette = clonePalette(this.paletteBase);
 
     lerpPalette(this.currentPalette, this.targetPalette, this.cfg.paletteLerp);
@@ -1001,13 +1217,31 @@ export class MothSystem {
       setPaletteUniforms(mat, this.currentPalette);
       if (mat.uniforms.uTime) mat.uniforms.uTime.value = elapsed;
     });
+
+    if (this.binaryMaterial?.uniforms) {
+      this.binaryMaterial.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uAlpha.value, profile.alpha, 0.08);
+      this.binaryMaterial.uniforms.uBrightness.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uBrightness.value, profile.brightness, 0.08);
+      this.binaryMaterial.uniforms.uPointScale.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uPointScale.value, profile.pointScale, 0.08);
+      if (this.binaryMaterial.uniforms.uInstability) this.binaryMaterial.uniforms.uInstability.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uInstability.value, profile.instability, 0.08);
+      if (this.binaryMaterial.uniforms.uPatchiness) this.binaryMaterial.uniforms.uPatchiness.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uPatchiness.value, profile.patchiness, 0.08);
+    }
+    if (this.outlineMaterial?.uniforms) {
+      this.outlineMaterial.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.outlineMaterial.uniforms.uAlpha.value, Math.max(0.38, profile.alpha * 0.88), 0.08);
+      this.outlineMaterial.uniforms.uBrightness.value = THREE.MathUtils.lerp(this.outlineMaterial.uniforms.uBrightness.value, Math.max(2.4, profile.brightness + 0.45), 0.08);
+      if (this.outlineMaterial.uniforms.uInstability) this.outlineMaterial.uniforms.uInstability.value = THREE.MathUtils.lerp(this.outlineMaterial.uniforms.uInstability.value, profile.instability * 0.42, 0.08);
+      if (this.outlineMaterial.uniforms.uPatchiness) this.outlineMaterial.uniforms.uPatchiness.value = THREE.MathUtils.lerp(this.outlineMaterial.uniforms.uPatchiness.value, profile.patchiness * 0.25, 0.08);
+    }
+    if (this.trail?.material?.uniforms) {
+      this.trail.material.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.trail.material.uniforms.uAlpha.value, profile.trailAlpha, 0.08);
+      this.trail.material.uniforms.uBrightness.value = THREE.MathUtils.lerp(this.trail.material.uniforms.uBrightness.value, profile.trailBrightness, 0.08);
+    }
     if (this.voidMaterial) updateMaterialPalette(this.voidMaterial, this.voidPalette);
   }
 
   updateAnimations(delta, elapsed) {
-    const sad = this.vitality < this.cfg.sadThreshold || this.mode === "sadPatrol";
+    const sad = this.vitality < this.cfg.sadThreshold || this.mode === "sadPatrol" || this.mood === "hungry";
     this.animation?.update(delta, elapsed);
-    if (this.perched && this.mode === "cover") {
+    if (this.perched && (this.mode === "cover" || this.mode === "nest")) {
       this.animation?.playLandIdle(elapsed);
     } else if (this.mode === "void") {
       this.animation?.playFlight({ elapsed, sad: false });
@@ -1099,7 +1333,7 @@ export class MothSystem {
     this.vitality = clamp01(this.vitality + 0.26);
     this.fatigue = clamp01(this.fatigue - 0.28);
     this.corruption = clamp01(this.corruption + 0.10);
-    this.fragmentCharge += 0.5;
+    this.fragmentCharge += this.cfg.fragmentChargePerVoid;
     this.log("void consumed :: F_Void_Inspect", "VOID");
   }
 
@@ -1111,6 +1345,28 @@ export class MothSystem {
     const palette = this.currentPalette[0] || new THREE.Color("#2fe4ff");
     this.spawnNestAt(position.clone().add(new THREE.Vector3(0, -0.04, 0)), randRange(0.055, 0.095), `#${palette.getHexString()}`);
     this.log("moth left binary residue", "MOTH");
+  }
+
+  depositFragmentNest(position, elapsed, target = null) {
+    if (elapsed - this.lastPerchDropAt < Math.max(1.2, this.cfg.nestDepositDelay * 0.45)) return;
+    if (this.nests.length >= this.cfg.nestMax) return;
+    if (this.fragmentCharge < this.cfg.fragmentDepositCost * 0.5 && Math.random() > 0.35) return;
+    this.lastPerchDropAt = elapsed;
+    this.fragmentCharge = Math.max(0, this.fragmentCharge - this.cfg.fragmentDepositCost);
+    const palette = this.currentPalette[0] || new THREE.Color("#2fe4ff");
+    const color = `#${palette.getHexString()}`;
+    const nest = this.spawnNestAt(position.clone().add(new THREE.Vector3(0, -0.035, 0)), randRange(0.075, 0.13), color);
+    this.decorateTargetDom(target, color);
+    this.log(`nest deposit :: ${nest.userData.id || nest.id} / fragments ${this.fragmentCharge.toFixed(2)}`, "NEST");
+  }
+
+  decorateTargetDom(target, color = "#2fe4ff") {
+    const node = target?.entry?.labelNode || target?.mesh?.userData?.labelNode || null;
+    if (!node?.classList) return;
+    node.classList.add(this.cfg.uiResidueClassName);
+    node.style.setProperty("--moth-residue", color);
+    node.style.textShadow = `0 0 12px ${color}, 0 0 28px rgba(47,228,255,.35)`;
+    node.style.filter = "saturate(1.2) brightness(1.08)";
   }
 
   spawnNestAt(position, scale = 0.08, color = "#2fe4ff", id = makeId("nest")) {
@@ -1133,6 +1389,26 @@ export class MothSystem {
     return sprite;
   }
 
+  updateDebugSnapshot(elapsed) {
+    if (!this.debugPanel) return;
+    if (elapsed - this.lastDebugSnapshotAt < this.cfg.debugSnapshotInterval) return;
+    this.lastDebugSnapshotAt = elapsed;
+    const targetName = this.currentPerchTarget?.item?.title || this.currentPerchTarget?.mesh?.name || this.voidState?.id || "ambient space";
+    this.debugPanel.update({
+      mood: this.mood,
+      mode: this.mode,
+      behaviour: this.behaviour,
+      animation: this.animation?.currentKey || "fallback-motion",
+      target: targetName,
+      vitality: this.vitality,
+      signal: this.signalLevel,
+      fatigue: this.fatigue,
+      trust: this.trust,
+      corruption: this.corruption,
+      fragments: this.fragmentCharge.toFixed(2)
+    });
+  }
+
   dispose() {
     this.disposed = true;
     if (this._raf) cancelAnimationFrame(this._raf);
@@ -1149,6 +1425,7 @@ export class MothSystem {
     this.scene?.remove(this.trail?.points);
     this.scene?.remove(this.voidGroup);
     this.scene?.remove(this.nestGroup);
+    this.debugPanel?.dispose();
     this.saveState(true);
   }
 }
