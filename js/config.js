@@ -87,7 +87,7 @@ export const MOTH_CONFIG = {
   modelYawOffset: -Math.PI / 2,
   modelPitchOffset: 0,
   modelRollOffset: 0,
-  meshOpacity: 0.38,
+  meshOpacity: 0.48,
   meshEmissiveIntensity: 0.34,
   debugOverlay: true,
   shellMotionStrength: 1.25,
