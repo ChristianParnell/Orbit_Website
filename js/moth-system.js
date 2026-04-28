@@ -26,7 +26,10 @@ const DEFAULT_CONFIG = {
   binaryPointSizeMax: 1.12,
   binaryBrightness: 1.8,
   auraSize: 0.44,
-  auraOpacity: 0.38,
+  auraOpacity: 0.0,
+  auraVisible: false,
+  trailSpawnBehindDistance: 0.018,
+  hitProxyDebugVisible: false,
   trailCount: 140,
   trailEmitInterval: 0.055,
   trailLife: 1.15,
@@ -550,6 +553,9 @@ export class MothSystem {
     this.auraSprite = null;
     this.stateLight = null;
     this.meshMaterials = [];
+    this.mothCoreLocal = new THREE.Vector3();
+    this.mothCoreWorld = new THREE.Vector3();
+    this.mothCoreAnchorReady = false;
 
     this.nestGroup = new THREE.Group();
     this.voidGroup = new THREE.Group();
@@ -1053,6 +1059,7 @@ export class MothSystem {
     this.fitMothScale();
     this.setupAnimations(clips);
     this.buildBinaryShell();
+    this.updateMothCoreAnchor(true);
     this.buildAura();
     this.buildTrail();
     this.buildHitProxy();
@@ -1477,25 +1484,80 @@ export class MothSystem {
 
     positionAttr.needsUpdate = true;
     normalAttr.needsUpdate = true;
+    this.updateMothCoreAnchor(false);
+  }
+
+  updateMothCoreAnchor(force = false) {
+    const targetLocal = this.temp.a.set(0, 0, 0);
+    let found = false;
+
+    if (this.binaryShell?.geometry?.attributes?.position) {
+      this.binaryShell.geometry.computeBoundingBox();
+      const box = this.binaryShell.geometry.boundingBox;
+      if (box && !box.isEmpty()) {
+        box.getCenter(targetLocal);
+        this.visualRoot.updateMatrix();
+        targetLocal.applyMatrix4(this.visualRoot.matrix);
+        found = true;
+      }
+    }
+
+    if (!found && this.modelRoot) {
+      this.modelRoot.updateMatrixWorld(true);
+      this.temp.bbox.setFromObject(this.modelRoot);
+      if (!this.temp.bbox.isEmpty()) {
+        this.temp.bbox.getCenter(targetLocal);
+        this.root.worldToLocal(targetLocal);
+        found = true;
+      }
+    }
+
+    if (!found) targetLocal.set(0, 0, 0);
+
+    if (force || !this.mothCoreAnchorReady) {
+      this.mothCoreLocal.copy(targetLocal);
+      this.mothCoreAnchorReady = true;
+    } else {
+      this.mothCoreLocal.lerp(targetLocal, 0.32);
+    }
+
+    if (this.auraSprite) {
+      this.auraSprite.position.copy(this.mothCoreLocal);
+      this.auraSprite.visible = this.cfg.auraVisible === true && this.visible;
+    }
+    if (this.stateLight) this.stateLight.position.copy(this.mothCoreLocal);
+    if (this.hitProxy) this.hitProxy.position.copy(this.mothCoreLocal);
+
+    this.mothCoreWorld.copy(this.mothCoreLocal);
+    this.root.localToWorld(this.mothCoreWorld);
+    return this.mothCoreWorld;
   }
 
   buildAura() {
-    const material = new THREE.SpriteMaterial({
-      map: this.auraTexture,
-      transparent: true,
-      opacity: this.cfg.auraOpacity,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      color: new THREE.Color("#2fe4ff")
-    });
-    this.auraSprite = new THREE.Sprite(material);
-    this.auraSprite.name = "SpecterMothStateAura";
-    this.auraSprite.scale.setScalar(this.cfg.auraSize);
-    this.auraSprite.renderOrder = 10;
-    this.root.add(this.auraSprite);
+    // Keep the point light, but disable the visible aura sprite by default.
+    // The old sprite could look like a stray glowing mesh-ball when the root origin
+    // and animated binary-shell center did not line up.
+    if (this.cfg.auraVisible === true) {
+      const material = new THREE.SpriteMaterial({
+        map: this.auraTexture,
+        transparent: true,
+        opacity: this.cfg.auraOpacity,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+        color: new THREE.Color("#2fe4ff")
+      });
+      this.auraSprite = new THREE.Sprite(material);
+      this.auraSprite.name = "SpecterMothStateAura";
+      this.auraSprite.scale.setScalar(this.cfg.auraSize);
+      this.auraSprite.renderOrder = 10;
+      this.auraSprite.position.copy(this.mothCoreLocal);
+      this.root.add(this.auraSprite);
+    }
 
     this.stateLight = new THREE.PointLight(new THREE.Color("#2fe4ff"), 0.32, 1.5, 2.0);
     this.stateLight.name = "SpecterMothStateLight";
+    this.stateLight.position.copy(this.mothCoreLocal);
     this.root.add(this.stateLight);
   }
 
@@ -1541,11 +1603,20 @@ export class MothSystem {
     const box = new THREE.Box3().setFromObject(this.visualRoot);
     const size = box.getSize(new THREE.Vector3());
     const radius = THREE.MathUtils.clamp(Math.max(size.x, size.y, size.z) * 0.65, 0.10, 0.22);
+    const proxyMaterial = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: this.cfg.hitProxyDebugVisible ? 0.18 : 0,
+      depthWrite: false,
+      depthTest: false,
+      colorWrite: Boolean(this.cfg.hitProxyDebugVisible)
+    });
     const proxy = new THREE.Mesh(
       new THREE.SphereGeometry(radius, 12, 12),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      proxyMaterial
     );
     proxy.name = "SpecterMothHitProxy";
+    proxy.position.copy(this.mothCoreLocal);
+    proxy.renderOrder = -999;
     this.hitProxy = proxy;
     this.root.add(proxy);
   }
@@ -1749,6 +1820,7 @@ export class MothSystem {
     this.updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData);
     this.ensureAnimationPlayback(elapsed);
     this.updateFlightPose(delta);
+    this.updateMothCoreAnchor(false);
     this.updateVisibleState(delta, elapsed);
     this.updateVoidVisual(elapsed, delta);
     this.updateNestAnimations(elapsed, coverWorldData);
@@ -2327,12 +2399,15 @@ export class MothSystem {
       this.binaryMaterial.uniforms.uBrightness.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uBrightness.value, this.cfg.binaryBrightness * visual.brightness, alpha);
     }
     if (this.auraSprite) {
+      this.auraSprite.position.copy(this.mothCoreLocal);
+      this.auraSprite.visible = this.cfg.auraVisible === true && this.visible;
       this.auraSprite.material.color.lerp(targetColor, alpha);
       this.auraSprite.material.opacity = THREE.MathUtils.lerp(this.auraSprite.material.opacity, this.cfg.auraOpacity * visual.aura, alpha);
       const pulse = 1.0 + Math.sin(elapsed * (visualName === "overwhelmed" ? 2.4 : 1.1)) * 0.035;
       this.auraSprite.scale.setScalar(this.cfg.auraSize * (0.75 + visual.aura) * pulse);
     }
     if (this.stateLight) {
+      this.stateLight.position.copy(this.mothCoreLocal);
       this.stateLight.color.lerp(targetColor, alpha);
       this.stateLight.intensity = THREE.MathUtils.lerp(this.stateLight.intensity, 0.18 + visual.aura * 0.32, alpha);
     }
@@ -2354,9 +2429,11 @@ export class MothSystem {
     const i = this.trail.cursor;
     this.trail.cursor = (this.trail.cursor + 1) % this.cfg.trailCount;
     const base = i * 3;
-    this.trail.positions[base] = this.root.position.x;
-    this.trail.positions[base + 1] = this.root.position.y;
-    this.trail.positions[base + 2] = this.root.position.z;
+    const spawn = this.updateMothCoreAnchor(false).clone();
+    spawn.addScaledVector(this.forward, -(this.cfg.trailSpawnBehindDistance || 0));
+    this.trail.positions[base] = spawn.x;
+    this.trail.positions[base + 1] = spawn.y;
+    this.trail.positions[base + 2] = spawn.z;
     this.trail.life[i] = this.cfg.trailLife;
     this.trail.velocity[i]
       .copy(this.forward)
