@@ -101,7 +101,24 @@ const DEFAULT_CONFIG = {
   // The moth can now use a named bone inside me_on_hill.fbx as its home/resting perch.
   // Create/name a bone something like "Moth_Perch", "perch", or "Perch_Bone" in the centre FBX.
   homePerchEnabled: true,
-  homePerchBoneNames: ["Moth_Perch", "moth_perch", "Perch", "perch", "Perch_Bone", "perch_bone", "MothRest", "Moth_Rest", "Rest_Perch"],
+  homePerchBoneNames: [
+    "PerchBone",
+    "perchbone",
+    "PERCHBONE",
+    "Perch Bone",
+    "Moth_PerchBone",
+    "MothPerchBone",
+    "moth_perch_bone",
+    "Moth_Perch",
+    "moth_perch",
+    "Perch",
+    "perch",
+    "Perch_Bone",
+    "perch_bone",
+    "MothRest",
+    "Moth_Rest",
+    "Rest_Perch"
+  ],
   homePerchForwardAxis: "-Z",
   homePerchUpAxis: "Y",
   homePerchSideAxis: "X",
@@ -114,6 +131,8 @@ const DEFAULT_CONFIG = {
   homePerchApproachSpeedScale: 0.56,
   homePerchApproachDistance: 0.17,
   homePerchLandingDistance: 0.095,
+  homePerchLandingSnapDistance: 0.035,
+  homePerchLandingCycle: true,
   homePerchSettleLerp: 0.14,
   homePerchTurnLerp: 0.13,
   homePerchUseCoreAnchor: true,
@@ -1382,8 +1401,8 @@ export class MothSystem {
 
     let desired = "";
     if (this.mode === "backflip") desired = "backflip";
-    else if (this.mode === "landed") desired = "perch";
-    else if (this.mode === "landing") desired = this.currentActionKey === "land" ? "land" : "";
+    else if (this.mode === "landed" || this.mode === "homePerched") desired = "perch";
+    else if (this.mode === "landing" || this.mode === "landingHome") desired = this.currentActionKey === "land" ? "land" : "";
     else if (this.mode === "takeoff") desired = this.currentActionKey === "takeoff" ? "takeoff" : "";
     else if (this.mode === "inspectVoid" || this.mode === "orbitVoid") desired = "feed";
     else desired = this.getPatrolFlightAction();
@@ -1392,7 +1411,7 @@ export class MothSystem {
     const action = this.getAction(desired);
     if (!action) return;
 
-    if (this.currentActionKey !== desired && this.mode !== "landing" && this.mode !== "takeoff") {
+    if (this.currentActionKey !== desired && this.mode !== "landing" && this.mode !== "landingHome" && this.mode !== "takeoff") {
       this.playLoop(desired);
       return;
     }
@@ -1856,7 +1875,7 @@ export class MothSystem {
 
     const wantedRaw = Array.isArray(this.cfg.homePerchBoneNames) && this.cfg.homePerchBoneNames.length
       ? this.cfg.homePerchBoneNames
-      : ["Moth_Perch", "perch", "Perch", "Perch_Bone"];
+      : ["PerchBone", "perchbone", "Moth_Perch", "perch", "Perch", "Perch_Bone"];
     const wanted = wantedRaw.map((name) => this.normalizeObjectName(name)).filter(Boolean);
 
     let best = null;
@@ -1866,8 +1885,9 @@ export class MothSystem {
       const rawName = child?.name || "";
       const name = this.normalizeObjectName(rawName);
       if (!name) return;
+      const isExactPerchBone = rawName === "PerchBone" || name === "perchbone" || name === "perch bone";
       const containsPerch = name.includes("perch") || name.includes("rest") || name.includes("moth home") || name.includes("home");
-      let score = containsPerch ? 80 : -1;
+      let score = isExactPerchBone ? 2200 : (containsPerch ? 80 : -1);
       for (const w of wanted) {
         if (name === w) score = Math.max(score, 1000);
         else if (name.includes(w) || w.includes(name)) score = Math.max(score, 640 - Math.abs(name.length - w.length));
@@ -1959,10 +1979,7 @@ export class MothSystem {
 
     const distance = this.root.position.distanceTo(target.rootPosition);
     if (distance <= (this.cfg.homePerchLandingDistance || this.cfg.landTriggerDistance || 0.095)) {
-      this.setMode("landingHome", `landing on ${this.homePerchBoneName || "home perch"}`);
-      this.landingTargetType = "home";
-      this.velocity.set(0, 0, 0);
-      this.playOnce("land", "perch");
+      this.beginHomeLandingCycle(elapsed);
       return;
     }
 
@@ -1975,6 +1992,64 @@ export class MothSystem {
     this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || this.cfg.turnLerpFast);
     this.playLoop(this.getPatrolFlightAction());
     this.behaviourNote = `returning to home perch bone: ${this.homePerchBoneName || "perch"}`;
+  }
+
+  beginHomeLandingCycle(elapsed) {
+    const target = this.getHomePerchTarget();
+    if (!target) {
+      this.setMode("patrol", "home landing cancelled · PerchBone missing");
+      return false;
+    }
+
+    this.landingTargetType = "home";
+    this.perched = false;
+    this.velocity.set(0, 0, 0);
+    this.setMode("landingHome", `F_Land cycle on ${this.homePerchBoneName || "PerchBone"}`);
+
+    const snapDistance = this.cfg.homePerchLandingSnapDistance || 0.035;
+    const distance = this.root.position.distanceTo(target.rootPosition);
+    if (distance <= snapDistance) this.root.position.copy(target.rootPosition);
+    else this.root.position.lerp(target.rootPosition, 0.55);
+
+    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
+    this.pushDebugLine("HOME", `landing cycle: ${this.homePerchBoneName || "PerchBone"} · F_Land → F_Land_Idle`);
+
+    if (!this.playOnce("land", "perch")) {
+      this.setMode("homePerched", `F_Land missing; snapped to ${this.homePerchBoneName || "PerchBone"}`);
+      this.landingTargetType = "";
+      this.perched = true;
+      this.playLoop("perch");
+    }
+
+    return true;
+  }
+
+  updateHomeLandingCycle(delta, elapsed) {
+    const target = this.getHomePerchTarget();
+    if (!target) {
+      this.landingTargetType = "";
+      this.setMode("patrol", "home landing cancelled · PerchBone lost");
+      return;
+    }
+
+    const settleAlpha = 1.0 - Math.exp(-delta * 14.0);
+    this.root.position.lerp(target.rootPosition, THREE.MathUtils.clamp(settleAlpha, 0.08, 0.45));
+
+    const snapDistance = this.cfg.homePerchLandingSnapDistance || 0.035;
+    if (this.root.position.distanceTo(target.rootPosition) <= snapDistance) {
+      this.root.position.copy(target.rootPosition);
+    }
+
+    this.velocity.set(0, 0, 0);
+    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
+    this.behaviourNote = `landing cycle on ${this.homePerchBoneName || "PerchBone"}: F_Land → F_Land_Idle`;
+
+    const action = this.getAction("land");
+    const duration = this.actionDurations.get("land") || action?.getClip?.().duration || 0;
+    const guard = Math.max(0.035, this.lastDelta * 2.0);
+    if (action && duration > 0 && action.time >= Math.max(0, duration - guard)) {
+      this.onActionFinished({ action });
+    }
   }
 
   updateHomePerchIdle(delta, elapsed) {
@@ -2192,7 +2267,16 @@ export class MothSystem {
       if (this.mode === "investigateCover" || this.mode === "approachCover") this.setMode("patrol", "cover signal lost");
     }
 
-    if (this.mode === "homePerched" || this.mode === "landingHome") {
+    if (this.mode === "landingHome") {
+      if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, Boolean(hasVoid))) {
+        this.startTakeoff(elapsed);
+      } else {
+        this.updateHomeLandingCycle(delta, elapsed);
+      }
+      return;
+    }
+
+    if (this.mode === "homePerched") {
       if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, Boolean(hasVoid))) {
         this.startTakeoff(elapsed);
       } else {
