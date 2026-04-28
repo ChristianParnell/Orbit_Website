@@ -514,6 +514,7 @@ export class MothSystem {
     this.mixer = null;
     this.actions = new Map();
     this.actionDurations = new Map();
+    this.boundClipNames = new Map();
     this.currentActionKey = "";
     this.pendingActionKey = "";
     this.hitProxy = null;
@@ -878,6 +879,7 @@ export class MothSystem {
       ["mood", this.mood],
       ["visible", this.getStateVisualName()],
       ["anim", action],
+      ["clip", this.boundClipNames?.get?.(action) || "—"],
       ["behaviour", this.behaviourNote || "—"],
       ["target", target],
       ["vitality", this.vitality.toFixed(2)],
@@ -1046,61 +1048,110 @@ export class MothSystem {
     const availableClips = collectAnimationClips(this.modelRoot, clips);
     if (!availableClips.length || !this.modelRoot) {
       this.log("moth loaded without animation clips", "WARN");
+      this.pushDebugLine("ANIM", "no FBX clips found on moth root");
       return;
     }
+
     this.mixer = new THREE.AnimationMixer(this.modelRoot);
+    this.actions.clear();
+    this.actionDurations.clear();
+    this.boundClipNames.clear();
+
     const uniqueClips = [];
     const seen = new Set();
     availableClips.forEach((clip) => {
+      if (!clip || !clip.name || !clip.duration) return;
       const key = `${normalizeName(clip.name)}_${clip.duration.toFixed(3)}`;
       if (seen.has(key)) return;
       seen.add(key);
       uniqueClips.push(clip);
     });
-    console.log("[Moth] Available animation clips:", uniqueClips.map((clip) => clip.name));
+
+    const clipNames = uniqueClips.map((clip) => clip.name);
+    console.log("[Moth] Available animation clips:", clipNames);
+    this.pushDebugLine("CLIPS", clipNames.length ? clipNames.join(" · ") : "none");
+
+    const exactClipNames = {
+      fly: ["F_Fly", "F Fly", "Fly"],
+      flySad: ["F_Fly_Sad", "F Fly Sad", "Fly Sad"],
+      land: ["F_Land", "F Land", "Land"],
+      perch: ["F_Land_Idle", "F Land Idle", "Land Idle"],
+      takeoff: ["F_Land_to_TakeOff", "F_Land_to_Takeoff", "F Land to TakeOff", "F Land To Take Off", "Land to TakeOff"],
+      feed: ["F_Void_Inspect", "F Void Inspect", "Void Inspect"],
+      backflip: ["F_Backflip", "F Backflip", "Backflip"]
+    };
 
     const createAction = (clip) => {
-      const action = this.mixer.clipAction(clip);
+      const action = this.mixer.clipAction(clip, this.modelRoot);
       action.enabled = true;
+      action.paused = false;
       action.clampWhenFinished = true;
       action.zeroSlopeAtStart = true;
       action.zeroSlopeAtEnd = true;
+      action.setEffectiveTimeScale(1);
+      action.setEffectiveWeight(1);
       return action;
     };
 
-    const exactBackflipClip =
-      uniqueClips.find((clip) => clip.name === "F_Backflip") ||
-      uniqueClips.find((clip) => clip.name === "Backflip") ||
-      uniqueClips.find((clip) => normalizeName(clip.name) === "f backflip") ||
-      uniqueClips.find((clip) => normalizeName(clip.name) === "backflip");
+    const findExactClip = (names) => {
+      const normalized = names.map((name) => normalizeName(name));
+      for (const wanted of names) {
+        const exact = uniqueClips.find((clip) => clip.name === wanted);
+        if (exact) return exact;
+      }
+      for (const wanted of normalized) {
+        const exact = uniqueClips.find((clip) => normalizeName(clip.name) === wanted);
+        if (exact) return exact;
+      }
+      return null;
+    };
 
-    if (exactBackflipClip) {
-      const action = createAction(exactBackflipClip);
-      this.actions.set("backflip", action);
-      this.actionDurations.set("backflip", exactBackflipClip.duration);
-      console.log("[Moth] Bound backflip to exact clip:", exactBackflipClip.name);
-    }
-
-    Object.entries(ACTION_KEYS).forEach(([actionKey, patterns]) => {
-      if (actionKey === "backflip" && this.actions.has("backflip")) return;
-      const clip = chooseBestClip(uniqueClips, patterns);
-      if (!clip) return;
+    const bindClip = (actionKey, clip, reason = "matched") => {
+      if (!clip) return false;
       const action = createAction(clip);
       this.actions.set(actionKey, action);
       this.actionDurations.set(actionKey, clip.duration);
+      this.boundClipNames.set(actionKey, clip.name);
+      this.pushDebugLine("BIND", `${actionKey} → ${clip.name} (${reason})`);
+      return true;
+    };
+
+    Object.entries(exactClipNames).forEach(([actionKey, names]) => {
+      bindClip(actionKey, findExactClip(names), "exact");
+    });
+
+    Object.entries(ACTION_KEYS).forEach(([actionKey, patterns]) => {
+      if (this.actions.has(actionKey)) return;
+      bindClip(actionKey, chooseBestClip(uniqueClips, patterns), "fallback");
     });
 
     if (!this.actions.has("flySad") && this.actions.has("fly")) {
       this.actions.set("flySad", this.actions.get("fly"));
       this.actionDurations.set("flySad", this.actionDurations.get("fly") || 0);
+      this.boundClipNames.set("flySad", `${this.boundClipNames.get("fly") || "fly"} [fallback]`);
+      this.pushDebugLine("BIND", "flySad → fly fallback");
     }
+
     if (!this.actions.has("perch") && this.actions.has("land")) {
       this.actions.set("perch", this.actions.get("land"));
       this.actionDurations.set("perch", this.actionDurations.get("land") || 0);
+      this.boundClipNames.set("perch", `${this.boundClipNames.get("land") || "land"} [fallback]`);
+      this.pushDebugLine("BIND", "perch → land fallback");
+    }
+
+    if (!this.actions.size) {
+      this.log(`moth clips found but no state mappings matched: ${clipNames.join(", ")}`, "WARN");
+      this.pushDebugLine("ANIM", "clips found, but no mappings matched");
+      return;
     }
 
     this.mixer.addEventListener("finished", (event) => this.onActionFinished(event));
     this.log(`moth animation states: ${Array.from(this.actions.keys()).join(", ")}`, "BOOT");
+    console.table(Array.from(this.boundClipNames.entries()).map(([state, clip]) => ({ state, clip })));
+
+    this.currentActionKey = "";
+    this.pendingActionKey = "";
+    this.playLoop(this.getPatrolFlightAction());
   }
 
   getAction(key) {
@@ -1146,18 +1197,30 @@ export class MothSystem {
 
   playLoop(key) {
     if (this.mode === "backflip" && this.currentActionKey === "backflip" && key !== "backflip") return false;
+
     const next = this.getAction(key);
-    if (!next) return false;
-    if (this.currentActionKey === key && next.isRunning()) return true;
+    if (!next) {
+      this.pushDebugLine("ANIM", `missing loop action: ${key}`);
+      return false;
+    }
+
     const previousKey = this.currentActionKey || "none";
     const fade = this.cfg.animationFadeLoop || 0.28;
     const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
+
     next.enabled = true;
+    next.paused = false;
     next.stopFading();
     next.setEffectiveTimeScale(1);
     next.setEffectiveWeight(1);
     next.setLoop(THREE.LoopRepeat, Infinity);
     next.clampWhenFinished = false;
+
+    if (this.currentActionKey === key) {
+      if (!next.isRunning()) next.play();
+      return true;
+    }
+
     if (previous && previous !== next) {
       previous.stopFading();
       next.reset();
@@ -1166,48 +1229,88 @@ export class MothSystem {
       next.reset();
       next.fadeIn(fade).play();
     }
+
     this.actions.forEach((action, actionKey) => {
       if (actionKey === key || action === next || action === previous) return;
       action.stopFading();
       action.fadeOut(fade);
     });
+
     this.currentActionKey = key;
-    if (previousKey !== key) this.pushDebugLine("ANIM", `${previousKey} → ${key} loop`);
+    this.pushDebugLine("ANIM", `${previousKey} → ${key} loop · ${this.boundClipNames.get(key) || "unknown clip"}`);
     return true;
   }
 
   playOnce(key, followUp = "") {
     if (this.mode === "backflip" && this.currentActionKey === "backflip" && key !== "backflip") return false;
+
     const next = this.getAction(key);
     if (!next) {
+      this.pushDebugLine("ANIM", `missing one-shot action: ${key}`);
       if (followUp) this.playLoop(followUp);
       return false;
     }
+
     const previousKey = this.currentActionKey || "none";
-    const fade = this.cfg.animationFadeOnce || 0.18;
+    const fade = this.cfg.animationFadeOnce || 0.20;
     const previous = this.currentActionKey ? this.getAction(this.currentActionKey) : null;
+
     this.pendingActionKey = followUp;
     next.enabled = true;
+    next.paused = false;
     next.stopFading();
     next.setEffectiveTimeScale(1);
     next.setEffectiveWeight(1);
     next.reset();
     next.setLoop(THREE.LoopOnce, 1);
     next.clampWhenFinished = true;
+
     if (previous && previous !== next) {
       previous.stopFading();
       next.crossFadeFrom(previous, fade, false).play();
     } else {
       next.fadeIn(fade).play();
     }
+
     this.actions.forEach((action, actionKey) => {
       if (actionKey === key || action === next || action === previous) return;
       action.stopFading();
       action.fadeOut(fade);
     });
+
     this.currentActionKey = key;
-    this.pushDebugLine("ANIM", `${previousKey} → ${key} once${followUp ? " → " + followUp : ""}`);
+    this.pushDebugLine("ANIM", `${previousKey} → ${key} once · ${this.boundClipNames.get(key) || "unknown clip"}${followUp ? " → " + followUp : ""}`);
     return true;
+  }
+
+  ensureAnimationPlayback(elapsed) {
+    if (!this.mixer || !this.actions.size) return;
+
+    let desired = "";
+    if (this.mode === "backflip") desired = "backflip";
+    else if (this.mode === "landed") desired = "perch";
+    else if (this.mode === "landing") desired = this.currentActionKey === "land" ? "land" : "";
+    else if (this.mode === "takeoff") desired = this.currentActionKey === "takeoff" ? "takeoff" : "";
+    else if (this.mode === "inspectVoid" || this.mode === "orbitVoid") desired = "feed";
+    else desired = this.getPatrolFlightAction();
+
+    if (!desired) return;
+    const action = this.getAction(desired);
+    if (!action) return;
+
+    if (this.currentActionKey !== desired && this.mode !== "landing" && this.mode !== "takeoff") {
+      this.playLoop(desired);
+      return;
+    }
+
+    if (!action.isRunning()) {
+      action.enabled = true;
+      action.paused = false;
+      action.setEffectiveTimeScale(1);
+      action.setEffectiveWeight(1);
+      action.play();
+      this.pushDebugLine("ANIM", `revived ${desired} · ${this.boundClipNames.get(desired) || "unknown clip"}`);
+    }
   }
 
   buildBinaryShell() {
@@ -1539,6 +1642,7 @@ export class MothSystem {
 
     this.updateNeedsAndMood(delta, elapsed, hoveredIndex, Boolean(hasVoid));
     this.updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData);
+    this.ensureAnimationPlayback(elapsed);
     this.updateFlightPose(delta);
     this.updateVisibleState(delta, elapsed);
     this.updateVoidVisual(elapsed, delta);
