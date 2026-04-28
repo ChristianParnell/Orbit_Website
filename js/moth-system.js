@@ -97,6 +97,27 @@ const DEFAULT_CONFIG = {
   perchEdgeWalk: 0.022,
   takeoffRiseHeight: 0.18,
 
+  // [MOTH HOME PERCH 2026-04-28]
+  // The moth can now use a named bone inside me_on_hill.fbx as its home/resting perch.
+  // Create/name a bone something like "Moth_Perch", "perch", or "Perch_Bone" in the centre FBX.
+  homePerchEnabled: true,
+  homePerchBoneNames: ["Moth_Perch", "moth_perch", "Perch", "perch", "Perch_Bone", "perch_bone", "MothRest", "Moth_Rest", "Rest_Perch"],
+  homePerchForwardAxis: "-Z",
+  homePerchUpAxis: "Y",
+  homePerchSideAxis: "X",
+  homePerchForwardOffset: 0.0,
+  homePerchLiftOffset: 0.0,
+  homePerchSideOffset: 0.0,
+  homePerchRestDelay: 8.0,
+  homePerchSignalThreshold: 0.24,
+  homePerchFatigueThreshold: 0.70,
+  homePerchApproachSpeedScale: 0.56,
+  homePerchApproachDistance: 0.17,
+  homePerchLandingDistance: 0.095,
+  homePerchSettleLerp: 0.14,
+  homePerchTurnLerp: 0.13,
+  homePerchUseCoreAnchor: true,
+
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.9,
   voidHeightMax: 1.8,
@@ -168,6 +189,7 @@ const STATE_VISUALS = {
   "hungry / searching": { color: "#ff8b2d", aura: 0.44, brightness: 1.18, trail: 0.42 },
   "fed / bright": { color: "#ffe166", aura: 0.66, brightness: 1.70, trail: 1.05 },
   "safe / nesting": { color: "#b04dff", aura: 0.46, brightness: 1.34, trail: 0.35 },
+  "home perch": { color: "#b04dff", aura: 0.52, brightness: 1.42, trail: 0.24 },
   "void drawn": { color: "#33ff88", aura: 0.78, brightness: 1.85, trail: 1.22 },
   feeding: { color: "#5fff77", aura: 0.86, brightness: 2.05, trail: 1.35 },
   corrupted: { color: "#ff57ce", aura: 0.82, brightness: 1.65, trail: 1.05 },
@@ -557,6 +579,23 @@ export class MothSystem {
     this.mothCoreWorld = new THREE.Vector3();
     this.mothCoreAnchorReady = false;
 
+    // [MOTH HOME PERCH 2026-04-28]
+    // Perch/home anchor found from the me_on_hill.fbx central model, not from the orbit covers.
+    this.homePerchBone = null;
+    this.homePerchBoneName = "";
+    this.homePerchChecked = false;
+    this.lastHomePerchSearchAt = -999;
+    this.homePerchTarget = {
+      position: new THREE.Vector3(),
+      rootPosition: new THREE.Vector3(),
+      normal: new THREE.Vector3(0, 0, -1),
+      up: new THREE.Vector3(0, 1, 0),
+      right: new THREE.Vector3(1, 0, 0),
+      quaternion: new THREE.Quaternion()
+    };
+    this.homePerchAvailable = false;
+    this.landingTargetType = "";
+
     this.nestGroup = new THREE.Group();
     this.voidGroup = new THREE.Group();
     this.scene.add(this.nestGroup);
@@ -800,6 +839,7 @@ export class MothSystem {
     let nextMood = "patrolling";
     if (this.mode === "backflip") nextMood = "backflip";
     else if (this.mode === "inspectVoid") nextMood = "feeding";
+    else if (this.mode === "homePerched" || this.mode === "landingHome" || this.mode === "approachHomePerch") nextMood = "home perch";
     else if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter") nextMood = "safe / nesting";
     else if (this.corruption >= (this.cfg.overwhelmCorruptionThreshold || 0.82)) nextMood = "corrupted";
     else if (this.mode === "fleeOverwhelmed") nextMood = "overwhelmed";
@@ -899,7 +939,15 @@ export class MothSystem {
   updateDebugOverlay(elapsed, hoveredIndex = -1) {
     if (!this.debugOverlayBody || !this.debugOverlayVisible) return;
     const action = this.currentActionKey || "none";
-    const target = this.voidState?.active ? "void" : hoveredIndex >= 0 ? `cover ${hoveredIndex}` : this.pointerWorldTargetValid ? "pointer signal" : "patrol";
+    const target = this.voidState?.active
+      ? "void"
+      : hoveredIndex >= 0
+        ? `cover ${hoveredIndex}`
+        : (this.mode === "homePerched" || this.mode === "approachHomePerch" || this.mode === "landingHome")
+          ? `home perch${this.homePerchBoneName ? ` (${this.homePerchBoneName})` : ""}`
+          : this.pointerWorldTargetValid
+            ? "pointer signal"
+            : "patrol";
     if (this.lastDebugMode !== this.mode) {
       this.pushDebugLine("STATE", `${this.lastDebugMode} → ${this.mode}`);
       this.lastDebugMode = this.mode;
@@ -917,6 +965,7 @@ export class MothSystem {
       ["clip time", this.getAction(action) ? `${this.getAction(action).time.toFixed(2)}s ${this.getAction(action).isRunning() ? "playing" : "stopped"}` : "—"],
       ["behaviour", this.behaviourNote || "—"],
       ["target", target],
+      ["home", this.homePerchAvailable ? (this.homePerchBoneName || "found") : "not found"],
       ["vitality", this.vitality.toFixed(2)],
       ["hunger", this.hunger.toFixed(2)],
       ["signal", this.signal.toFixed(2)],
@@ -1057,6 +1106,7 @@ export class MothSystem {
     });
 
     this.fitMothScale();
+    this.findHomePerchBone(true);
     this.setupAnimations(clips);
     this.buildBinaryShell();
     this.updateMothCoreAnchor(true);
@@ -1203,7 +1253,9 @@ export class MothSystem {
     if (this.currentActionKey === "land" && this.pendingActionKey === "perch") {
       this.pendingActionKey = "";
       this.perched = true;
-      this.setMode("landed", "settled on perch");
+      const isHomeLanding = this.landingTargetType === "home";
+      this.setMode(isHomeLanding ? "homePerched" : "landed", isHomeLanding ? "settled on home perch bone" : "settled on cover perch");
+      this.landingTargetType = "";
       this.playLoop("perch");
       return;
     }
@@ -1755,6 +1807,188 @@ export class MothSystem {
     if (force) this.root.position.copy(candidate);
   }
 
+
+  normalizeObjectName(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[_\-|]+/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  getConfiguredAxisVector(axis = "-Z", quaternion = null, fallback = new THREE.Vector3(0, 0, -1)) {
+    const key = String(axis || "-Z").trim().toUpperCase();
+    const out = new THREE.Vector3();
+    switch (key) {
+      case "X": out.set(1, 0, 0); break;
+      case "-X": out.set(-1, 0, 0); break;
+      case "Y": out.set(0, 1, 0); break;
+      case "-Y": out.set(0, -1, 0); break;
+      case "Z": out.set(0, 0, 1); break;
+      case "-Z": out.set(0, 0, -1); break;
+      default: out.copy(fallback); break;
+    }
+    if (quaternion) out.applyQuaternion(quaternion);
+    if (out.lengthSq() <= 0.000001) out.copy(fallback);
+    return out.normalize();
+  }
+
+  findHomePerchBone(force = false) {
+    if (this.homePerchBone && this.homePerchChecked && !force) return this.homePerchBone;
+    const now = this.getElapsed ? this.getElapsed() : 0;
+    if (!force && this.homePerchChecked && now - this.lastHomePerchSearchAt < 2.0) return null;
+    this.lastHomePerchSearchAt = now;
+    this.homePerchChecked = true;
+    this.homePerchBone = null;
+    this.homePerchBoneName = "";
+    this.homePerchAvailable = false;
+
+    if (this.cfg.homePerchEnabled === false || !this.centralModel) {
+      this.pushDebugLine("HOME", this.cfg.homePerchEnabled === false ? "home perch disabled" : "central model missing");
+      return null;
+    }
+
+    const wantedRaw = Array.isArray(this.cfg.homePerchBoneNames) && this.cfg.homePerchBoneNames.length
+      ? this.cfg.homePerchBoneNames
+      : ["Moth_Perch", "perch", "Perch", "Perch_Bone"];
+    const wanted = wantedRaw.map((name) => this.normalizeObjectName(name)).filter(Boolean);
+
+    let best = null;
+    let bestScore = -1;
+    this.centralModel.updateMatrixWorld?.(true);
+    this.centralModel.traverse?.((child) => {
+      const rawName = child?.name || "";
+      const name = this.normalizeObjectName(rawName);
+      if (!name) return;
+      const containsPerch = name.includes("perch") || name.includes("rest") || name.includes("moth home") || name.includes("home");
+      let score = containsPerch ? 80 : -1;
+      for (const w of wanted) {
+        if (name === w) score = Math.max(score, 1000);
+        else if (name.includes(w) || w.includes(name)) score = Math.max(score, 640 - Math.abs(name.length - w.length));
+      }
+      if (child.isBone) score += 220;
+      if (score > bestScore) {
+        bestScore = score;
+        best = child;
+      }
+    });
+
+    if (best && bestScore >= 80) {
+      this.homePerchBone = best;
+      this.homePerchBoneName = best.name || "unnamed perch bone";
+      this.homePerchAvailable = true;
+      this.pushDebugLine("HOME", `bound home perch bone: ${this.homePerchBoneName}`);
+    } else {
+      this.pushDebugLine("HOME", `no perch bone found; names checked: ${wantedRaw.join(", ")}`);
+    }
+
+    return this.homePerchBone;
+  }
+
+  getHomePerchTarget() {
+    const bone = this.findHomePerchBone(false);
+    if (!bone) return null;
+
+    this.centralModel?.updateMatrixWorld?.(true);
+    bone.updateMatrixWorld?.(true);
+
+    const target = this.homePerchTarget;
+    bone.getWorldPosition(target.position);
+    bone.getWorldQuaternion(target.quaternion);
+
+    target.normal.copy(this.getConfiguredAxisVector(this.cfg.homePerchForwardAxis || "-Z", target.quaternion, new THREE.Vector3(0, 0, -1)));
+    target.up.copy(this.getConfiguredAxisVector(this.cfg.homePerchUpAxis || "Y", target.quaternion, new THREE.Vector3(0, 1, 0)));
+    target.right.copy(this.getConfiguredAxisVector(this.cfg.homePerchSideAxis || "X", target.quaternion, new THREE.Vector3(1, 0, 0)));
+
+    target.position
+      .addScaledVector(target.normal, this.cfg.homePerchForwardOffset || 0)
+      .addScaledVector(target.up, this.cfg.homePerchLiftOffset || 0)
+      .addScaledVector(target.right, this.cfg.homePerchSideOffset || 0);
+
+    target.rootPosition.copy(target.position);
+    if (this.cfg.homePerchUseCoreAnchor !== false && this.mothCoreLocal) {
+      const coreOffset = this.temp.e.copy(this.mothCoreLocal).applyQuaternion(this.root.quaternion);
+      target.rootPosition.sub(coreOffset);
+    }
+
+    return target;
+  }
+
+  hasActiveExternalMothTarget(elapsed, hoveredIndex, hasVoid) {
+    if (hasVoid || hoveredIndex >= 0) return true;
+    if (this.pointerWorldTargetValid && elapsed - this.lastPointerEventAt <= 1.4) return true;
+    if (this.aggression > 0.20 || this.inputEnergy > 0.22) return true;
+    return false;
+  }
+
+  shouldReturnHomePerch(elapsed, hoveredIndex, hasVoid) {
+    if (this.cfg.homePerchEnabled === false) return false;
+    if (!this.getHomePerchTarget()) return false;
+    if (this.mode !== "patrol") return false;
+    if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, hasVoid)) return false;
+
+    const idleFor = elapsed - Math.max(this.lastInputAt || -999, this.lastPointerEventAt || -999);
+    const idleReady = idleFor >= (this.cfg.homePerchRestDelay || 8.0);
+    const quietSignal = this.signal <= (this.cfg.homePerchSignalThreshold || 0.24);
+    const tired = this.fatigue >= (this.cfg.homePerchFatigueThreshold || 0.70);
+    return idleReady && (quietSignal || tired || this.mood === "under-stimulated");
+  }
+
+  startHomePerchApproach(elapsed, reason = "returning home") {
+    const target = this.getHomePerchTarget();
+    if (!target) return false;
+    this.perched = false;
+    this.landingTargetType = "home";
+    this.setMode("approachHomePerch", `${reason}: ${this.homePerchBoneName || "perch bone"}`);
+    this.playLoop(this.getPatrolFlightAction());
+    return true;
+  }
+
+  updateHomePerchApproach(delta, elapsed) {
+    const target = this.getHomePerchTarget();
+    if (!target) {
+      this.setMode("patrol", "home perch bone missing");
+      return;
+    }
+
+    const distance = this.root.position.distanceTo(target.rootPosition);
+    if (distance <= (this.cfg.homePerchLandingDistance || this.cfg.landTriggerDistance || 0.095)) {
+      this.setMode("landingHome", `landing on ${this.homePerchBoneName || "home perch"}`);
+      this.landingTargetType = "home";
+      this.velocity.set(0, 0, 0);
+      this.playOnce("land", "perch");
+      return;
+    }
+
+    this.moveToward(
+      delta,
+      target.rootPosition,
+      this.getPatrolFlightSpeed(elapsed) * (this.cfg.homePerchApproachSpeedScale || 0.56),
+      { response: this.cfg.velocityResponse, skipClamp: true }
+    );
+    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || this.cfg.turnLerpFast);
+    this.playLoop(this.getPatrolFlightAction());
+    this.behaviourNote = `returning to home perch bone: ${this.homePerchBoneName || "perch"}`;
+  }
+
+  updateHomePerchIdle(delta, elapsed) {
+    const target = this.getHomePerchTarget();
+    if (!target) {
+      this.setMode("patrol", "home perch bone lost");
+      return;
+    }
+
+    const settleAlpha = 1.0 - Math.exp(-delta * ((this.cfg.homePerchSettleLerp || 0.14) * 60.0));
+    this.root.position.lerp(target.rootPosition, THREE.MathUtils.clamp(settleAlpha, 0.02, 0.36));
+    this.velocity.multiplyScalar(Math.exp(-delta * 9.5));
+    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
+    this.playLoop("perch");
+    this.perched = true;
+    this.fatigue = clamp01(this.fatigue - delta * (this.cfg.fatigueRestRecovery || 0.16));
+    this.behaviourNote = `resting at home perch bone: ${this.homePerchBoneName || "perch"}`;
+  }
+
   getCoverPerchTarget(index, coverWorldData) {
     const cover = coverWorldData[index];
     if (!cover) return null;
@@ -1858,9 +2092,12 @@ export class MothSystem {
     if (hasVoid && voidTarget) {
       this.hoverClock = 0;
       this.investigationState = null;
-      if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter") {
+      if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter" || this.mode === "homePerched" || this.mode === "landingHome") {
         this.startTakeoff(elapsed);
         return;
+      }
+      if (this.mode === "approachHomePerch") {
+        this.setMode("approachVoid", "home return interrupted by void");
       }
       if (this.mode === "inspectVoid") {
         this.updateVoidInspect(delta, elapsed, voidTarget);
@@ -1880,6 +2117,13 @@ export class MothSystem {
     }
 
     if (coverTarget) {
+      if (this.mode === "homePerched" || this.mode === "landingHome") {
+        this.startTakeoff(elapsed);
+        return;
+      }
+      if (this.mode === "approachHomePerch") {
+        this.setMode("patrol", "home return interrupted by cover hover");
+      }
       this.hoverClock += delta;
       if (this.lastHoveredIndex !== hoveredIndex) {
         this.investigationState = null;
@@ -1910,6 +2154,7 @@ export class MothSystem {
         const distance = this.root.position.distanceTo(coverTarget.position);
         if (distance <= this.cfg.landTriggerDistance) {
           this.setMode("landing", `landing on cover ${hoveredIndex}`);
+          this.landingTargetType = "cover";
           this.perched = false;
           this.velocity.set(0, 0, 0);
           this.playOnce("land", "perch");
@@ -1935,6 +2180,29 @@ export class MothSystem {
         return;
       }
       if (this.mode === "investigateCover" || this.mode === "approachCover") this.setMode("patrol", "cover signal lost");
+    }
+
+    if (this.mode === "homePerched" || this.mode === "landingHome") {
+      if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, Boolean(hasVoid))) {
+        this.startTakeoff(elapsed);
+      } else {
+        this.updateHomePerchIdle(delta, elapsed);
+      }
+      return;
+    }
+
+    if (this.mode === "approachHomePerch") {
+      this.updateHomePerchApproach(delta, elapsed);
+      return;
+    }
+
+    if (this.shouldReturnHomePerch(elapsed, hoveredIndex, Boolean(hasVoid))) {
+      this.startHomePerchApproach(elapsed, "idle / returning to home");
+    }
+
+    if (this.mode === "approachHomePerch") {
+      this.updateHomePerchApproach(delta, elapsed);
+      return;
     }
 
     if (this.shouldSeekShelter(Boolean(hasVoid), hoveredIndex)) this.setMode("seekShelter", "needs rest / shelter");
@@ -2043,6 +2311,7 @@ export class MothSystem {
     if (distance <= (this.cfg.shelterLandDistance || 0.16)) {
       this.perched = false;
       this.setMode("landing", `shelter ${shelter.index}`);
+      this.landingTargetType = "cover";
       this.velocity.set(0, 0, 0);
       this.playOnce("land", "perch");
       this.maybeDropNest(shelter.position, shelter.index);
@@ -2058,7 +2327,7 @@ export class MothSystem {
   shouldFollowPointer(elapsed, hoveredIndex, hasVoid) {
     if (hasVoid || hoveredIndex >= 0) return false;
     if (!this.pointerWorldTargetValid) return false;
-    if (this.mode === "landed" || this.mode === "landing" || this.mode === "takeoff" || this.mode === "backflip") return false;
+    if (this.mode === "landed" || this.mode === "landing" || this.mode === "homePerched" || this.mode === "landingHome" || this.mode === "approachHomePerch" || this.mode === "takeoff" || this.mode === "backflip") return false;
     if (elapsed - this.lastPointerEventAt > 1.2) return false;
     if (elapsed - this.lastPointerCuriosityAt < (this.cfg.pointerCuriosityCooldown || 0.40)) return false;
     if (this.trust < (this.cfg.pointerCuriosityTrustMin || 0.34)) return false;
@@ -2104,7 +2373,7 @@ export class MothSystem {
     this.clampPointNearCenter(target);
     this.fleeState = { startedAt: elapsed, endsAt: elapsed + randomFromRange(this.cfg.overwhelmDurationMin, this.cfg.overwhelmDurationMax), target, reason };
     this.lastFleeAt = elapsed;
-    if (this.mode === "landed" || this.mode === "landing") this.startTakeoff(elapsed);
+    if (this.mode === "landed" || this.mode === "landing" || this.mode === "homePerched" || this.mode === "landingHome") this.startTakeoff(elapsed);
     if (this.mode !== "takeoff") this.setMode("fleeOverwhelmed", reason);
     this.playLoop(this.getPatrolFlightAction());
   }
@@ -2192,6 +2461,7 @@ export class MothSystem {
   startTakeoff(elapsed) {
     if (this.mode === "takeoff" || this.mode === "backflip") return;
     this.perched = false;
+    this.landingTargetType = "";
     this.setMode("takeoff", "leaving perch");
     const duration = this.actionDurations.get("takeoff") || 0.7;
     this.takeoffState = { startedAt: elapsed, duration, startPos: this.root.position.clone(), endPos: this.root.position.clone().add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight, 0)) };
@@ -2236,7 +2506,7 @@ export class MothSystem {
     const maxSpeed = Math.max(baseSpeed * 1.12, 0.1);
     if (this.velocity.length() > maxSpeed) this.velocity.setLength(maxSpeed);
     this.root.position.addScaledVector(this.velocity, delta);
-    this.clampPointNearCenter(this.root.position);
+    if (!options.skipClamp) this.clampPointNearCenter(this.root.position);
   }
 
   getTravelFacingDirection(targetPoint = null) {
@@ -2349,17 +2619,17 @@ export class MothSystem {
     const localVelocity = this.temp.a.copy(this.velocity).applyQuaternion(inverseRoot);
     let bankTarget = 0;
     let pitchTarget = 0;
-    if (speed > 0.04 && this.mode !== "landed" && this.mode !== "backflip") {
+    if (speed > 0.04 && this.mode !== "landed" && this.mode !== "homePerched" && this.mode !== "backflip") {
       const side = THREE.MathUtils.clamp(localVelocity.x / Math.max(0.0001, speed), -1, 1);
       const lift = THREE.MathUtils.clamp(localVelocity.y / Math.max(0.0001, speed), -1, 1);
       bankTarget = THREE.MathUtils.clamp(-side * (this.cfg.visualBankMax || 0.105), -(this.cfg.visualBankMax || 0.105), this.cfg.visualBankMax || 0.105);
       pitchTarget = THREE.MathUtils.clamp(-lift * (this.cfg.visualPitchMax || 0.055), -(this.cfg.visualPitchMax || 0.055), this.cfg.visualPitchMax || 0.055);
     }
-    if (this.mode === "inspectVoid" || this.mode === "landing") {
+    if (this.mode === "inspectVoid" || this.mode === "landing" || this.mode === "landingHome") {
       bankTarget *= 0.25;
       pitchTarget *= 0.25;
     }
-    if (this.mode === "landed" || this.mode === "backflip") {
+    if (this.mode === "landed" || this.mode === "homePerched" || this.mode === "backflip") {
       bankTarget = 0;
       pitchTarget = 0;
     }
@@ -2374,6 +2644,7 @@ export class MothSystem {
     if (this.mode === "backflip") return "backflip";
     if (this.mode === "inspectVoid") return "feeding";
     if (this.mode === "fleeOverwhelmed") return "overwhelmed";
+    if (this.mode === "homePerched" || this.mode === "landingHome" || this.mode === "approachHomePerch") return "home perch";
     return this.mood || "patrolling";
   }
 
