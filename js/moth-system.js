@@ -328,6 +328,22 @@ function ensureMaterialArray(value) {
   return value ? [value] : [];
 }
 
+// [MOTH ANIMATION VISIBILITY FIX 2026-04-28]
+// The moth's visible binary shell must be rebuilt from the animated/skinned FBX pose.
+// Without this, the AnimationMixer can play correctly while the visible binary points stay frozen.
+function applyBoneTransformToVector(mesh, vertexIndex, target) {
+  if (!mesh?.isSkinnedMesh) return target;
+  if (typeof mesh.applyBoneTransform === "function") {
+    mesh.applyBoneTransform(vertexIndex, target);
+    return target;
+  }
+  if (typeof mesh.boneTransform === "function") {
+    mesh.boneTransform(vertexIndex, target);
+    return target;
+  }
+  return target;
+}
+
 function makeVisibleMothMaterial(sourceMaterial, opacity, emissiveIntensity, isSkinned) {
   let material = sourceMaterial && typeof sourceMaterial.clone === "function"
     ? sourceMaterial.clone()
@@ -529,6 +545,7 @@ export class MothSystem {
     this.hitProxy = null;
     this.binaryShell = null;
     this.binaryMaterial = null;
+    this.binarySamples = [];
     this.trail = null;
     this.auraSprite = null;
     this.stateLight = null;
@@ -891,6 +908,7 @@ export class MothSystem {
       ["visible", this.getStateVisualName()],
       ["anim", action],
       ["clip", this.boundClipNames?.get?.(action) || "—"],
+      ["clip time", this.getAction(action) ? `${this.getAction(action).time.toFixed(2)}s ${this.getAction(action).isRunning() ? "playing" : "stopped"}` : "—"],
       ["behaviour", this.behaviourNote || "—"],
       ["target", target],
       ["vitality", this.vitality.toFixed(2)],
@@ -1327,32 +1345,47 @@ export class MothSystem {
 
   buildBinaryShell() {
     if (!this.modelRoot) return;
+
     this.modelRoot.updateMatrixWorld(true);
     this.visualRoot.updateMatrixWorld(true);
-    const samples = [];
+
     const meshes = [];
     this.modelRoot.traverse((child) => {
-      if (child.isMesh && child.geometry?.attributes?.position) meshes.push(child);
+      if (child.isMesh && child.geometry?.attributes?.position) {
+        if (!child.geometry.attributes.normal && typeof child.geometry.computeVertexNormals === "function") {
+          child.geometry.computeVertexNormals();
+        }
+        meshes.push(child);
+      }
     });
+
     const totalVerts = meshes.reduce((sum, mesh) => sum + mesh.geometry.attributes.position.count, 0);
     if (!totalVerts) return;
-    const limit = this.cfg.binaryPointLimit || 1350;
+
+    const limit = this.cfg.binaryPointLimit || this.cfg.pointLimit || 1350;
+    const samples = [];
+
     meshes.forEach((mesh) => {
       const pos = mesh.geometry.attributes.position;
       const nor = mesh.geometry.attributes.normal;
       const target = Math.max(24, Math.round(limit * (pos.count / Math.max(1, totalVerts))));
       const step = Math.max(1, Math.floor(pos.count / target));
-      const invVisual = new THREE.Matrix4().copy(this.visualRoot.matrixWorld).invert();
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+
       for (let i = 0; i < pos.count; i += step) {
-        const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld).applyMatrix4(invVisual);
-        const n = nor ? new THREE.Vector3().fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize() : new THREE.Vector3(0, 1, 0);
-        samples.push({ p, n });
+        samples.push({
+          mesh,
+          vertexIndex: i,
+          localPosition: new THREE.Vector3().fromBufferAttribute(pos, i),
+          localNormal: nor ? new THREE.Vector3().fromBufferAttribute(nor, i).normalize() : new THREE.Vector3(0, 1, 0)
+        });
         if (samples.length >= limit) break;
       }
     });
+
+    this.binarySamples = samples;
     const count = samples.length;
     if (!count) return;
+
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const normals = new Float32Array(count * 3);
@@ -1360,31 +1393,90 @@ export class MothSystem {
     const sizes = new Float32Array(count);
     const alphas = new Float32Array(count);
     const seeds = new Float32Array(count);
+
     for (let i = 0; i < count; i += 1) {
-      const s = samples[i];
-      const base = i * 3;
-      positions[base] = s.p.x;
-      positions[base + 1] = s.p.y;
-      positions[base + 2] = s.p.z;
-      normals[base] = s.n.x;
-      normals[base + 1] = s.n.y;
-      normals[base + 2] = s.n.z;
       digits[i] = Math.random() > 0.5 ? 1 : 0;
       sizes[i] = randomFromRange(this.cfg.binaryPointSizeMin, this.cfg.binaryPointSizeMax);
       alphas[i] = randomFromRange(0.46, 0.95);
       seeds[i] = Math.random();
     }
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute("aDigit", new THREE.BufferAttribute(digits, 1));
     geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
     geometry.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 1));
+
     this.binaryMaterial = createBinaryPointsMaterial(this.glyphAtlas);
     this.binaryShell = new THREE.Points(geometry, this.binaryMaterial);
     this.binaryShell.frustumCulled = false;
     this.binaryShell.renderOrder = 12;
     this.visualRoot.add(this.binaryShell);
+
+    this.refreshAnimatedBinaryShell();
+  }
+
+  refreshAnimatedBinaryShell() {
+    if (!this.binaryShell || !this.binarySamples?.length || !this.modelRoot) return;
+
+    this.modelRoot.updateMatrixWorld(true);
+    this.visualRoot.updateMatrixWorld(true);
+
+    const geometry = this.binaryShell.geometry;
+    const positionAttr = geometry.attributes.position;
+    const normalAttr = geometry.attributes.normal;
+    const positions = positionAttr.array;
+    const normals = normalAttr.array;
+
+    const visualInverse = new THREE.Matrix4().copy(this.visualRoot.matrixWorld).invert();
+    const worldToVisualNormal = new THREE.Matrix3().getNormalMatrix(visualInverse);
+    const worldNormalMatrices = new Map();
+
+    const getWorldNormalMatrix = (mesh) => {
+      let normalMatrix = worldNormalMatrices.get(mesh.uuid);
+      if (!normalMatrix) {
+        normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+        worldNormalMatrices.set(mesh.uuid, normalMatrix);
+      }
+      return normalMatrix;
+    };
+
+    for (let i = 0; i < this.binarySamples.length; i += 1) {
+      const sample = this.binarySamples[i];
+      const { mesh, vertexIndex, localPosition, localNormal } = sample;
+      const visualPos = this.temp.a.copy(localPosition);
+
+      applyBoneTransformToVector(mesh, vertexIndex, visualPos);
+      visualPos.applyMatrix4(mesh.matrixWorld).applyMatrix4(visualInverse);
+
+      const visualNormal = this.temp.b;
+      if (mesh.isSkinnedMesh) {
+        const normalTip = this.temp.c.copy(localPosition).addScaledVector(localNormal, 0.01);
+        applyBoneTransformToVector(mesh, vertexIndex, normalTip);
+        normalTip.applyMatrix4(mesh.matrixWorld).applyMatrix4(visualInverse);
+        visualNormal.copy(normalTip).sub(visualPos);
+        if (visualNormal.lengthSq() <= 0.0000001) visualNormal.copy(localNormal);
+        else visualNormal.normalize();
+      } else {
+        visualNormal.copy(localNormal)
+          .applyMatrix3(getWorldNormalMatrix(mesh))
+          .normalize()
+          .applyMatrix3(worldToVisualNormal)
+          .normalize();
+      }
+
+      const base = i * 3;
+      positions[base] = visualPos.x;
+      positions[base + 1] = visualPos.y;
+      positions[base + 2] = visualPos.z;
+      normals[base] = visualNormal.x;
+      normals[base + 1] = visualNormal.y;
+      normals[base + 2] = visualNormal.z;
+    }
+
+    positionAttr.needsUpdate = true;
+    normalAttr.needsUpdate = true;
   }
 
   buildAura() {
@@ -1639,6 +1731,7 @@ export class MothSystem {
 
     this.lastDelta = Math.max(1 / 240, delta || 1 / 60);
     if (this.mixer) this.mixer.update(delta);
+    this.refreshAnimatedBinaryShell();
 
     if (this.mode === "backflip" && this.backflipState) {
       this.lockBackflipTransform();
