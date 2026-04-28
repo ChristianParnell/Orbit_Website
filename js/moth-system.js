@@ -117,6 +117,10 @@ const DEFAULT_CONFIG = {
   homePerchSettleLerp: 0.14,
   homePerchTurnLerp: 0.13,
   homePerchUseCoreAnchor: true,
+  // After the moth finishes consuming a binary void, send it home to the perch bone.
+  // This makes feeding feel like a complete behaviour loop: find void -> feed -> return home -> land idle.
+  homePerchAfterFeed: true,
+  homePerchAfterFeedDelay: 0.0,
 
   voidSpawnRadius: 2.25,
   voidHeightMin: -0.9,
@@ -629,6 +633,7 @@ export class MothSystem {
     this.nextPatrolDecisionAt = 0;
     this.hoverClock = 0;
     this.satiatedUntil = 0;
+    this.homeReturnAfterFeedAt = -1;
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
     this.smoothedHeading = new THREE.Vector3(0, 0, -1);
@@ -2116,6 +2121,11 @@ export class MothSystem {
       return;
     }
 
+    if (this.homeReturnAfterFeedAt > 0 && elapsed >= this.homeReturnAfterFeedAt && !hasVoid && !coverTarget) {
+      this.homeReturnAfterFeedAt = -1;
+      if (this.startHomePerchApproach(elapsed, "fed / delayed return home")) return;
+    }
+
     if (coverTarget) {
       if (this.mode === "homePerched" || this.mode === "landingHome") {
         this.startTakeoff(elapsed);
@@ -2452,10 +2462,43 @@ export class MothSystem {
       this.clearVoid();
       this.satiatedUntil = elapsed + this.cfg.satiatedDuration;
       this.fragmentCount += 2;
-      this.setMode("patrol", "void consumed / fed");
+      this.finishVoidFeeding(elapsed);
+    }
+  }
+
+  finishVoidFeeding(elapsed) {
+    // [MOTH HOME LOOP 2026-04-28]
+    // Feeding is now an intentional sequence instead of returning to random patrol:
+    // approach void -> inspect/feed -> consume -> fly home -> F_Land -> F_Land_Idle.
+    const wantsHome = this.cfg.homePerchAfterFeed !== false;
+    const delay = Math.max(0, Number(this.cfg.homePerchAfterFeedDelay || 0));
+
+    this.velocity.multiplyScalar(0.35);
+    this.pointerWorldTargetValid = false;
+    this.aggression = 0;
+    this.inputEnergy = 0;
+    this.signal = Math.min(this.signal, 0.20);
+    this.fatigue = Math.max(0.0, this.fatigue - 0.18);
+
+    if (wantsHome && delay <= 0.001 && this.getHomePerchTarget()) {
+      if (this.startHomePerchApproach(elapsed, "fed / returning home after void")) {
+        this.behaviourNote = `fed, returning home to ${this.homePerchBoneName || "perch bone"}`;
+        this.playLoop("fly");
+        return;
+      }
+    }
+
+    if (wantsHome && delay > 0.001 && this.getHomePerchTarget()) {
+      this.homeReturnAfterFeedAt = elapsed + delay;
+      this.setMode("patrol", "fed / preparing to return home");
       this.pickNextPatrolPoint();
       this.playLoop("fly");
+      return;
     }
+
+    this.setMode("patrol", wantsHome ? "fed / home perch unavailable" : "void consumed / fed");
+    this.pickNextPatrolPoint();
+    this.playLoop("fly");
   }
 
   startTakeoff(elapsed) {
