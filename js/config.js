@@ -90,6 +90,11 @@ export const MOTH_CONFIG = {
   meshOpacity: 0.38,
   meshEmissiveIntensity: 0.34,
   debugOverlay: true,
+  // Keeps state lighting centered inside the moth without drawing a visible glow ball.
+  auraOpacity: 0.0,
+  auraVisible: false,
+  trailSpawnBehindDistance: 0.018,
+  hitProxyDebugVisible: false,
   shellMotionStrength: 0.82,
   shellPointSizeMin: 0.42,
   shellPointSizeMax: 0.82,
