@@ -136,13 +136,21 @@ export const MOTH_CONFIG = {
   turnLerpFast: 0.14,
   headingTargetBlend: 0.28,
   headingVelocityBlend: 0.72,
-  turnResponse: 5.2,
-  turnResponseFast: 7.2,
+  turnResponse: 4.7,
+  turnResponseFast: 6.2,
   headingVelocityMin: 0.055,
   headingMinSpeed: 0.11,
   headingDeadzone: 0.055,
-  headingSmoothing: 4.6,
+  headingSmoothing: 4.2,
   velocityResponse: 2.45,
+
+  // [MOTH VELOCITY FACING 2026-04-28]
+  // Keep the moth's body aligned to its true movement velocity with smooth turns.
+  velocityFacingMinSpeed: 0.045,
+  velocityHeadingBlendMin: 0.018,
+  velocityHeadingBlendMax: 0.20,
+  turnAlphaMax: 0.22,
+
   patrolVisibilityGrace: 0.40,
   recoveryVisibilityGrace: 0.45,
   animationFadeLoop: 0.28,
