@@ -174,6 +174,28 @@ export const MOTH_CONFIG = {
 
   takeoffRiseHeight: 0.20,
   takeoffMotionScale: 1.0,
+
+  // [MOTH HOME PERCH 2026-04-28]
+  // The moth's resting/home spot is a named bone inside me_on_hill.fbx.
+  // Recommended bone name in Blender/FBX: Moth_Perch. The code also accepts names containing perch/rest/home.
+  homePerchEnabled: true,
+  homePerchBoneNames: ["Moth_Perch", "moth_perch", "Perch", "perch", "Perch_Bone", "perch_bone", "MothRest", "Moth_Rest", "Rest_Perch"],
+  homePerchForwardAxis: "-Z",
+  homePerchUpAxis: "Y",
+  homePerchSideAxis: "X",
+  homePerchForwardOffset: 0.0,
+  homePerchLiftOffset: 0.0,
+  homePerchSideOffset: 0.0,
+  homePerchRestDelay: 8.0,
+  homePerchSignalThreshold: 0.24,
+  homePerchFatigueThreshold: 0.70,
+  homePerchApproachSpeedScale: 0.56,
+  homePerchApproachDistance: 0.17,
+  homePerchLandingDistance: 0.095,
+  homePerchSettleLerp: 0.14,
+  homePerchTurnLerp: 0.13,
+  homePerchUseCoreAnchor: true,
+
   // Backflip must be animation-only. These stay zero so code never pushes/rotates the moth.
   backflipPush: 0.0,
   backflipLift: 0.0,
