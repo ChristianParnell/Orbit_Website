@@ -195,6 +195,9 @@ export const MOTH_CONFIG = {
   homePerchSettleLerp: 0.14,
   homePerchTurnLerp: 0.13,
   homePerchUseCoreAnchor: true,
+  // After feeding from a binary void, the moth flies home and lands into F_Land_Idle.
+  homePerchAfterFeed: true,
+  homePerchAfterFeedDelay: 0.0,
 
   // Backflip must be animation-only. These stay zero so code never pushes/rotates the moth.
   backflipPush: 0.0,
