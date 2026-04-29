@@ -95,6 +95,7 @@ export const MOTH_CONFIG = {
   auraVisible: false,
   trailSpawnBehindDistance: 0.018,
   hitProxyDebugVisible: false,
+  hitProxyMeshEnabled: false,
   shellMotionStrength: 0.82,
   shellPointSizeMin: 0.42,
   shellPointSizeMax: 0.82,
@@ -227,6 +228,7 @@ export const MOTH_CONFIG = {
   homePerchSettleLerp: 0.14,
   homePerchTurnLerp: 0.13,
   homePerchUseCoreAnchor: true,
+  homePerchLockRootAfterLanding: true,
   // Keep PerchBone resting/takeoff upright even if the FBX bone has a rolled local axis.
   homePerchUseWorldUp: true,
   homePerchFlattenRoll: true,
@@ -234,7 +236,9 @@ export const MOTH_CONFIG = {
   // The moth sleeps at PerchBone until a real target appears or hunger wakes it.
   homePerchWakeWhenHungry: true,
   homePerchWakeHungerThreshold: 0.72,
-  homePerchMinimumSleepDuration: 2.0,
+  // Stay asleep at PerchBone for at least 5 seconds before taking off again,
+  // even if a void/cover interaction is queued.
+  homePerchMinimumSleepDuration: 5.0,
   // After feeding from a binary void, the moth flies home and lands into F_Land_Idle.
   homePerchAfterFeed: true,
   homePerchAfterFeedDelay: 0.0,
