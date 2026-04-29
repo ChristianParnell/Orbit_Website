@@ -1158,10 +1158,25 @@ export class MothSystem {
     this.buildAura();
     this.buildTrail();
     this.buildHitProxy();
-    this.pickNextPatrolPoint(true);
+
+    // Start at the PerchBone home point when it exists, so the moth begins asleep/resting
+    // instead of spawning at a random patrol corner.
+    const startupHome = this.getHomePerchTarget();
+    if (startupHome) {
+      this.root.position.copy(startupHome.rootPosition);
+      this.lookAtPoint(startupHome.position.clone().add(startupHome.normal), startupHome.up, 1.0);
+      this.mode = "homePerched";
+      this.mood = "sleeping";
+      this.perched = true;
+      this.behaviourNote = `sleeping on home PerchBone: ${this.homePerchBoneName || "PerchBone"}`;
+      this.velocity.set(0, 0, 0);
+    } else {
+      this.pickNextPatrolPoint(true);
+    }
+
     this.ready = true;
-    this.playLoop(this.getPatrolFlightAction());
-    this.log("specter moth online · stable navigation", "BOOT");
+    this.playLoop(startupHome ? "perch" : this.getPatrolFlightAction());
+    this.log("specter moth online · void priority navigation", "BOOT");
   }
 
   fitMothScale() {
@@ -2010,10 +2025,11 @@ export class MothSystem {
     this.moveToward(
       delta,
       target.rootPosition,
-      this.getPatrolFlightSpeed(elapsed) * (this.cfg.homePerchApproachSpeedScale || 0.56),
-      { response: this.cfg.velocityResponse, skipClamp: true }
+      this.getPatrolFlightSpeed(elapsed) * (this.cfg.homePerchApproachSpeedScale || 0.72),
+      { response: this.cfg.velocityResponseFast || this.cfg.velocityResponse, skipClamp: true, forceDirect: true }
     );
-    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || this.cfg.turnLerpFast);
+    // While flying home, face travel direction. Only use the PerchBone normal during the landing/settle cycle.
+    this.lookAtDirection(this.getTravelFacingDirection(target.rootPosition), this.cfg.turnLerpFast);
     this.playLoop(this.getPatrolFlightAction());
     this.behaviourNote = `returning to home perch bone: ${this.homePerchBoneName || "perch"}`;
   }
@@ -2190,8 +2206,13 @@ export class MothSystem {
     }
 
     if (this.mode === "fleeOverwhelmed") {
-      this.updateFleeOverwhelmed(delta, elapsed);
-      return;
+      if (hasVoid && voidTarget) {
+        this.fleeState = null;
+        this.setMode("approachVoid", "void overrides flee");
+      } else {
+        this.updateFleeOverwhelmed(delta, elapsed);
+        return;
+      }
     }
 
     if (hasVoid && voidTarget) {
@@ -2214,7 +2235,13 @@ export class MothSystem {
         return;
       }
       if (this.mode !== "approachVoid") this.setMode("approachVoid", "void signal detected");
-      this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed * 0.82, { response: this.cfg.velocityResponse });
+      // Void approach must ignore the patrol-radius clamp, otherwise a void spawned
+      // near the centre can be unreachable and the moth appears to drift to a screen corner.
+      this.moveToward(delta, voidTarget.position, this.cfg.diveSpeed * (this.cfg.voidAttractionSpeedScale || 1.18), {
+        response: this.cfg.velocityResponseFast || this.cfg.velocityResponse,
+        skipClamp: true,
+        forceDirect: true
+      });
       this.lookAtDirection(this.getTravelFacingDirection(voidTarget.position), this.cfg.turnLerpFast);
       this.playLoop(this.corruption > 0.55 ? this.getPatrolFlightAction() : "fly");
       this.behaviourNote = "drawn toward glitch void";
@@ -2275,7 +2302,7 @@ export class MothSystem {
           if (this.trust >= (this.cfg.nestTrustMin || 0.52)) this.maybeDropNest(coverTarget.position, hoveredIndex);
           return;
         }
-        this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.74, { response: this.cfg.velocityResponse });
+        this.moveToward(delta, coverTarget.position, this.getPatrolFlightSpeed(elapsed) * 0.82, { response: this.cfg.velocityResponseFast || this.cfg.velocityResponse, skipClamp: true, forceDirect: true });
         this.lookAtDirection(this.getTravelFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
         this.playLoop(this.getPatrolFlightAction());
         this.behaviourNote = "slow approach to perch";
@@ -2402,7 +2429,7 @@ export class MothSystem {
       .addScaledVector(coverTarget.normal, Math.cos(phase) * radius + 0.07)
       .addScaledVector(coverTarget.right || new THREE.Vector3(1, 0, 0), Math.sin(phase) * radius)
       .addScaledVector(coverTarget.up, Math.sin(phase * 1.4) * 0.026);
-    this.moveToward(delta, target, this.getPatrolFlightSpeed(elapsed) * 0.66, { response: this.cfg.velocityResponse });
+    this.moveToward(delta, target, this.getPatrolFlightSpeed(elapsed) * 0.74, { response: this.cfg.velocityResponseFast || this.cfg.velocityResponse, skipClamp: true, forceDirect: true });
     this.lookAtPoint(coverTarget.position, coverTarget.up, this.cfg.turnLerpFast);
     this.playLoop(this.getPatrolFlightAction());
     this.behaviourNote = "circle → inspect → decide";
@@ -2482,6 +2509,9 @@ export class MothSystem {
   }
 
   shouldFleeFromOverwhelm(elapsed) {
+    // Void has absolute priority. The moth must always be drawn to a spawned void,
+    // never choosing flee/patrol while a void is active.
+    if (this.voidState?.active) return false;
     if (this.mode === "backflip" || this.mode === "takeoff" || this.mode === "inspectVoid" || this.mode === "fleeOverwhelmed") return false;
     if (elapsed - this.lastFleeAt < (this.cfg.overwhelmCooldown || 3.2)) return false;
     if (this.corruption >= (this.cfg.voidCorruptionFleeThreshold || 0.88)) return true;
@@ -2546,7 +2576,7 @@ export class MothSystem {
       .addScaledVector(right, Math.cos(phase) * radius)
       .addScaledVector(up, Math.sin(phase) * radius * 0.55)
       .addScaledVector(toCamera, this.cfg.voidHoverRadius);
-    this.moveToward(delta, target, this.cfg.diveSpeed * 0.58, { response: this.cfg.velocityResponse });
+    this.moveToward(delta, target, this.cfg.diveSpeed * 0.72, { response: this.cfg.velocityResponseFast || this.cfg.velocityResponse, skipClamp: true, forceDirect: true });
     this.lookAtPoint(this.voidState.position, up, this.cfg.turnLerpFast);
     this.playLoop("feed");
     this.behaviourNote = "orbiting dangerous food";
@@ -2621,9 +2651,10 @@ export class MothSystem {
 
   startTakeoff(elapsed) {
     if (this.mode === "takeoff" || this.mode === "backflip") return;
+    if (this.voidState?.active) this.afterTakeoffIntent = "void";
     this.perched = false;
     this.landingTargetType = "";
-    this.setMode("takeoff", "leaving perch");
+    this.setMode("takeoff", this.voidState?.active ? "leaving perch → void" : "leaving perch");
     const duration = this.actionDurations.get("takeoff") || 0.7;
     this.takeoffState = { startedAt: elapsed, duration, startPos: this.root.position.clone(), endPos: this.root.position.clone().add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight, 0)) };
     if (!this.playOnce("takeoff", this.voidState?.active ? "fly" : this.getPatrolFlightAction())) {
@@ -2633,10 +2664,17 @@ export class MothSystem {
 
   updateTakeoffMotion(elapsed) {
     if (!this.takeoffState) return;
-    const t = clamp01((elapsed - this.takeoffState.startedAt) / Math.max(0.0001, this.takeoffState.duration));
+    const duration = Math.max(0.0001, this.takeoffState.duration || 0.7);
+    const t = clamp01((elapsed - this.takeoffState.startedAt) / duration);
     const ease = smooth01(t);
     this.root.position.lerpVectors(this.takeoffState.startPos, this.takeoffState.endPos, ease);
     this.velocity.set(0, 0, 0);
+
+    // Safety: if the FBX takeoff finished event fails to fire, do not trap the moth
+    // in takeoff. This was one cause of not moving toward new interactions.
+    if (t >= 0.995 && elapsed - this.takeoffState.startedAt > duration + 0.05) {
+      this.onActionFinished({ action: this.getAction("takeoff") });
+    }
   }
 
   moveToward(delta, target, baseSpeed, options = {}) {
@@ -2657,20 +2695,20 @@ export class MothSystem {
     const targetVelocity = this.temp.a.copy(desired);
     const before = this.temp.b.copy(this.velocity);
 
-    // [MOTH NO-YAW-STUTTER 2026-04-28]
-    // Do not allow the movement vector to instantly reverse or whip sideways.
-    // The moth now bends its path gradually, so the body does not have to perform
-    // a huge yaw correction every frame.
+    // [MOTH VOID PRIORITY / CONTROLLED STEERING 2026-04-29]
+    // Patrol uses curved steering so the body does not yaw-stutter.
+    // Direct interactions such as void, cover, and PerchBone return are allowed to
+    // steer more directly, otherwise the moth can get stuck drifting to the edge.
     const currentSpeed = before.length();
     const desiredSpeed = targetVelocity.length();
-    if (currentSpeed > 0.045 && desiredSpeed > 0.045) {
+    if (!options.forceDirect && currentSpeed > 0.045 && desiredSpeed > 0.045) {
       const currentDir = before.clone().normalize();
       const desiredDir = targetVelocity.clone().normalize();
       if (currentDir.dot(desiredDir) < -0.985) {
         desiredDir.addScaledVector(this.orientationUp, 0.025).normalize();
       }
       const angle = Math.acos(THREE.MathUtils.clamp(currentDir.dot(desiredDir), -1, 1));
-      const maxTurn = THREE.MathUtils.degToRad(this.cfg.velocitySteeringMaxTurnDegreesPerSecond || 38) * Math.max(delta, 1 / 120);
+      const maxTurn = THREE.MathUtils.degToRad(this.cfg.velocitySteeringMaxTurnDegreesPerSecond || 68) * Math.max(delta, 1 / 120);
       if (angle > maxTurn && angle > 0.0001) {
         desiredDir.copy(currentDir).lerp(desiredDir, THREE.MathUtils.clamp(maxTurn / angle, 0.0, 1.0)).normalize();
         targetVelocity.copy(desiredDir).multiplyScalar(desiredSpeed);
