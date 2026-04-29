@@ -177,13 +177,13 @@ export const MOTH_CONFIG = {
 
   // [MOTH HOME PERCH 2026-04-28]
   // The moth's resting/home spot is a named bone inside me_on_hill.fbx.
-  // Recommended bone name in Blender/FBX: Moth_Perch. The code also accepts names containing perch/rest/home.
+  // Recommended bone name in Blender/FBX: PerchBone. The code also accepts Perch Bone and names containing perch/rest/home.
   homePerchEnabled: true,
   homePerchBoneNames: [
     "PerchBone",
+    "Perch Bone",
     "perchbone",
     "PERCHBONE",
-    "Perch Bone",
     "Moth_PerchBone",
     "MothPerchBone",
     "moth_perch_bone",
@@ -217,6 +217,9 @@ export const MOTH_CONFIG = {
   // After feeding from a binary void, the moth flies home and lands into F_Land_Idle.
   homePerchAfterFeed: true,
   homePerchAfterFeedDelay: 0.0,
+  // Sleeping look when the moth is fully idle on PerchBone.
+  homePerchSleepingBrightness: 0.28,
+  homePerchSleepingTrailAlpha: 0.02,
 
   // Backflip must be animation-only. These stay zero so code never pushes/rotates the moth.
   backflipPush: 0.0,
