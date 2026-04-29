@@ -278,7 +278,7 @@ and the left-click trigger that was calling the backflip.
 ### 26/04
 The moth still faces the direction it travels, but it no longer tries to instantly yaw toward every tiny velocity change. I added velocity steering limits, low-speed facing freeze, max turn-rate limits, and reduced bank/pitch so it should stop doing those sharp glitchy maneuvers.
 I also made PerchBone Branch thats on the Main FBX center object, which is now made as the highest-priority bone name. This is th moths home now. 
-New Logic flow: <img width="1612" height="878" alt="Screenshot 2026-04-26 230147" src="https://github.com/user-attachments/assets/94a1f795-1e75-4bc2-8b5c-cefa3455c6d6" />
+New Logic flow:
 <img width="363" height="489" alt="Screenshot 2026-04-29 182753" src="https://github.com/user-attachments/assets/f1ea2516-3b1f-46d2-8404-8789795e9269" />
 
 
@@ -290,16 +290,28 @@ When it reaches the bone, it plays F_Land.
 Then it stays in F_Land_Idle on the perch bone.
 
 ### 28/04
-The visible glow/aura sprite is now disabled by default, so that unknown ball should disappear. 
-Issues amended: 
-
 The point light now anchors to the center of the moth, not the root origin.
 The trail now emits from the moth’s center/body area instead of above or below it.
+
+
 <img width="346" height="373" alt="Screenshot 2026-04-28 171819" src="https://github.com/user-attachments/assets/8f5b32ef-ec8c-4ab5-b6dc-fb7c337ea326" />
 
 ### 28/04
 Debugging and fixing the colsonle, issues Getting issues from the velocity jitter inside moveToward() function, And fixed the yawn logic when doing evasive rotations. 
 Added better transition logic, when moth does break within the 3D space. that interference coming from pointer movement still feeding into aggression pointer curiosity hover-loss while the moth is already committed to behaviours So I made a new complete direct replacement that locks the moth’s interaction state until the sequence is finished.
+
+
 <img width="994" height="784" alt="Screenshot 2026-04-29 182826" src="https://github.com/user-attachments/assets/370b8a31-a513-4533-a5ff-64fd675065b4" />
+
+
+
+### 29/04
+Fixed gittering and FInaly Stabalized the moths rotation in the world, The rotation offset is still an issue, which seems i canno't fix, but sorta unoticable at the current adjusted speed.
+Vortex positioning fixed, so it doesnt spawn far away from  the POV.
+Behaviours feel more connected now, with after feeding on a vortex the moth moves to perch on the branch. the limit timer is 5 seconds perched then the moth returns to patrol, and any interactions the user has with covers or void spawns will priorities the moth to that postion, to perch on a cover or feed on the vortx. 
+The moth also feels more agrivated based on the users mouse speed, and should make eratic movments as well as change color faster. When the moth is fed and moving to Perch is should change color to a dimmer color. If the moth is negletad it now shows a light off white color, that fades to other random colors to show sadness. 
+
+The user's input to spawn the void is also made as double left click and sinlge left click to interact with the moth. 
+The backflip logic was still present and completly removed, which made the moth more stable. 
 
 
