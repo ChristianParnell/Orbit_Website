@@ -83,7 +83,7 @@ export const MOTH_CONFIG = {
   sizeRatioToModelHeight: 0.0936,
   // Visual-only FBX forward correction. Movement code is unchanged; this rotates only the moth model by +90° from the old -PI/2 setup.
   // If it still faces sideways, press [ or ] once and copy the HUD yaw value here.
-  modelYawOffset: 0,
+  modelYawOffset: Math.PI,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   meshOpacity: 0.38,
