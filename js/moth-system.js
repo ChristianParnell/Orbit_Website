@@ -153,6 +153,16 @@ const DEFAULT_CONFIG = {
   homePerchSettleLerp: 0.14,
   homePerchTurnLerp: 0.13,
   homePerchUseCoreAnchor: true,
+  // Keep PerchBone resting/takeoff orientation upright. This prevents a bone
+  // with a rolled local axis from putting the moth 90 degrees on its side.
+  homePerchUseWorldUp: true,
+  homePerchFlattenRoll: true,
+  homePerchTakeoffKeepBranchOrientation: true,
+  // When asleep at PerchBone, the moth stays there until a real target appears
+  // or hunger wakes it again.
+  homePerchWakeWhenHungry: true,
+  homePerchWakeHungerThreshold: 0.72,
+  homePerchMinimumSleepDuration: 2.0,
   // After the moth finishes consuming a binary void, send it home to the perch bone.
   // This makes feeding feel like a complete behaviour loop: find void -> feed -> return home -> land idle.
   homePerchAfterFeed: true,
@@ -677,6 +687,8 @@ export class MothSystem {
     this.afterTakeoffIntent = "";
     this.afterTakeoffCoverIndex = -1;
     this.sleepPulse = 0;
+    this.homePerchedSince = -1;
+    this.homeTakeoffQuaternion = new THREE.Quaternion();
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
     this.smoothedHeading = new THREE.Vector3(0, 0, -1);
@@ -911,6 +923,8 @@ export class MothSystem {
     if (!nextMode || this.mode === nextMode) return false;
     const previous = this.mode;
     this.mode = nextMode;
+    if (nextMode === "homePerched") this.homePerchedSince = this.getElapsed();
+    if (previous === "homePerched" && nextMode !== "homePerched") this.homePerchedSince = -1;
     this.behaviourNote = reason || nextMode;
     this.pushDebugLine("STATE", `${previous} → ${nextMode}${reason ? ` · ${reason}` : ""}`);
     return true;
@@ -1170,8 +1184,9 @@ export class MothSystem {
     const startupHome = this.getHomePerchTarget();
     if (startupHome) {
       this.root.position.copy(startupHome.rootPosition);
-      this.lookAtPoint(startupHome.position.clone().add(startupHome.normal), startupHome.up, 1.0);
+      this.orientToHomePerch(startupHome, 1.0, true);
       this.mode = "homePerched";
+      this.homePerchedSince = this.getElapsed();
       this.mood = "sleeping";
       this.perched = true;
       this.behaviourNote = `sleeping on home PerchBone: ${this.homePerchBoneName || "PerchBone"}`;
@@ -2033,6 +2048,67 @@ export class MothSystem {
     return false;
   }
 
+  getHomePerchUprightUp(target = null) {
+    if (this.cfg.homePerchUseWorldUp !== false) return this.temp.b.set(0, 1, 0);
+    const sourceUp = target?.up || this.orientationUp;
+    if (!sourceUp || sourceUp.lengthSq() <= 0.0001) return this.temp.b.set(0, 1, 0);
+    return this.temp.b.copy(sourceUp).normalize();
+  }
+
+  getHomePerchUprightForward(target) {
+    const forward = this.temp.a.copy(target?.normal || this.forward);
+    if (forward.lengthSq() <= 0.0001) forward.set(0, 0, -1);
+
+    // Flatten the forward vector against world-up so a rolled PerchBone does not
+    // roll the moth onto its side. This keeps F_Land_to_TakeOff upright.
+    if (this.cfg.homePerchFlattenRoll !== false) {
+      const worldUp = new THREE.Vector3(0, 1, 0);
+      forward.addScaledVector(worldUp, -forward.dot(worldUp));
+      if (forward.lengthSq() <= 0.0001) {
+        forward.copy(this.camera.position).sub(target?.position || this.root.position);
+        forward.y = 0;
+      }
+    }
+
+    if (forward.lengthSq() <= 0.0001) forward.copy(this.forward);
+    if (forward.lengthSq() <= 0.0001) forward.set(0, 0, -1);
+    return forward.normalize();
+  }
+
+  orientToHomePerch(target, lerpAmount = 0.13, force = false) {
+    if (!target) return;
+    const forward = this.getHomePerchUprightForward(target).clone();
+    const up = this.getHomePerchUprightUp(target).clone();
+
+    if (force) {
+      this.temp.m.lookAt(new THREE.Vector3(0, 0, 0), forward, up);
+      this.temp.q.setFromRotationMatrix(this.temp.m);
+      this.root.quaternion.copy(this.temp.q);
+      this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
+      this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
+      this.smoothedHeading.copy(this.forward);
+      this.lastStableFacing.copy(this.forward);
+      return;
+    }
+
+    this.orientRootToDirection(forward, up, lerpAmount);
+    this.smoothedHeading.copy(this.forward);
+    this.lastStableFacing.copy(this.forward);
+  }
+
+  hasMeaningfulHomeWakeInteraction(hoveredIndex, hasVoid) {
+    // The moth should sleep on PerchBone until there is a real interaction target.
+    // Gentle pointer movement/noise should not wake it and cause random patrol departures.
+    return Boolean(hasVoid) || hoveredIndex >= 0;
+  }
+
+  shouldWakeHomeFromHunger(elapsed) {
+    if (this.cfg.homePerchWakeWhenHungry === false) return false;
+    const sleptFor = this.homePerchedSince > 0 ? elapsed - this.homePerchedSince : 999;
+    if (sleptFor < (this.cfg.homePerchMinimumSleepDuration || 0)) return false;
+    return this.hunger >= (this.cfg.homePerchWakeHungerThreshold || 0.72);
+  }
+
   shouldReturnHomePerch(elapsed, hoveredIndex, hasVoid) {
     if (this.cfg.homePerchEnabled === false) return false;
     if (!this.getHomePerchTarget()) return false;
@@ -2098,7 +2174,7 @@ export class MothSystem {
     if (distance <= snapDistance) this.root.position.copy(target.rootPosition);
     else this.root.position.lerp(target.rootPosition, 0.55);
 
-    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
+    this.orientToHomePerch(target, this.cfg.homePerchTurnLerp || 0.13, true);
     this.pushDebugLine("HOME", `landing cycle: ${this.homePerchBoneName || "PerchBone"} · F_Land → F_Land_Idle`);
 
     if (!this.playOnce("land", "perch")) {
@@ -2128,7 +2204,7 @@ export class MothSystem {
     }
 
     this.velocity.set(0, 0, 0);
-    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
+    this.orientToHomePerch(target, this.cfg.homePerchTurnLerp || 0.13, false);
     this.behaviourNote = `landing cycle on ${this.homePerchBoneName || "PerchBone"}: F_Land → F_Land_Idle`;
 
     const action = this.getAction("land");
@@ -2149,7 +2225,7 @@ export class MothSystem {
     const settleAlpha = 1.0 - Math.exp(-delta * ((this.cfg.homePerchSettleLerp || 0.14) * 60.0));
     this.root.position.lerp(target.rootPosition, THREE.MathUtils.clamp(settleAlpha, 0.02, 0.36));
     this.velocity.multiplyScalar(Math.exp(-delta * 9.5));
-    this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
+    this.orientToHomePerch(target, this.cfg.homePerchTurnLerp || 0.13, false);
     this.playLoop("perch");
     this.perched = true;
     this.sleepPulse = (this.sleepPulse || 0) + delta;
@@ -2403,7 +2479,7 @@ export class MothSystem {
     }
 
     if (this.mode === "landingHome") {
-      if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, Boolean(hasVoid))) {
+      if (this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
         this.startTakeoff(elapsed);
       } else {
         this.updateHomeLandingCycle(delta, elapsed);
@@ -2412,7 +2488,10 @@ export class MothSystem {
     }
 
     if (this.mode === "homePerched") {
-      if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, Boolean(hasVoid))) {
+      if (this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
+        this.startTakeoff(elapsed);
+      } else if (this.shouldWakeHomeFromHunger(elapsed)) {
+        this.afterTakeoffIntent = "hungryPatrol";
         this.startTakeoff(elapsed);
       } else {
         this.updateHomePerchIdle(delta, elapsed);
@@ -2727,12 +2806,30 @@ export class MothSystem {
 
   startTakeoff(elapsed) {
     if (this.mode === "takeoff" || this.mode === "backflip") return;
+    const leavingHome = this.mode === "homePerched" || this.mode === "landingHome" || this.mode === "approachHomePerch";
     if (this.voidState?.active) this.afterTakeoffIntent = "void";
+
+    if (leavingHome && this.cfg.homePerchTakeoffKeepBranchOrientation !== false) {
+      const home = this.getHomePerchTarget();
+      if (home) {
+        this.root.position.copy(home.rootPosition);
+        this.orientToHomePerch(home, 1.0, true);
+        this.homeTakeoffQuaternion.copy(this.root.quaternion);
+      }
+    }
+
     this.perched = false;
     this.landingTargetType = "";
-    this.setMode("takeoff", this.voidState?.active ? "leaving perch → void" : "leaving perch");
+    this.setMode("takeoff", this.voidState?.active ? "leaving PerchBone → void" : leavingHome ? "leaving PerchBone" : "leaving perch");
     const duration = this.actionDurations.get("takeoff") || 0.7;
-    this.takeoffState = { startedAt: elapsed, duration, startPos: this.root.position.clone(), endPos: this.root.position.clone().add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight, 0)) };
+    this.takeoffState = {
+      startedAt: elapsed,
+      duration,
+      startPos: this.root.position.clone(),
+      startQuat: this.root.quaternion.clone(),
+      endPos: this.root.position.clone().add(new THREE.Vector3(0, this.cfg.takeoffRiseHeight, 0)),
+      leavingHome
+    };
     if (!this.playOnce("takeoff", this.voidState?.active ? "fly" : this.getPatrolFlightAction())) {
       this.setMode(this.voidState?.active ? "approachVoid" : "patrol", "takeoff fallback");
     }
@@ -2745,6 +2842,14 @@ export class MothSystem {
     const ease = smooth01(t);
     this.root.position.lerpVectors(this.takeoffState.startPos, this.takeoffState.endPos, ease);
     this.velocity.set(0, 0, 0);
+
+    if (this.takeoffState.leavingHome && this.takeoffState.startQuat) {
+      this.root.quaternion.copy(this.takeoffState.startQuat);
+      this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
+      this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
+      this.smoothedHeading.copy(this.forward);
+      this.lastStableFacing.copy(this.forward);
+    }
 
     // Safety: if the FBX takeoff finished event fails to fire, do not trap the moth
     // in takeoff. This was one cause of not moving toward new interactions.
