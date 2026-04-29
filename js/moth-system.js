@@ -52,6 +52,11 @@ const DEFAULT_CONFIG = {
   patrolViewYMax: 0.58,
   patrolRecoveryMargin: 0.98,
   patrolRecoveryDelay: 0.45,
+  patrolStuckRepathSeconds: 1.15,
+  patrolStuckSpeedThreshold: 0.035,
+  patrolTargetPadding: 0.08,
+  voidPriorityCancelsBackflip: true,
+  voidPriorityClearsHomeReturn: true,
 
   flySpeed: 0.92,
   diveSpeed: 1.12,
@@ -665,6 +670,7 @@ export class MothSystem {
     this.currentPatrolAnchor = new THREE.Vector3();
     this.lastStableTarget = new THREE.Vector3();
     this.nextPatrolDecisionAt = 0;
+    this.patrolStuckSince = -1;
     this.hoverClock = 0;
     this.satiatedUntil = 0;
     this.homeReturnAfterFeedAt = -1;
@@ -1826,6 +1832,47 @@ export class MothSystem {
     return point;
   }
 
+  isPatrolPointReachable(point, padding = this.cfg.patrolTargetPadding || 0.08) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.z)) return false;
+    const offset = this.temp.b.copy(point).sub(this.orbitCenter);
+    const horizontal = this.temp.c.set(offset.x, 0, offset.z).length();
+    const minRadius = Math.max(0, (this.cfg.patrolRadiusMin || 0) - padding);
+    const maxRadius = (this.cfg.patrolRadiusMax || 1) + padding;
+    const minY = this.orbitCenter.y + (this.cfg.patrolHeightMin || -1) - padding;
+    const maxY = this.orbitCenter.y + (this.cfg.patrolHeightMax || 1) + padding;
+    return horizontal >= minRadius && horizontal <= maxRadius && point.y >= minY && point.y <= maxY;
+  }
+
+  repairPatrolTargetIfNeeded(elapsed, reason = "") {
+    if (this.mode !== "patrol") return false;
+
+    const anchorReachable = this.isPatrolPointReachable(this.currentPatrolAnchor);
+    const rootTooFarFromBand = !this.isPatrolPointReachable(this.root.position, 0.85);
+    const targetDistance = this.root.position.distanceTo(this.currentPatrolAnchor);
+    const barelyMoving = this.velocity.length() <= (this.cfg.patrolStuckSpeedThreshold || 0.035);
+
+    if (!anchorReachable || rootTooFarFromBand) {
+      this.currentPatrolAnchor.copy(this.getRecoveryPatrolPoint());
+      this.patrolStuckSince = -1;
+      this.pushDebugLine("PATH", `patrol target repaired${reason ? ` · ${reason}` : ""}`);
+      return true;
+    }
+
+    if (targetDistance > Math.max(0.36, (this.cfg.patrolArriveDistance || 0.20) * 2.4) && barelyMoving) {
+      if (this.patrolStuckSince < 0) this.patrolStuckSince = elapsed;
+      if (elapsed - this.patrolStuckSince >= (this.cfg.patrolStuckRepathSeconds || 1.15)) {
+        this.currentPatrolAnchor.copy(this.getRecoveryPatrolPoint());
+        this.patrolStuckSince = -1;
+        this.pushDebugLine("PATH", "patrol repath: target unreachable / stuck");
+        return true;
+      }
+    } else {
+      this.patrolStuckSince = -1;
+    }
+
+    return false;
+  }
+
   getRecoveryPatrolPoint() {
     const camForward = this.temp.a.set(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
     const camRight = this.temp.b.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
@@ -2189,18 +2236,45 @@ export class MothSystem {
     const coverTarget = (!hasVoid && hoveredIndex >= 0 && Array.isArray(coverWorldData)) ? this.getCoverPerchTarget(hoveredIndex, coverWorldData) : null;
     const voidTarget = hasVoid ? this.getVoidInspectTarget() : null;
 
-    if (this.shouldFleeFromOverwhelm(elapsed)) this.startFleeOverwhelmed(elapsed, this.corruption > 0.82 ? "corruption overload" : "input spike");
+    // [VOID ABSOLUTE PRIORITY 2026-04-29]
+    // A spawned void is never allowed to lose to patrol, shelter, home return, flee,
+    // cover hover, or pointer curiosity. This prevents the moth from choosing a
+    // patrol target outside its usable area while the void is waiting.
+    if (hasVoid) {
+      if (this.cfg.voidPriorityClearsHomeReturn !== false) this.homeReturnAfterFeedAt = -1;
+      this.afterTakeoffIntent = "void";
+      this.afterTakeoffCoverIndex = -1;
+      this.fleeState = null;
+      this.investigationState = null;
+      this.pointerWorldTargetValid = false;
+      this.hoverClock = 0;
+      this.lastHoveredIndex = -1;
+      this.recoveryAssist = false;
+      this.patrolStuckSince = -1;
+    }
+
+    if (!hasVoid && this.shouldFleeFromOverwhelm(elapsed)) this.startFleeOverwhelmed(elapsed, this.corruption > 0.82 ? "corruption overload" : "input spike");
 
     if (this.mode === "backflip") {
-      this.velocity.set(0, 0, 0);
-      this.lockBackflipTransform();
-      const action = this.getAction("backflip");
-      const duration = this.backflipState?.duration || action?.getClip?.().duration || this.actionDurations.get("backflip") || 0;
-      if (action && duration > 0 && action.time >= Math.max(0, duration - Math.max(0.035, this.lastDelta * 2))) this.finishBackflip();
-      return;
+      if (hasVoid && this.cfg.voidPriorityCancelsBackflip !== false) {
+        this.flipBusy = false;
+        this.backflipState = null;
+        this.backflipGuardUntil = 0;
+        this.velocity.multiplyScalar(0.15);
+        this.setMode("approachVoid", "void overrides backflip");
+        this.playLoop("fly");
+      } else {
+        this.velocity.set(0, 0, 0);
+        this.lockBackflipTransform();
+        const action = this.getAction("backflip");
+        const duration = this.backflipState?.duration || action?.getClip?.().duration || this.actionDurations.get("backflip") || 0;
+        if (action && duration > 0 && action.time >= Math.max(0, duration - Math.max(0.035, this.lastDelta * 2))) this.finishBackflip();
+        return;
+      }
     }
 
     if (this.mode === "takeoff") {
+      if (hasVoid) this.afterTakeoffIntent = "void";
       this.updateTakeoffMotion(elapsed);
       return;
     }
@@ -2382,6 +2456,8 @@ export class MothSystem {
   }
 
   updatePatrol(delta, elapsed) {
+    this.repairPatrolTargetIfNeeded(elapsed, "patrol update");
+
     const anchorVisible = this.worldPointComfortablyVisible(this.currentPatrolAnchor);
     if (anchorVisible) this.anchorHiddenSince = -1;
     else if (this.anchorHiddenSince < 0) this.anchorHiddenSince = elapsed;
@@ -3103,13 +3179,37 @@ export class MothSystem {
   }
 
   spawnVoid(position) {
+    const elapsed = this.getElapsed();
     this.voidState = { active: true, position: position.clone(), duration: this.cfg.voidInspectDuration, remaining: this.cfg.voidInspectDuration, energy: 1.0 };
-    if (this.mode === "landed" || this.mode === "landing") this.startTakeoff(this.getElapsed());
-    else {
-      this.setMode("approachVoid", "binary void opened");
+
+    // Void is absolute priority. Clear every soft behaviour that can fight it.
+    this.homeReturnAfterFeedAt = -1;
+    this.afterTakeoffIntent = "void";
+    this.afterTakeoffCoverIndex = -1;
+    this.fleeState = null;
+    this.investigationState = null;
+    this.pointerWorldTargetValid = false;
+    this.hoverClock = 0;
+    this.lastHoveredIndex = -1;
+    this.patrolStuckSince = -1;
+    this.recoveryAssist = false;
+
+    const takeoffModes = new Set(["landed", "landing", "homePerched", "landingHome", "seekShelter"]);
+    if (takeoffModes.has(this.mode)) {
+      this.startTakeoff(elapsed);
+    } else if (this.mode === "takeoff") {
+      this.afterTakeoffIntent = "void";
+      this.playLoop("fly");
+    } else {
+      if (this.mode === "backflip" && this.cfg.voidPriorityCancelsBackflip !== false) {
+        this.flipBusy = false;
+        this.backflipState = null;
+        this.backflipGuardUntil = 0;
+      }
+      this.setMode("approachVoid", "binary void opened · absolute priority");
       this.playLoop("fly");
     }
-    this.log("binary void opened", "ALRT");
+    this.log("binary void opened · absolute priority", "ALRT");
   }
 
   clearVoid() {
