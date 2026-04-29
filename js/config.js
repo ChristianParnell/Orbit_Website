@@ -280,10 +280,6 @@ export const MOTH_CONFIG = {
   // [MOTH PATCH 2026-04-27] Behaviour system tuning.
   // These are optional overrides; moth-system.js also contains safe defaults.
   interactionTracking: true,
-  // Pointer movement should not cancel/redirect landing, feeding, takeoff, or committed cover interactions.
-  ignorePointerDuringInteractions: true,
-  interactionCoverHoverLock: true,
-  protectInteractionFromFlee: true,
   moodUpdateRate: 0.12,
   signalIdleDecay: 0.055,
   signalHoverGain: 0.52,
