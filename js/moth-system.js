@@ -189,6 +189,9 @@ const DEFAULT_CONFIG = {
   sadThreshold: 0.30,
 
   interactionTracking: true,
+  ignorePointerDuringInteractions: true,
+  interactionCoverHoverLock: true,
+  protectInteractionFromFlee: true,
   signalIdleDecay: 0.040,
   signalHoverGain: 0.32,
   signalPointerGain: 0.11,
@@ -725,6 +728,7 @@ export class MothSystem {
     this.scrollEnergy = 0;
     this.inputEnergy = 0;
     this.lastInputAt = -999;
+    this.lastMeaningfulInputAt = -999;
     this.lastPointerEventAt = -999;
     this.lastPointerClient = { x: 0, y: 0 };
     this.pointerWorldTarget = new THREE.Vector3();
@@ -735,6 +739,7 @@ export class MothSystem {
     this.lastFleeAt = -999;
     this.voidOrbitState = null;
     this.lastHoveredIndex = -1;
+    this.lockedCoverIndex = -1;
     this.lastMoodLogAt = 0;
     this.takeoffState = null;
     this.backflipState = null;
@@ -803,6 +808,14 @@ export class MothSystem {
     const bounds = this.renderer.domElement.getBoundingClientRect();
     const x = Number(event.clientX || 0);
     const y = Number(event.clientY || 0);
+
+    if (this.shouldIgnorePointerNoise?.()) {
+      this.lastPointerClient.x = x;
+      this.lastPointerClient.y = y;
+      this.lastPointerEventAt = now;
+      return;
+    }
+
     let speed01 = 0;
     if (this.lastPointerEventAt > -900) {
       const dt = Math.max(0.016, now - this.lastPointerEventAt);
@@ -816,6 +829,7 @@ export class MothSystem {
     this.lastPointerClient.y = y;
     this.lastPointerEventAt = now;
     this.lastInputAt = now;
+    this.lastMeaningfulInputAt = now;
 
     const gentle = smooth01(1.0 - Math.abs(speed01 - 0.18) * 3.0);
     const aggressive = smooth01((speed01 - 0.72) / 0.28);
@@ -837,6 +851,7 @@ export class MothSystem {
   handleInteractionPointerDown(event) {
     if (!event || (typeof event.button === "number" && event.button !== 0)) return;
     this.lastInputAt = this.getElapsed();
+    this.lastMeaningfulInputAt = this.lastInputAt;
     this.inputEnergy = Math.max(this.inputEnergy, 0.26);
     this.aggression = Math.max(this.aggression, 0.10);
   }
@@ -848,6 +863,7 @@ export class MothSystem {
     this.inputEnergy = Math.max(this.inputEnergy, wheel01 * 0.48);
     this.aggression = Math.max(this.aggression, smooth01((wheel01 - 0.58) / 0.40));
     this.lastInputAt = this.getElapsed();
+    this.lastMeaningfulInputAt = this.lastInputAt;
   }
 
   pickPointFromCurrentRay(preferredOffset = 0.42) {
@@ -940,6 +956,9 @@ export class MothSystem {
     if (previous === "homePerched" && nextMode !== "homePerched") {
       this.homePerchedSince = -1;
       this.homePerchLockActive = false;
+    }
+    if (!["investigateCover", "approachCover", "landing", "landed", "takeoff"].includes(nextMode)) {
+      if (!["approachVoid", "orbitVoid", "inspectVoid"].includes(nextMode)) this.lockedCoverIndex = -1;
     }
     this.behaviourNote = reason || nextMode;
     this.pushDebugLine("STATE", `${previous} → ${nextMode}${reason ? ` · ${reason}` : ""}`);
@@ -1048,6 +1067,8 @@ export class MothSystem {
       ["target", target],
       ["home", this.homePerchAvailable ? (this.homePerchBoneName || "found") : "not found"],
       ["sleep wait", this.getHomePerchSleepRemaining(elapsed).toFixed(1) + "s"],
+      ["input lock", this.shouldIgnorePointerNoise?.() ? "on" : "off"],
+      ["cover lock", this.lockedCoverIndex >= 0 ? `cover ${this.lockedCoverIndex}` : "—"],
       ["vitality", this.vitality.toFixed(2)],
       ["hunger", this.hunger.toFixed(2)],
       ["signal", this.signal.toFixed(2)],
@@ -2155,6 +2176,56 @@ export class MothSystem {
     this.lastStableFacing.copy(this.forward);
   }
 
+  isInteractionProtectedState() {
+    if (this.cfg.protectInteractionFromFlee === false) return false;
+    if (this.voidState?.active) return true;
+    return [
+      "takeoff",
+      "landing",
+      "landingHome",
+      "landed",
+      "homePerched",
+      "approachHomePerch",
+      "approachVoid",
+      "orbitVoid",
+      "inspectVoid",
+      "investigateCover",
+      "approachCover",
+      "backflip"
+    ].includes(this.mode);
+  }
+
+  shouldIgnorePointerNoise() {
+    if (this.cfg.ignorePointerDuringInteractions === false) return false;
+    return this.isInteractionProtectedState();
+  }
+
+  getEffectiveCoverIndex(hoveredIndex, hasVoid, coverWorldData = []) {
+    if (hasVoid) return -1;
+
+    if (Number.isInteger(hoveredIndex) && hoveredIndex >= 0) {
+      this.lockedCoverIndex = hoveredIndex;
+      return hoveredIndex;
+    }
+
+    if (this.cfg.interactionCoverHoverLock === false) return -1;
+
+    const coverLockedStates = new Set([
+      "investigateCover",
+      "approachCover",
+      "landing",
+      "landed"
+    ]);
+
+    if (!coverLockedStates.has(this.mode)) return -1;
+
+    const candidate = this.lockedCoverIndex >= 0 ? this.lockedCoverIndex : this.lastHoveredIndex;
+    if (candidate < 0) return -1;
+
+    const cover = Array.isArray(coverWorldData) ? coverWorldData[candidate] : null;
+    return cover?.visible ? candidate : -1;
+  }
+
   hasMeaningfulHomeWakeInteraction(hoveredIndex, hasVoid) {
     // The moth should sleep on PerchBone until there is a real interaction target.
     // Gentle pointer movement/noise should not wake it and cause random patrol departures.
@@ -2174,7 +2245,7 @@ export class MothSystem {
     if (this.mode !== "patrol") return false;
     if (this.hasActiveExternalMothTarget(elapsed, hoveredIndex, hasVoid)) return false;
 
-    const idleFor = elapsed - Math.max(this.lastInputAt || -999, this.lastPointerEventAt || -999);
+    const idleFor = elapsed - Math.max(this.lastMeaningfulInputAt || -999, this.lastInputAt || -999);
     const idleReady = idleFor >= (this.cfg.homePerchRestDelay || 8.0);
     const quietSignal = this.signal <= (this.cfg.homePerchSignalThreshold || 0.24);
     const tired = this.fatigue >= (this.cfg.homePerchFatigueThreshold || 0.70);
@@ -2382,6 +2453,12 @@ export class MothSystem {
 
   updateStateAndMotion(delta, elapsed, hoveredEntry, hoveredIndex, coverWorldData) {
     const hasVoid = this.voidState?.active;
+
+    // Once a cover/landing interaction starts, mouse movement should not cancel it
+    // by changing hover state. Keep the committed cover index until the sequence
+    // resolves or a void overrides it.
+    hoveredIndex = this.getEffectiveCoverIndex(hoveredIndex, Boolean(hasVoid), coverWorldData);
+
     const coverTarget = (!hasVoid && hoveredIndex >= 0 && Array.isArray(coverWorldData)) ? this.getCoverPerchTarget(hoveredIndex, coverWorldData) : null;
     const voidTarget = hasVoid ? this.getVoidInspectTarget() : null;
 
@@ -2398,6 +2475,7 @@ export class MothSystem {
       this.pointerWorldTargetValid = false;
       this.hoverClock = 0;
       this.lastHoveredIndex = -1;
+      this.lockedCoverIndex = -1;
       this.recoveryAssist = false;
       this.patrolStuckSince = -1;
     }
@@ -2512,6 +2590,7 @@ export class MothSystem {
       if (this.lastHoveredIndex !== hoveredIndex) {
         this.investigationState = null;
         this.lastHoveredIndex = hoveredIndex;
+        this.lockedCoverIndex = hoveredIndex;
       }
       if (this.mode === "landed") {
         this.perched = true;
@@ -2568,7 +2647,10 @@ export class MothSystem {
         this.startTakeoff(elapsed);
         return;
       }
-      if (this.mode === "investigateCover" || this.mode === "approachCover") this.setMode("patrol", "cover signal lost");
+      if (this.mode === "investigateCover" || this.mode === "approachCover") {
+        this.lockedCoverIndex = -1;
+        this.setMode("patrol", "cover signal lost");
+      }
     }
 
     if (this.mode === "landingHome") {
@@ -2667,6 +2749,7 @@ export class MothSystem {
   }
 
   startCoverInvestigation(index, coverTarget, elapsed) {
+    this.lockedCoverIndex = index;
     this.investigationState = { coverIndex: index, startedAt: elapsed, duration: this.cfg.investigateCoverDuration || 1.45, phaseOffset: Math.random() * Math.PI * 2 };
     this.setMode("investigateCover", `inspecting cover ${index}`);
     this.playLoop(this.getPatrolFlightAction());
@@ -2768,6 +2851,7 @@ export class MothSystem {
     // Void has absolute priority. The moth must always be drawn to a spawned void,
     // never choosing flee/patrol while a void is active.
     if (this.voidState?.active) return false;
+    if (this.isInteractionProtectedState?.()) return false;
     if (this.mode === "backflip" || this.mode === "takeoff" || this.mode === "inspectVoid" || this.mode === "fleeOverwhelmed") return false;
     if (elapsed - this.lastFleeAt < (this.cfg.overwhelmCooldown || 3.2)) return false;
     if (this.corruption >= (this.cfg.voidCorruptionFleeThreshold || 0.88)) return true;
