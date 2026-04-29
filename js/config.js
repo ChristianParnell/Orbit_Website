@@ -81,10 +81,9 @@ export const MOTH_CONFIG = {
   pointLimit: 1380,
   outlinePointLimit: 920,
   sizeRatioToModelHeight: 0.0936,
-  // FBX visibility/orientation is kept from the original working moth setup.
-  // If the moth still flies sideways in your browser, press [ or ] with the debug HUD open,
-  // then copy the displayed yaw value back here.
-  modelYawOffset: -Math.PI / 2,
+  // Visual-only FBX forward correction. Movement code is unchanged; this rotates only the moth model by +90° from the old -PI/2 setup.
+  // If it still faces sideways, press [ or ] once and copy the HUD yaw value here.
+  modelYawOffset: 0,
   modelPitchOffset: 0,
   modelRollOffset: 0,
   meshOpacity: 0.38,
@@ -93,6 +92,8 @@ export const MOTH_CONFIG = {
   // Keeps state lighting centered inside the moth without drawing a visible glow ball.
   auraOpacity: 0.0,
   auraVisible: false,
+  stateLightEnabled: false,
+  hideSourceMothMesh: true,
   trailSpawnBehindDistance: 0.018,
   hitProxyDebugVisible: false,
   hitProxyMeshEnabled: false,
