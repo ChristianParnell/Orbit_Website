@@ -67,21 +67,33 @@ const DEFAULT_CONFIG = {
   // [MOTH VELOCITY FACING 2026-04-28]
   // During flight the moth faces the actual velocity vector, not the target point.
   // This removes sideways-looking travel while keeping turns slow and organic.
-  velocityFacingMinSpeed: 0.045,
-  velocityHeadingBlendMin: 0.018,
-  velocityHeadingBlendMax: 0.22,
-  turnAlphaMax: 0.26,
+  velocityFacingMinSpeed: 0.090,
+  velocityHeadingBlendMin: 0.006,
+  velocityHeadingBlendMax: 0.060,
+  turnAlphaMax: 0.090,
 
-  headingSmoothing: 5.0,
-  headingDeadzone: 0.045,
-  turnResponse: 4.8,
-  turnResponseFast: 6.0,
-  turnLerp: 0.12,
-  turnLerpFast: 0.16,
-  visualBankMax: 0.105,
-  visualBankResponse: 3.8,
-  visualPitchMax: 0.055,
-  visualPitchResponse: 3.6,
+  // [MOTH NO-YAW-STUTTER 2026-04-28]
+  // The moth still faces travel direction, but its heading is now heavily gated.
+  // Small noisy velocity changes no longer create aggressive yaw turns or twitching.
+  noYawStutterMode: true,
+  orientationFreezeSpeed: 0.075,
+  orientationFreezeDistance: 0.145,
+  orientationMaxTurnDegreesPerSecond: 26,
+  orientationMaxTurnFastDegreesPerSecond: 34,
+  velocitySteeringMaxTurnDegreesPerSecond: 38,
+  orientationUseWorldUpInFlight: true,
+  orientationMinAngleDegrees: 2.8,
+
+  headingSmoothing: 2.15,
+  headingDeadzone: 0.070,
+  turnResponse: 2.35,
+  turnResponseFast: 3.10,
+  turnLerp: 0.050,
+  turnLerpFast: 0.070,
+  visualBankMax: 0.025,
+  visualBankResponse: 2.2,
+  visualPitchMax: 0.020,
+  visualPitchResponse: 2.1,
 
   animationFadeLoop: 0.28,
   animationFadeOnce: 0.18,
@@ -663,6 +675,8 @@ export class MothSystem {
     this.forward = new THREE.Vector3(0, 0, -1);
     this.smoothedHeading = new THREE.Vector3(0, 0, -1);
     this.lastVelocityDirection = new THREE.Vector3(0, 0, -1);
+    this.lastStableFacing = new THREE.Vector3(0, 0, -1);
+    this.pendingFacingTarget = new THREE.Vector3(0, 0, -1);
     this.facingSource = "forward";
     this.orientationUp = new THREE.Vector3(0, 1, 0);
     this.anchorHiddenSince = -1;
@@ -2626,22 +2640,45 @@ export class MothSystem {
   }
 
   moveToward(delta, target, baseSpeed, options = {}) {
+    this.lastStableTarget.copy(target);
     const toTarget = this.temp.e.copy(target).sub(this.root.position);
     const distance = toTarget.length();
     if (distance <= (this.cfg.stopDistance || 0.055)) {
-      this.velocity.multiplyScalar(Math.exp(-delta * 4.5));
+      this.velocity.multiplyScalar(Math.exp(-delta * 5.2));
       return;
     }
+
     const dir = toTarget.normalize();
     const arrival = smooth01(THREE.MathUtils.clamp(distance / Math.max(0.001, this.cfg.approachSlowRadius), 0.0, 1.0));
-    const speed = Math.max(0.03, baseSpeed * THREE.MathUtils.lerp(0.16, 1.0, arrival));
+    const speed = Math.max(0.02, baseSpeed * THREE.MathUtils.lerp(0.12, 1.0, arrival));
     const desired = dir.multiplyScalar(speed);
     const response = options.response || (distance > 0.8 ? this.cfg.velocityResponseFast : this.cfg.velocityResponse);
 
     const targetVelocity = this.temp.a.copy(desired);
-    const alpha = 1.0 - Math.exp(-delta * response);
     const before = this.temp.b.copy(this.velocity);
-    this.velocity.lerp(targetVelocity, alpha);
+
+    // [MOTH NO-YAW-STUTTER 2026-04-28]
+    // Do not allow the movement vector to instantly reverse or whip sideways.
+    // The moth now bends its path gradually, so the body does not have to perform
+    // a huge yaw correction every frame.
+    const currentSpeed = before.length();
+    const desiredSpeed = targetVelocity.length();
+    if (currentSpeed > 0.045 && desiredSpeed > 0.045) {
+      const currentDir = before.clone().normalize();
+      const desiredDir = targetVelocity.clone().normalize();
+      if (currentDir.dot(desiredDir) < -0.985) {
+        desiredDir.addScaledVector(this.orientationUp, 0.025).normalize();
+      }
+      const angle = Math.acos(THREE.MathUtils.clamp(currentDir.dot(desiredDir), -1, 1));
+      const maxTurn = THREE.MathUtils.degToRad(this.cfg.velocitySteeringMaxTurnDegreesPerSecond || 38) * Math.max(delta, 1 / 120);
+      if (angle > maxTurn && angle > 0.0001) {
+        desiredDir.copy(currentDir).lerp(desiredDir, THREE.MathUtils.clamp(maxTurn / angle, 0.0, 1.0)).normalize();
+        targetVelocity.copy(desiredDir).multiplyScalar(desiredSpeed);
+      }
+    }
+
+    const alpha = 1.0 - Math.exp(-delta * response);
+    this.velocity.lerp(targetVelocity, THREE.MathUtils.clamp(alpha, 0.01, 0.16));
 
     const maxAccelStep = (this.cfg.maxAcceleration || 2.6) * delta;
     const accel = this.temp.c.copy(this.velocity).sub(before);
@@ -2650,70 +2687,84 @@ export class MothSystem {
       this.velocity.copy(before).add(accel);
     }
 
-    const maxSpeed = Math.max(baseSpeed * 1.12, 0.1);
+    const maxSpeed = Math.max(baseSpeed * 1.08, 0.1);
     if (this.velocity.length() > maxSpeed) this.velocity.setLength(maxSpeed);
     this.root.position.addScaledVector(this.velocity, delta);
     if (!options.skipClamp) this.clampPointNearCenter(this.root.position);
   }
 
   getTravelFacingDirection(targetPoint = null) {
-    // [MOTH VELOCITY FACING 2026-04-28]
-    // Flight facing is driven by the real movement velocity. The target point is only
-    // used as a fallback when the moth is almost stationary, which prevents sideways
-    // sliding through the rotating 3D space.
-    const minSpeed = this.cfg.velocityFacingMinSpeed || this.cfg.headingVelocityMin || 0.045;
-    const velocityDir = this.temp.b.copy(this.velocity);
+    const speed = this.velocity.length();
+    const minSpeed = this.cfg.velocityFacingMinSpeed || this.cfg.headingVelocityMin || 0.09;
 
-    if (velocityDir.lengthSq() >= minSpeed * minSpeed) {
-      velocityDir.normalize();
-      this.lastVelocityDirection.copy(velocityDir);
-      this.facingSource = "velocity";
-      return velocityDir;
+    // Freeze the facing while the moth is nearly stationary or settling at a perch.
+    // This stops the root from yawing around tiny direction changes at the end of a move.
+    if (speed < minSpeed) {
+      this.facingSource = "frozen low-speed";
+      return this.temp.c.copy(this.lastStableFacing || this.forward).normalize();
     }
 
-    if (this.lastVelocityDirection && this.lastVelocityDirection.lengthSq() > 0.0001) {
-      this.facingSource = "coasting";
-      return this.temp.c.copy(this.lastVelocityDirection).normalize();
-    }
-
-    if (targetPoint) {
-      const targetDir = this.temp.c.copy(targetPoint).sub(this.root.position);
-      if (targetDir.lengthSq() > 0.0001) {
-        this.facingSource = "target fallback";
-        return targetDir.normalize();
+    const velocityDir = this.temp.b.copy(this.velocity).normalize();
+    if (this.lastStableFacing && this.lastStableFacing.lengthSq() > 0.0001) {
+      const angle = Math.acos(THREE.MathUtils.clamp(this.lastStableFacing.dot(velocityDir), -1, 1));
+      const minAngle = THREE.MathUtils.degToRad(this.cfg.orientationMinAngleDegrees || 2.8);
+      if (angle < minAngle) {
+        this.facingSource = "stable velocity";
+        return this.temp.c.copy(this.lastStableFacing).normalize();
       }
     }
 
-    this.facingSource = "forward";
-    return this.temp.c.copy(this.forward).normalize();
+    this.lastVelocityDirection.copy(velocityDir);
+    this.facingSource = "velocity gated";
+    return velocityDir;
   }
 
   getTurnAlpha(lerpAmount = this.cfg.turnLerp) {
-    const clampedLerp = THREE.MathUtils.clamp(lerpAmount, 0.01, 0.99);
-    const response = clampedLerp >= (this.cfg.turnLerpFast || 0.16)
-      ? (this.cfg.turnResponseFast || 6.0)
-      : (this.cfg.turnResponse || 4.8);
-
-    // Rate-aware turning only. The previous legacy max() path could force sharp
-    // frame-to-frame rotations even when heading smoothing was lowered.
+    const clampedLerp = THREE.MathUtils.clamp(lerpAmount, 0.004, 0.99);
+    const response = clampedLerp >= (this.cfg.turnLerpFast || 0.07)
+      ? (this.cfg.turnResponseFast || 3.10)
+      : (this.cfg.turnResponse || 2.35);
     const rateAware = 1.0 - Math.exp(-this.lastDelta * response);
-    const capped = Math.min(rateAware, clampedLerp, this.cfg.turnAlphaMax || 0.26);
-    return THREE.MathUtils.clamp(capped, 0.006, this.cfg.turnAlphaMax || 0.26);
+    const capped = Math.min(rateAware, clampedLerp, this.cfg.turnAlphaMax || 0.09);
+    return THREE.MathUtils.clamp(capped, 0.002, this.cfg.turnAlphaMax || 0.09);
   }
 
   orientRootToDirection(direction, preferredUp = null, lerpAmount = this.cfg.turnLerp) {
     if (!direction || direction.lengthSq() <= 0.0001) return;
+
     const forward = this.temp.a.copy(direction).normalize();
-    const up = this.temp.b.copy(preferredUp || new THREE.Vector3(0, 1, 0));
-    if (up.lengthSq() <= 0.0001) up.set(0, 1, 0);
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const up = this.temp.b.copy(
+      preferredUp || (this.cfg.orientationUseWorldUpInFlight !== false ? worldUp : this.orientationUp)
+    );
+
+    if (up.lengthSq() <= 0.0001) up.copy(worldUp);
     up.normalize();
-    if (Math.abs(up.dot(forward)) > 0.92) up.set(0, 1, 0);
-    if (Math.abs(up.dot(forward)) > 0.92) up.set(1, 0, 0);
-    const right = this.temp.c.copy(up).cross(forward).normalize();
-    up.copy(forward).cross(right).normalize();
-    this.temp.m.makeBasis(right, up, this.temp.d.copy(forward).multiplyScalar(-1));
+    if (Math.abs(up.dot(forward)) > 0.94) up.copy(worldUp);
+    if (Math.abs(up.dot(forward)) > 0.94) up.set(1, 0, 0);
+
+    // Use Matrix4.lookAt so the object's local -Z axis points along travel, while
+    // the chosen up vector prevents unwanted roll/yaw wobble from an unstable basis.
+    this.temp.m.lookAt(new THREE.Vector3(0, 0, 0), forward, up);
     this.temp.q.setFromRotationMatrix(this.temp.m);
-    this.root.quaternion.slerp(this.temp.q, this.getTurnAlpha(lerpAmount));
+
+    const angle = this.root.quaternion.angleTo(this.temp.q);
+    const minAngle = THREE.MathUtils.degToRad(this.cfg.orientationMinAngleDegrees || 2.8);
+    if (angle < minAngle) {
+      this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
+      this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
+      return;
+    }
+
+    const fast = lerpAmount >= (this.cfg.turnLerpFast || 0.07);
+    const maxDegrees = fast
+      ? (this.cfg.orientationMaxTurnFastDegreesPerSecond || 34)
+      : (this.cfg.orientationMaxTurnDegreesPerSecond || 26);
+    const maxStep = THREE.MathUtils.degToRad(maxDegrees) * Math.max(this.lastDelta, 1 / 120);
+    const alphaByRate = angle > 0.0001 ? THREE.MathUtils.clamp(maxStep / angle, 0.0, 1.0) : 1.0;
+    const alpha = Math.min(this.getTurnAlpha(lerpAmount), alphaByRate);
+
+    this.root.quaternion.slerp(this.temp.q, alpha);
     this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
     this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
   }
@@ -2721,42 +2772,51 @@ export class MothSystem {
   lookAtDirection(direction, lerpAmount = this.cfg.turnLerp) {
     if (!direction || direction.lengthSq() <= 0.0001) return;
 
-    const target = this.temp.d.copy(direction).normalize();
     const speed = this.velocity.length();
-    const minSpeed = this.cfg.velocityFacingMinSpeed || this.cfg.headingVelocityMin || 0.045;
+    const minSpeed = this.cfg.orientationFreezeSpeed || this.cfg.velocityFacingMinSpeed || 0.075;
+    if (speed < minSpeed && !["landingHome", "landing", "inspectVoid", "orbitVoid"].includes(this.mode)) {
+      this.facingSource = "frozen idle";
+      return;
+    }
+
+    const target = this.temp.d.copy(direction).normalize();
+    const distanceFreeze = this.cfg.orientationFreezeDistance || 0.145;
+    if (this.lastStableTarget && this.root.position.distanceTo(this.lastStableTarget) < distanceFreeze && speed < (this.cfg.flySpeed || 1.0) * 0.28) {
+      this.facingSource = "frozen arrive";
+      return;
+    }
+
     const speed01 = smooth01(THREE.MathUtils.clamp(speed / Math.max(0.001, this.cfg.flySpeed || 1.0), 0, 1));
-    const smoothing = 1.0 - Math.exp(-this.lastDelta * (this.cfg.headingSmoothing || 5.0));
+    const smoothing = 1.0 - Math.exp(-this.lastDelta * (this.cfg.headingSmoothing || 2.15));
     const blendLimit = THREE.MathUtils.lerp(
-      this.cfg.velocityHeadingBlendMin || 0.018,
-      this.cfg.velocityHeadingBlendMax || 0.22,
+      this.cfg.velocityHeadingBlendMin || 0.006,
+      this.cfg.velocityHeadingBlendMax || 0.060,
       speed01
     );
 
     if (!this.smoothedHeading || this.smoothedHeading.lengthSq() <= 0.0001) {
       this.smoothedHeading = target.clone();
     } else {
-      // Avoid a mathematically perfect 180-degree lerp, which can collapse the
-      // vector and cause a visual snap. A tiny upward bias gives the turn an arc.
       if (this.smoothedHeading.dot(target) < -0.985) {
-        target.addScaledVector(this.orientationUp, 0.012).normalize();
+        target.addScaledVector(this.orientationUp, 0.018).normalize();
       }
-
-      const stationary = speed < minSpeed;
-      const blend = stationary ? smoothing * 0.24 : smoothing;
       this.smoothedHeading
-        .lerp(target, THREE.MathUtils.clamp(blend, 0.010, blendLimit))
+        .lerp(target, THREE.MathUtils.clamp(smoothing, 0.004, blendLimit))
         .normalize();
     }
 
     const angle = Math.acos(THREE.MathUtils.clamp(this.forward.dot(this.smoothedHeading), -1, 1));
-    if (angle <= (this.cfg.headingDeadzone || 0.045)) return;
+    if (angle <= (this.cfg.headingDeadzone || 0.070)) return;
     this.orientRootToDirection(this.smoothedHeading, null, lerpAmount);
+    this.lastStableFacing.copy(this.forward);
   }
 
   lookAtPoint(point, up = new THREE.Vector3(0, 1, 0), lerpAmount = 0.12) {
     this.temp.e.copy(point).sub(this.root.position);
     if (this.temp.e.lengthSq() <= 0.0001) return;
-    this.orientRootToDirection(this.temp.e, up, lerpAmount);
+    const useLerp = Math.min(lerpAmount, this.cfg.turnLerpFast || 0.07);
+    this.orientRootToDirection(this.temp.e, up, useLerp);
+    this.lastStableFacing.copy(this.forward);
   }
 
   updateFlightPose(delta) {
