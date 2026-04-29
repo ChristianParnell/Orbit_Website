@@ -227,45 +227,24 @@ I discovered the issue with the animations, The website expected seperate FBX fi
 
 ### 24/04
 the moth now has a real home on the PerchBone, it uses land -> perch idle -> takeoff flow for resting there, it feeds on activity, gets tired and returns home, becomes cautious or trusting based on how the user moves, collects fragments and deposits them into a persistent nest, gets corrupted by the glitch void and recovers at home, and visibly changes the site by letting neglected covers gather binary dust while attention cleans them.
-### Big Update:
-the animation matcher now explicitly prioritizes the exact clip name Backflip
-animation states are mapped for fly, flySad, land, perch, takeoff, feed, and backflip
-land -> perch idle -> takeoff flow is built in, so the moth can properly settle and leave using authored animation clips rather than snapping between states
-the finished-event handling was tightened so actions only hand off when the currently active action actually finishes
 
-the moth now tracks signalLevel, fatigue, trust, corruption, vitality, and fragmentCharge
+### Big Update:
+animation states are mapped for fly, flySad, land, perch, takeoff, feed, and backflip land -> perch idle -> takeoff flow is built in, so the moth can properly settle and leave using authored animation clips rather than snapping between states  and the finished-event handling was tightened so actions only hand off when the currently active action actually finishes and now the moth now tracks signa lLevel, fatigue, trust, corruption, vitality, and fragmentCharge
 signal rises from hovered covers, pointer movement, wheel activity, open panel presence
 
-### Interaction sensing:
+### Interaction
 
-renderer DOM listeners were added for pointermove, wheel, and pointerdown
-pointer speed is measured to distinguish gentle vs aggressive interaction
-gentle movement increases trust
-aggressive movement increases aggression/fear state
+renderer DOM listeners were added for pointermove, wheel, and pointerdown. Pointer speed is measured to distinguish gentle vs aggressive interaction. Gentle movement increases trust, aggressive movement increases aggression/fear state 
 this makes the moth either companion-like or evasive depending on how the user behaves
 
-### Behavior priority / decision logic:
+### Behavior priority:
 
 if a void is active and corruption is too high, it avoids the void and heads home
 if the user is too aggressive, it flees
-if it is tired, weak, corrupted, or carrying enough fragments, it heads home
+if it is tired or weak it heads home
 if a hovered cover is available, it may approach and perch on it
 if trust is high and aggression is low, it enters companion behavior and follows closer to the user
 otherwise it patrols
-
-### Covers / residue / environmental change:
-
-a residue system was added for covers
-neglected covers gradually build visible dusty/glitchy residue
-active attention reduces that residue
-this gives the moth a visible effect on the site, which is important for making the generative system obvious
-
-### Nest / fragments:
-
-fragment charge accumulates while the moth is active
-when enough is collected and it returns home, it deposits fragments at the perch
-nest objects are spawned and persisted
-home nest growth and cover nest drops make its past behavior visible over time
 
 ### Void behavior:
 
@@ -290,4 +269,31 @@ the backflip clip binding,
 the backflip state and guard logic,
 the backflip-only update block,
 and the left-click trigger that was calling the backflip.
+
+
+### 26/04
+The moth still faces the direction it travels, but it no longer tries to instantly yaw toward every tiny velocity change. I added velocity steering limits, low-speed facing freeze, max turn-rate limits, and reduced bank/pitch so it should stop doing those sharp glitchy maneuvers.
+I also made PerchBone Branch thats on the Main FBX center object, which is now made as the highest-priority bone name. This is th moths home now. 
+New Logic flow: <img width="1612" height="878" alt="Screenshot 2026-04-26 230147" src="https://github.com/user-attachments/assets/94a1f795-1e75-4bc2-8b5c-cefa3455c6d6" />
+
+
+Double click empty space → binary void appears.
+Moth flies to the void.
+Moth plays F_Void_Inspect while feeding.
+When feeding finishes, it immediately goes home to the perch bone.
+When it reaches the bone, it plays F_Land.
+Then it stays in F_Land_Idle on the perch bone.
+
+### 28/04
+The visible glow/aura sprite is now disabled by default, so that unknown ball should disappear. 
+Issues amended: 
+
+The point light now anchors to the center of the moth, not the root origin.
+The trail now emits from the moth’s center/body area instead of above or below it.
+<img width="346" height="373" alt="Screenshot 2026-04-28 171819" src="https://github.com/user-attachments/assets/8f5b32ef-ec8c-4ab5-b6dc-fb7c337ea326" />
+
+### 28/04
+Debugging and fixing the colsonle, issues Getting issues from the velocity jitter inside moveToward() function, And fixed the yawn logic when doing evasive rotations. 
+Added better transition logic, when moth does break within the 3D space. that interference coming from pointer movement still feeding into aggression pointer curiosity hover-loss while the moth is already committed to behaviours So I made a new complete direct replacement that locks the moth’s interaction state until the sequence is finished.
+
 
