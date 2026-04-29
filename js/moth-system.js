@@ -99,13 +99,13 @@ const DEFAULT_CONFIG = {
 
   // [MOTH HOME PERCH 2026-04-28]
   // The moth can now use a named bone inside me_on_hill.fbx as its home/resting perch.
-  // Create/name a bone something like "Moth_Perch", "perch", or "Perch_Bone" in the centre FBX.
+  // Create/name the resting bone "PerchBone" inside the centre me_on_hill.fbx.
   homePerchEnabled: true,
   homePerchBoneNames: [
     "PerchBone",
+    "Perch Bone",
     "perchbone",
     "PERCHBONE",
-    "Perch Bone",
     "Moth_PerchBone",
     "MothPerchBone",
     "moth_perch_bone",
@@ -212,7 +212,10 @@ const STATE_VISUALS = {
   "hungry / searching": { color: "#ff8b2d", aura: 0.44, brightness: 1.18, trail: 0.42 },
   "fed / bright": { color: "#ffe166", aura: 0.66, brightness: 1.70, trail: 1.05 },
   "safe / nesting": { color: "#b04dff", aura: 0.46, brightness: 1.34, trail: 0.35 },
-  "home perch": { color: "#b04dff", aura: 0.52, brightness: 1.42, trail: 0.24 },
+  // Going home / landing on PerchBone keeps a soft violet signal.
+  "home perch": { color: "#7d6cff", aura: 0.24, brightness: 0.62, trail: 0.10 },
+  // Once fully idle on PerchBone the moth dims like it is sleeping.
+  sleeping: { color: "#18233f", aura: 0.10, brightness: 0.28, trail: 0.02 },
   "void drawn": { color: "#33ff88", aura: 0.78, brightness: 1.85, trail: 1.22 },
   feeding: { color: "#5fff77", aura: 0.86, brightness: 2.05, trail: 1.35 },
   corrupted: { color: "#ff57ce", aura: 0.82, brightness: 1.65, trail: 1.05 },
@@ -653,6 +656,9 @@ export class MothSystem {
     this.hoverClock = 0;
     this.satiatedUntil = 0;
     this.homeReturnAfterFeedAt = -1;
+    this.afterTakeoffIntent = "";
+    this.afterTakeoffCoverIndex = -1;
+    this.sleepPulse = 0;
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
     this.smoothedHeading = new THREE.Vector3(0, 0, -1);
@@ -863,7 +869,8 @@ export class MothSystem {
     let nextMood = "patrolling";
     if (this.mode === "backflip") nextMood = "backflip";
     else if (this.mode === "inspectVoid") nextMood = "feeding";
-    else if (this.mode === "homePerched" || this.mode === "landingHome" || this.mode === "approachHomePerch") nextMood = "home perch";
+    else if (this.mode === "homePerched") nextMood = "sleeping";
+    else if (this.mode === "landingHome" || this.mode === "approachHomePerch") nextMood = "home perch";
     else if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter") nextMood = "safe / nesting";
     else if (this.corruption >= (this.cfg.overwhelmCorruptionThreshold || 0.82)) nextMood = "corrupted";
     else if (this.mode === "fleeOverwhelmed") nextMood = "overwhelmed";
@@ -1286,9 +1293,12 @@ export class MothSystem {
 
     if (this.currentActionKey === "takeoff") {
       const next = this.pendingActionKey || this.getPatrolFlightAction();
+      const intent = this.afterTakeoffIntent || "";
       this.pendingActionKey = "";
+      this.afterTakeoffIntent = "";
       this.perched = false;
-      this.setMode(this.voidState?.active ? "approachVoid" : "patrol", "takeoff complete");
+      const nextMode = this.voidState?.active || intent === "void" ? "approachVoid" : "patrol";
+      this.setMode(nextMode, intent ? `takeoff complete → ${intent}` : "takeoff complete");
       this.takeoffState = null;
       this.playLoop(next);
       return;
@@ -2065,8 +2075,9 @@ export class MothSystem {
     this.lookAtPoint(target.position.clone().add(target.normal), target.up, this.cfg.homePerchTurnLerp || 0.13);
     this.playLoop("perch");
     this.perched = true;
+    this.sleepPulse = (this.sleepPulse || 0) + delta;
     this.fatigue = clamp01(this.fatigue - delta * (this.cfg.fatigueRestRecovery || 0.16));
-    this.behaviourNote = `resting at home perch bone: ${this.homePerchBoneName || "perch"}`;
+    this.behaviourNote = `sleeping on home PerchBone: ${this.homePerchBoneName || "perch"}`;
   }
 
   getCoverPerchTarget(index, coverWorldData) {
@@ -2173,6 +2184,7 @@ export class MothSystem {
       this.hoverClock = 0;
       this.investigationState = null;
       if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter" || this.mode === "homePerched" || this.mode === "landingHome") {
+        this.afterTakeoffIntent = "void";
         this.startTakeoff(elapsed);
         return;
       }
@@ -2203,6 +2215,9 @@ export class MothSystem {
 
     if (coverTarget) {
       if (this.mode === "homePerched" || this.mode === "landingHome") {
+        this.afterTakeoffIntent = "cover";
+        this.afterTakeoffCoverIndex = hoveredIndex;
+        this.hoverClock = Math.max(this.hoverClock, (this.cfg.hoverPerchDelay || 0.38) * 0.85);
         this.startTakeoff(elapsed);
         return;
       }
@@ -2250,6 +2265,11 @@ export class MothSystem {
         this.lookAtDirection(this.getTravelFacingDirection(coverTarget.position), this.cfg.turnLerpFast);
         this.playLoop(this.getPatrolFlightAction());
         this.behaviourNote = "slow approach to perch";
+        return;
+      }
+      if (this.afterTakeoffCoverIndex === hoveredIndex && this.mode === "patrol") {
+        this.afterTakeoffCoverIndex = -1;
+        this.startCoverInvestigation(hoveredIndex, coverTarget, elapsed);
         return;
       }
       if (this.hoverClock >= this.cfg.hoverPerchDelay) {
@@ -2771,7 +2791,8 @@ export class MothSystem {
     if (this.mode === "backflip") return "backflip";
     if (this.mode === "inspectVoid") return "feeding";
     if (this.mode === "fleeOverwhelmed") return "overwhelmed";
-    if (this.mode === "homePerched" || this.mode === "landingHome" || this.mode === "approachHomePerch") return "home perch";
+    if (this.mode === "homePerched") return "sleeping";
+    if (this.mode === "landingHome" || this.mode === "approachHomePerch") return "home perch";
     return this.mood || "patrolling";
   }
 
@@ -2780,12 +2801,14 @@ export class MothSystem {
     const visual = STATE_VISUALS[visualName] || STATE_VISUALS.patrolling;
     const targetColor = new THREE.Color(visual.color);
     const alpha = 1.0 - Math.exp(-delta * 4.2);
+    const isSleeping = visualName === "sleeping";
+    const sleepBreath = isSleeping ? (0.82 + Math.sin(elapsed * 0.75) * 0.10) : 1.0;
 
     this.meshMaterials.forEach((material) => {
       if (material.color && !material.map) material.color.lerp(targetColor, alpha * 0.30);
       if (material.emissive) {
         material.emissive.lerp(targetColor, alpha * 0.55);
-        material.emissiveIntensity = THREE.MathUtils.lerp(material.emissiveIntensity || 0.4, this.cfg.meshEmissiveIntensity * visual.brightness, alpha);
+        material.emissiveIntensity = THREE.MathUtils.lerp(material.emissiveIntensity || 0.4, this.cfg.meshEmissiveIntensity * visual.brightness * sleepBreath, alpha);
       }
       material.opacity = THREE.MathUtils.lerp(material.opacity ?? this.cfg.meshOpacity, this.cfg.meshOpacity * (visualName === "feeding" ? 1.18 : 1.0), alpha);
     });
@@ -2793,25 +2816,25 @@ export class MothSystem {
     if (this.binaryMaterial) {
       this.binaryMaterial.uniforms.uTime.value = elapsed;
       this.binaryMaterial.uniforms.uColor.value.lerp(targetColor, alpha);
-      this.binaryMaterial.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uAlpha.value, visual.aura, alpha);
-      this.binaryMaterial.uniforms.uBrightness.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uBrightness.value, this.cfg.binaryBrightness * visual.brightness, alpha);
+      this.binaryMaterial.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uAlpha.value, visual.aura * sleepBreath, alpha);
+      this.binaryMaterial.uniforms.uBrightness.value = THREE.MathUtils.lerp(this.binaryMaterial.uniforms.uBrightness.value, this.cfg.binaryBrightness * visual.brightness * sleepBreath, alpha);
     }
     if (this.auraSprite) {
       this.auraSprite.position.copy(this.mothCoreLocal);
       this.auraSprite.visible = this.cfg.auraVisible === true && this.visible;
       this.auraSprite.material.color.lerp(targetColor, alpha);
-      this.auraSprite.material.opacity = THREE.MathUtils.lerp(this.auraSprite.material.opacity, this.cfg.auraOpacity * visual.aura, alpha);
-      const pulse = 1.0 + Math.sin(elapsed * (visualName === "overwhelmed" ? 2.4 : 1.1)) * 0.035;
+      this.auraSprite.material.opacity = THREE.MathUtils.lerp(this.auraSprite.material.opacity, this.cfg.auraOpacity * visual.aura * sleepBreath, alpha);
+      const pulse = isSleeping ? sleepBreath : 1.0 + Math.sin(elapsed * (visualName === "overwhelmed" ? 2.4 : 1.1)) * 0.035;
       this.auraSprite.scale.setScalar(this.cfg.auraSize * (0.75 + visual.aura) * pulse);
     }
     if (this.stateLight) {
       this.stateLight.position.copy(this.mothCoreLocal);
       this.stateLight.color.lerp(targetColor, alpha);
-      this.stateLight.intensity = THREE.MathUtils.lerp(this.stateLight.intensity, 0.18 + visual.aura * 0.32, alpha);
+      this.stateLight.intensity = THREE.MathUtils.lerp(this.stateLight.intensity, (0.18 + visual.aura * 0.32) * sleepBreath, alpha);
     }
     if (this.trail?.material) {
       this.trail.material.uniforms.uColor.value.lerp(targetColor, alpha);
-      this.trail.material.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.trail.material.uniforms.uAlpha.value, visual.trail, alpha);
+      this.trail.material.uniforms.uAlpha.value = THREE.MathUtils.lerp(this.trail.material.uniforms.uAlpha.value, visual.trail * sleepBreath, alpha);
     }
   }
 
