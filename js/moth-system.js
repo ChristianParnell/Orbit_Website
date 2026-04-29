@@ -14,7 +14,7 @@ const DEFAULT_PALETTE = [
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV3Stable",
   sizeRatioToModelHeight: 0.0936,
-  modelYawOffset: 0,
+  modelYawOffset: Math.PI,
   modelPitchOffset: 0,
   modelRollOffset: 0,
 
