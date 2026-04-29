@@ -227,6 +227,14 @@ export const MOTH_CONFIG = {
   homePerchSettleLerp: 0.14,
   homePerchTurnLerp: 0.13,
   homePerchUseCoreAnchor: true,
+  // Keep PerchBone resting/takeoff upright even if the FBX bone has a rolled local axis.
+  homePerchUseWorldUp: true,
+  homePerchFlattenRoll: true,
+  homePerchTakeoffKeepBranchOrientation: true,
+  // The moth sleeps at PerchBone until a real target appears or hunger wakes it.
+  homePerchWakeWhenHungry: true,
+  homePerchWakeHungerThreshold: 0.72,
+  homePerchMinimumSleepDuration: 2.0,
   // After feeding from a binary void, the moth flies home and lands into F_Land_Idle.
   homePerchAfterFeed: true,
   homePerchAfterFeedDelay: 0.0,
