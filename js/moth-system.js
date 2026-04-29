@@ -14,7 +14,7 @@ const DEFAULT_PALETTE = [
 const DEFAULT_CONFIG = {
   storageKey: "orbitSpecterMothV3Stable",
   sizeRatioToModelHeight: 0.0936,
-  modelYawOffset: -Math.PI / 2,
+  modelYawOffset: 0,
   modelPitchOffset: 0,
   modelRollOffset: 0,
 
@@ -1191,6 +1191,7 @@ export class MothSystem {
     this.findHomePerchBone(true);
     this.setupAnimations(clips);
     this.buildBinaryShell();
+    this.applySourceMothMeshVisibility();
     this.updateMothCoreAnchor(true);
     this.buildAura();
     this.buildTrail();
@@ -1215,6 +1216,30 @@ export class MothSystem {
     this.ready = true;
     this.playLoop(startupHome ? "perch" : this.getPatrolFlightAction());
     this.log("specter moth online · void priority navigation", "BOOT");
+  }
+
+  applySourceMothMeshVisibility() {
+    // Keep the FBX skeleton/geometry alive for animation sampling, but hide the
+    // solid source mesh. The visible moth is the animated binary shell only.
+    // This removes the unwanted solid/mesh ball that could appear under the moth.
+    if (!this.modelRoot) return;
+    const hideSource = this.cfg.hideSourceMothMesh === true;
+    this.modelRoot.traverse((child) => {
+      if (!child?.isMesh || child === this.binaryShell) return;
+      child.visible = !hideSource;
+      child.frustumCulled = false;
+      if (hideSource) {
+        const materials = ensureMaterialArray(child.material);
+        materials.forEach((mat) => {
+          if (!mat) return;
+          mat.transparent = true;
+          mat.opacity = 0.0;
+          mat.colorWrite = false;
+          mat.depthWrite = false;
+          mat.needsUpdate = true;
+        });
+      }
+    });
   }
 
   fitMothScale() {
@@ -1708,10 +1733,15 @@ export class MothSystem {
       this.root.add(this.auraSprite);
     }
 
-    this.stateLight = new THREE.PointLight(new THREE.Color("#2fe4ff"), 0.32, 1.5, 2.0);
-    this.stateLight.name = "SpecterMothStateLight";
-    this.stateLight.position.copy(this.mothCoreLocal);
-    this.root.add(this.stateLight);
+    // Disabled by default: a real point light can create a stray-looking glow/ball around the root on some browsers/GPU states.
+    if (this.cfg.stateLightEnabled !== false) {
+      this.stateLight = new THREE.PointLight(new THREE.Color("#2fe4ff"), 0.32, 1.5, 2.0);
+      this.stateLight.name = "SpecterMothStateLight";
+      this.stateLight.position.copy(this.mothCoreLocal);
+      this.root.add(this.stateLight);
+    } else {
+      this.stateLight = null;
+    }
   }
 
   buildTrail() {
