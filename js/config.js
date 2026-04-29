@@ -131,6 +131,9 @@ export const MOTH_CONFIG = {
   patrolRecoveryMargin: 0.96,
   patrolRecoverySpeedScale: 1.2,
   patrolCenterPull: 0.12,
+  patrolStuckRepathSeconds: 1.15,
+  patrolStuckSpeedThreshold: 0.035,
+  patrolTargetPadding: 0.08,
 
 
   flySpeed: 1.02,
@@ -239,7 +242,9 @@ export const MOTH_CONFIG = {
   voidHeightMin: -0.9,
   voidHeightMax: 1.8,
   voidHoverRadius: 0.24,
-  voidAttractionSpeedScale: 1.18,
+  voidAttractionSpeedScale: 1.32,
+  voidPriorityCancelsBackflip: true,
+  voidPriorityClearsHomeReturn: true,
   voidConsumeDistance: 0.24,
   voidInspectDuration: 5.0,
   satiatedDuration: 8.0,
