@@ -245,6 +245,10 @@ if it is tired or weak it heads home
 if a hovered cover is available, it may approach and perch on it
 if trust is high and aggression is low, it enters companion behavior and follows closer to the user
 otherwise it patrols
+<img width="363" height="489" alt="Screenshot 2026-04-29 182753" src="https://github.com/user-attachments/assets/b8be43ed-9645-40a4-a1b5-4ba9413a7d44" />
+<img width="354" height="482" alt="Screenshot 2026-04-29 182740" src="https://github.com/user-attachments/assets/27268b56-0356-4e18-9d78-d4456643d10d" />
+<img width="994" height="784" alt="Screenshot 2026-04-29 182826" src="https://github.com/user-attachments/assets/1d63c0d0-93fb-4a1c-9d27-571df07e2c64" />
+
 
 ### Void behavior:
 
@@ -275,6 +279,7 @@ and the left-click trigger that was calling the backflip.
 The moth still faces the direction it travels, but it no longer tries to instantly yaw toward every tiny velocity change. I added velocity steering limits, low-speed facing freeze, max turn-rate limits, and reduced bank/pitch so it should stop doing those sharp glitchy maneuvers.
 I also made PerchBone Branch thats on the Main FBX center object, which is now made as the highest-priority bone name. This is th moths home now. 
 New Logic flow: <img width="1612" height="878" alt="Screenshot 2026-04-26 230147" src="https://github.com/user-attachments/assets/94a1f795-1e75-4bc2-8b5c-cefa3455c6d6" />
+<img width="363" height="489" alt="Screenshot 2026-04-29 182753" src="https://github.com/user-attachments/assets/f1ea2516-3b1f-46d2-8404-8789795e9269" />
 
 
 Double click empty space → binary void appears.
@@ -295,5 +300,6 @@ The trail now emits from the moth’s center/body area instead of above or below
 ### 28/04
 Debugging and fixing the colsonle, issues Getting issues from the velocity jitter inside moveToward() function, And fixed the yawn logic when doing evasive rotations. 
 Added better transition logic, when moth does break within the 3D space. that interference coming from pointer movement still feeding into aggression pointer curiosity hover-loss while the moth is already committed to behaviours So I made a new complete direct replacement that locks the moth’s interaction state until the sequence is finished.
+<img width="994" height="784" alt="Screenshot 2026-04-29 182826" src="https://github.com/user-attachments/assets/370b8a31-a513-4533-a5ff-64fd675065b4" />
 
 
