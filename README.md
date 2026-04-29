@@ -313,5 +313,7 @@ The moth also feels more agrivated based on the users mouse speed, and should ma
 
 The user's input to spawn the void is also made as double left click and sinlge left click to interact with the moth. 
 The backflip logic was still present and completly removed, which made the moth more stable. 
+Overall, Adding further features are too advanced and does not work well, with the current setup. 
+AND happy the moth is finaly able to navigate the website ok. The oriantation of the moth is something i have tried to fix for ages, and its just not facing its heading in the 3D space. 
 
 
