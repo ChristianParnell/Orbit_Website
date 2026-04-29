@@ -162,7 +162,9 @@ const DEFAULT_CONFIG = {
   // or hunger wakes it again.
   homePerchWakeWhenHungry: true,
   homePerchWakeHungerThreshold: 0.72,
-  homePerchMinimumSleepDuration: 2.0,
+  // After landing at home, stay there for at least this long before
+  // responding to voids, covers, or hunger. This prevents instant land/takeoff loops.
+  homePerchMinimumSleepDuration: 5.0,
   // After the moth finishes consuming a binary void, send it home to the perch bone.
   // This makes feeding feel like a complete behaviour loop: find void -> feed -> return home -> land idle.
   homePerchAfterFeed: true,
@@ -688,6 +690,13 @@ export class MothSystem {
     this.afterTakeoffCoverIndex = -1;
     this.sleepPulse = 0;
     this.homePerchedSince = -1;
+    // Stable PerchBone transform lock.
+    // The animated binary shell changes its center every frame; using that live
+    // center directly for the home root causes a visible teleport when taking off.
+    this.homePerchLockActive = false;
+    this.homePerchLockedRootPosition = new THREE.Vector3();
+    this.homePerchLockedRootOffsetFromBone = new THREE.Vector3();
+    this.homePerchLockedQuaternion = new THREE.Quaternion();
     this.homeTakeoffQuaternion = new THREE.Quaternion();
     this.velocity = new THREE.Vector3();
     this.forward = new THREE.Vector3(0, 0, -1);
@@ -923,8 +932,15 @@ export class MothSystem {
     if (!nextMode || this.mode === nextMode) return false;
     const previous = this.mode;
     this.mode = nextMode;
-    if (nextMode === "homePerched") this.homePerchedSince = this.getElapsed();
-    if (previous === "homePerched" && nextMode !== "homePerched") this.homePerchedSince = -1;
+    if (nextMode === "homePerched") {
+      this.homePerchedSince = this.getElapsed();
+      const homeTarget = this.getHomePerchTarget?.();
+      if (homeTarget) this.captureHomePerchLock(homeTarget, "entered homePerched");
+    }
+    if (previous === "homePerched" && nextMode !== "homePerched") {
+      this.homePerchedSince = -1;
+      this.homePerchLockActive = false;
+    }
     this.behaviourNote = reason || nextMode;
     this.pushDebugLine("STATE", `${previous} → ${nextMode}${reason ? ` · ${reason}` : ""}`);
     return true;
@@ -1031,6 +1047,7 @@ export class MothSystem {
       ["behaviour", this.behaviourNote || "—"],
       ["target", target],
       ["home", this.homePerchAvailable ? (this.homePerchBoneName || "found") : "not found"],
+      ["sleep wait", this.getHomePerchSleepRemaining(elapsed).toFixed(1) + "s"],
       ["vitality", this.vitality.toFixed(2)],
       ["hunger", this.hunger.toFixed(2)],
       ["signal", this.signal.toFixed(2)],
@@ -1736,21 +1753,27 @@ export class MothSystem {
   }
 
   buildHitProxy() {
+    // No mesh-ball under the moth.
+    // The previous proxy was transparent, but on some GPU/browser states it could
+    // still present as a visible sphere. Click detection now uses the real moth
+    // model and binary shell instead.
+    if (this.cfg.hitProxyMeshEnabled === false || this.cfg.hitProxyDebugVisible !== true) {
+      this.hitProxy = null;
+      return;
+    }
+
     const box = new THREE.Box3().setFromObject(this.visualRoot);
     const size = box.getSize(new THREE.Vector3());
     const radius = THREE.MathUtils.clamp(Math.max(size.x, size.y, size.z) * 0.65, 0.10, 0.22);
     const proxyMaterial = new THREE.MeshBasicMaterial({
       transparent: true,
-      opacity: this.cfg.hitProxyDebugVisible ? 0.18 : 0,
+      opacity: 0.10,
       depthWrite: false,
       depthTest: false,
-      colorWrite: Boolean(this.cfg.hitProxyDebugVisible)
+      colorWrite: false
     });
-    const proxy = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 12, 12),
-      proxyMaterial
-    );
-    proxy.name = "SpecterMothHitProxy";
+    const proxy = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 8), proxyMaterial);
+    proxy.name = "SpecterMothHitProxy_DISABLED_DEBUG_ONLY";
     proxy.position.copy(this.mothCoreLocal);
     proxy.renderOrder = -999;
     this.hitProxy = proxy;
@@ -2048,6 +2071,42 @@ export class MothSystem {
     return false;
   }
 
+  getHomePerchSleepRemaining(elapsed = this.getElapsed()) {
+    const minimum = Math.max(0, this.cfg.homePerchMinimumSleepDuration ?? 5.0);
+    // During the F_Land home cycle, do not allow queued interactions to yank the
+    // moth straight back off the branch before it has even settled.
+    if (this.homePerchedSince < 0) return this.mode === "landingHome" ? minimum : 0;
+    return Math.max(0, minimum - (elapsed - this.homePerchedSince));
+  }
+
+  canLeaveHomePerch(elapsed = this.getElapsed()) {
+    return this.getHomePerchSleepRemaining(elapsed) <= 0;
+  }
+
+  captureHomePerchLock(target = null, reason = "") {
+    const home = target || this.getHomePerchTarget();
+    if (!home) return false;
+
+    this.homePerchLockActive = true;
+    this.homePerchLockedRootPosition.copy(this.root.position);
+    this.homePerchLockedRootOffsetFromBone.copy(this.root.position).sub(home.position);
+    this.homePerchLockedQuaternion.copy(this.root.quaternion);
+
+    if (reason) this.pushDebugLine("HOME", `locked PerchBone transform · ${reason}`);
+    return true;
+  }
+
+  getLockedHomeRootPosition(target = null) {
+    const home = target || this.getHomePerchTarget();
+    if (!home) return null;
+
+    if (this.homePerchLockActive) {
+      return this.temp.d.copy(home.position).add(this.homePerchLockedRootOffsetFromBone);
+    }
+
+    return this.temp.d.copy(home.rootPosition);
+  }
+
   getHomePerchUprightUp(target = null) {
     if (this.cfg.homePerchUseWorldUp !== false) return this.temp.b.set(0, 1, 0);
     const sourceUp = target?.up || this.orientationUp;
@@ -2179,6 +2238,7 @@ export class MothSystem {
 
     if (!this.playOnce("land", "perch")) {
       this.setMode("homePerched", `F_Land missing; snapped to ${this.homePerchBoneName || "PerchBone"}`);
+      this.captureHomePerchLock(target, "F_Land fallback");
       this.landingTargetType = "";
       this.perched = true;
       this.playLoop("perch");
@@ -2211,6 +2271,7 @@ export class MothSystem {
     const duration = this.actionDurations.get("land") || action?.getClip?.().duration || 0;
     const guard = Math.max(0.035, this.lastDelta * 2.0);
     if (action && duration > 0 && action.time >= Math.max(0, duration - guard)) {
+      this.captureHomePerchLock(target, "F_Land complete");
       this.onActionFinished({ action });
     }
   }
@@ -2222,10 +2283,22 @@ export class MothSystem {
       return;
     }
 
-    const settleAlpha = 1.0 - Math.exp(-delta * ((this.cfg.homePerchSettleLerp || 0.14) * 60.0));
-    this.root.position.lerp(target.rootPosition, THREE.MathUtils.clamp(settleAlpha, 0.02, 0.36));
-    this.velocity.multiplyScalar(Math.exp(-delta * 9.5));
-    this.orientToHomePerch(target, this.cfg.homePerchTurnLerp || 0.13, false);
+    if (!this.homePerchLockActive) this.captureHomePerchLock(target, "idle stabilise");
+
+    const lockedRoot = this.getLockedHomeRootPosition(target) || target.rootPosition;
+    // Stay exactly where the landing cycle settled. Do not chase the live animated
+    // binary-shell center, because that caused the jump/offset on takeoff.
+    this.root.position.copy(lockedRoot);
+    this.velocity.set(0, 0, 0);
+    if (this.homePerchLockActive) {
+      this.root.quaternion.copy(this.homePerchLockedQuaternion);
+      this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
+      this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
+      this.smoothedHeading.copy(this.forward);
+      this.lastStableFacing.copy(this.forward);
+    } else {
+      this.orientToHomePerch(target, this.cfg.homePerchTurnLerp || 0.13, false);
+    }
     this.playLoop("perch");
     this.perched = true;
     this.sleepPulse = (this.sleepPulse || 0) + delta;
@@ -2368,7 +2441,19 @@ export class MothSystem {
     if (hasVoid && voidTarget) {
       this.hoverClock = 0;
       this.investigationState = null;
-      if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter" || this.mode === "homePerched" || this.mode === "landingHome") {
+      if (this.mode === "homePerched" || this.mode === "landingHome") {
+        this.afterTakeoffIntent = "void";
+        const wait = this.getHomePerchSleepRemaining(elapsed);
+        if (wait > 0) {
+          if (this.mode === "landingHome") this.updateHomeLandingCycle(delta, elapsed);
+          else this.updateHomePerchIdle(delta, elapsed);
+          this.behaviourNote = `void queued · sleeping ${wait.toFixed(1)}s more`;
+          return;
+        }
+        this.startTakeoff(elapsed);
+        return;
+      }
+      if (this.mode === "landed" || this.mode === "landing" || this.mode === "seekShelter") {
         this.afterTakeoffIntent = "void";
         this.startTakeoff(elapsed);
         return;
@@ -2408,6 +2493,14 @@ export class MothSystem {
       if (this.mode === "homePerched" || this.mode === "landingHome") {
         this.afterTakeoffIntent = "cover";
         this.afterTakeoffCoverIndex = hoveredIndex;
+        const wait = this.getHomePerchSleepRemaining(elapsed);
+        if (wait > 0) {
+          this.hoverClock = Math.max(this.hoverClock, (this.cfg.hoverPerchDelay || 0.38) * 0.85);
+          if (this.mode === "landingHome") this.updateHomeLandingCycle(delta, elapsed);
+          else this.updateHomePerchIdle(delta, elapsed);
+          this.behaviourNote = `cover queued · sleeping ${wait.toFixed(1)}s more`;
+          return;
+        }
         this.hoverClock = Math.max(this.hoverClock, (this.cfg.hoverPerchDelay || 0.38) * 0.85);
         this.startTakeoff(elapsed);
         return;
@@ -2479,22 +2572,30 @@ export class MothSystem {
     }
 
     if (this.mode === "landingHome") {
-      if (this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
+      const wait = this.getHomePerchSleepRemaining(elapsed);
+      if (wait <= 0 && this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
         this.startTakeoff(elapsed);
       } else {
         this.updateHomeLandingCycle(delta, elapsed);
+        if (wait > 0 && this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
+          this.behaviourNote = `interaction queued · landing/sleep lock ${wait.toFixed(1)}s`;
+        }
       }
       return;
     }
 
     if (this.mode === "homePerched") {
-      if (this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
+      const wait = this.getHomePerchSleepRemaining(elapsed);
+      if (wait <= 0 && this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
         this.startTakeoff(elapsed);
-      } else if (this.shouldWakeHomeFromHunger(elapsed)) {
+      } else if (wait <= 0 && this.shouldWakeHomeFromHunger(elapsed)) {
         this.afterTakeoffIntent = "hungryPatrol";
         this.startTakeoff(elapsed);
       } else {
         this.updateHomePerchIdle(delta, elapsed);
+        if (wait > 0 && this.hasMeaningfulHomeWakeInteraction(hoveredIndex, Boolean(hasVoid))) {
+          this.behaviourNote = `interaction queued · sleeping ${wait.toFixed(1)}s more`;
+        }
       }
       return;
     }
@@ -2812,8 +2913,19 @@ export class MothSystem {
     if (leavingHome && this.cfg.homePerchTakeoffKeepBranchOrientation !== false) {
       const home = this.getHomePerchTarget();
       if (home) {
-        this.root.position.copy(home.rootPosition);
-        this.orientToHomePerch(home, 1.0, true);
+        const lockedRoot = this.getLockedHomeRootPosition(home) || home.rootPosition;
+        // Do not recompute from the live animated core on takeoff; that caused the
+        // moth to teleport to a different offset than the landing/sleep position.
+        this.root.position.copy(lockedRoot);
+        if (this.homePerchLockActive) {
+          this.root.quaternion.copy(this.homePerchLockedQuaternion);
+          this.forward.set(0, 0, -1).applyQuaternion(this.root.quaternion).normalize();
+          this.orientationUp.set(0, 1, 0).applyQuaternion(this.root.quaternion).normalize();
+          this.smoothedHeading.copy(this.forward);
+          this.lastStableFacing.copy(this.forward);
+        } else {
+          this.orientToHomePerch(home, 1.0, true);
+        }
         this.homeTakeoffQuaternion.copy(this.root.quaternion);
       }
     }
@@ -3235,8 +3347,15 @@ export class MothSystem {
     const targets = [];
     if (this.hitProxy) targets.push(this.hitProxy);
     if (this.modelRoot) targets.push(this.modelRoot);
+    if (this.binaryShell) targets.push(this.binaryShell);
     if (!targets.length) return false;
+
+    const previousThreshold = this.temp.raycaster.params?.Points?.threshold;
+    if (this.temp.raycaster.params?.Points) this.temp.raycaster.params.Points.threshold = 0.09;
     const hits = this.temp.raycaster.intersectObjects(targets, true);
+    if (this.temp.raycaster.params?.Points && Number.isFinite(previousThreshold)) {
+      this.temp.raycaster.params.Points.threshold = previousThreshold;
+    }
     return hits.length > 0;
   }
 
@@ -3300,7 +3419,13 @@ export class MothSystem {
     this.recoveryAssist = false;
 
     const takeoffModes = new Set(["landed", "landing", "homePerched", "landingHome", "seekShelter"]);
-    if (takeoffModes.has(this.mode)) {
+    if (this.mode === "homePerched" || this.mode === "landingHome") {
+      // Queue the void, but honour the required minimum home-rest duration.
+      // updateStateAndMotion will start F_Land_to_TakeOff once the timer expires.
+      const wait = this.getHomePerchSleepRemaining(elapsed);
+      if (wait <= 0) this.startTakeoff(elapsed);
+      else this.pushDebugLine("HOME", `void queued; staying on PerchBone ${wait.toFixed(1)}s more`);
+    } else if (takeoffModes.has(this.mode)) {
       this.startTakeoff(elapsed);
     } else if (this.mode === "takeoff") {
       this.afterTakeoffIntent = "void";
