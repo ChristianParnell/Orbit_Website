@@ -316,4 +316,19 @@ The backflip logic was still present and completly removed, which made the moth 
 Overall, Adding further features are too advanced and does not work well, with the current setup. 
 AND happy the moth is finaly able to navigate the website ok. The oriantation of the moth is something i have tried to fix for ages, and its just not facing its heading in the 3D space. 
 
-
+### 30/04
+Double-click empty space
+Spawns a binary void.
+Moth feeds on void
+Moth flies to the void and Feeds.
+After feeding
+Moth flies home.
+Sleeping at home
+Moth dims and rests on PerchBone.
+Hover a cover
+Moth takes off and flies toward the hovered cover.
+Click moth
+Moth plays.
+Press M
+Shows/hides moth debug consol.
+Mouse movementScares moth.
