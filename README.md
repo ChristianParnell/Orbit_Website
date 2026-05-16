@@ -225,5 +225,110 @@ The moth may also do s sick backflip if cliked on :)
 
 I discovered the issue with the animations, The website expected seperate FBX files containing each animation, which to me seemed expsensive, so i compressed all animations into a single FBX file that also contains the model, and armeture itself. Pending test, but hopefully this will resolve any further issues. 
 
+### 24/04
+the moth now has a real home on the PerchBone, it uses land -> perch idle -> takeoff flow for resting there, it feeds on activity, gets tired and returns home, becomes cautious or trusting based on how the user moves, collects fragments and deposits them into a persistent nest, gets corrupted by the glitch void and recovers at home, and visibly changes the site by letting neglected covers gather binary dust while attention cleans them.
+
+### Big Update:
+animation states are mapped for fly, flySad, land, perch, takeoff, feed, and backflip land -> perch idle -> takeoff flow is built in, so the moth can properly settle and leave using authored animation clips rather than snapping between states  and the finished-event handling was tightened so actions only hand off when the currently active action actually finishes and now the moth now tracks signa lLevel, fatigue, trust, corruption, vitality, and fragmentCharge
+signal rises from hovered covers, pointer movement, wheel activity, open panel presence
+
+### Interaction
+
+renderer DOM listeners were added for pointermove, wheel, and pointerdown. Pointer speed is measured to distinguish gentle vs aggressive interaction. Gentle movement increases trust, aggressive movement increases aggression/fear state 
+this makes the moth either companion-like or evasive depending on how the user behaves
+
+### Behavior priority:
+
+if a void is active and corruption is too high, it avoids the void and heads home
+if the user is too aggressive, it flees
+if it is tired or weak it heads home
+if a hovered cover is available, it may approach and perch on it
+if trust is high and aggression is low, it enters companion behavior and follows closer to the user
+otherwise it patrols
+<img width="363" height="489" alt="Screenshot 2026-04-29 182753" src="https://github.com/user-attachments/assets/b8be43ed-9645-40a4-a1b5-4ba9413a7d44" />
+<img width="354" height="482" alt="Screenshot 2026-04-29 182740" src="https://github.com/user-attachments/assets/27268b56-0356-4e18-9d78-d4456643d10d" />
+<img width="994" height="784" alt="Screenshot 2026-04-29 182826" src="https://github.com/user-attachments/assets/1d63c0d0-93fb-4a1c-9d27-571df07e2c64" />
 
 
+### Void behavior:
+
+double-clicking empty space can still create the glitch void
+the moth can approach it and enter a feed state
+the void acts like dangerous food: attractive, but corrupting
+clearing the void increases corruption slightly, which pushes the moth toward recovery behavior at home
+
+### 25/04
+The moth now uses a stable world-up flight basis instead of the drifting up-vector that was making it roll upside down and “fight” itself. Its heading also now prefers its actual frame-to-frame travel direction, so it should face where it is really moving rather than changing behavior depending on where it is in the scene.
+
+For the backflip, I locked it down so it is animation-only while the clip plays. During Backflip, the code now freezes the moth’s world position and world rotation every frame, zeros its movement velocity, and disables the extra visual bank/pitch motion. So the FBX animation is the only thing driving that move now.
+
+### Cursor-attraction behavior Added
+The moth now has a low-priority, random cursor-attraction behavior. It only starts while the moth is already patrolling, only when the cursor is fairly close, and only when higher-priority needs are not taking over. So it will not override home-resting, fleeing, cover-hover landing, void behavior, takeoff, or backflip.
+
+### Stripped Backflip from code.
+stripping backflip out completely now — not just the animation trigger, but the related state/logic too, so it stops poisoning the moth behavior. left-clicking directly on the moth is now consumed and does nothing, so it should not trigger the old stuttering path anymore. Double-click void spawning is unchanged.
+
+What I removed:
+the backflip clip binding,
+the backflip state and guard logic,
+the backflip-only update block,
+and the left-click trigger that was calling the backflip.
+
+
+### 26/04
+The moth still faces the direction it travels, but it no longer tries to instantly yaw toward every tiny velocity change. I added velocity steering limits, low-speed facing freeze, max turn-rate limits, and reduced bank/pitch so it should stop doing those sharp glitchy maneuvers.
+I also made PerchBone Branch thats on the Main FBX center object, which is now made as the highest-priority bone name. This is th moths home now. 
+New Logic flow:
+<img width="363" height="489" alt="Screenshot 2026-04-29 182753" src="https://github.com/user-attachments/assets/f1ea2516-3b1f-46d2-8404-8789795e9269" />
+
+
+Double click empty space → binary void appears.
+Moth flies to the void.
+Moth plays F_Void_Inspect while feeding.
+When feeding finishes, it immediately goes home to the perch bone.
+When it reaches the bone, it plays F_Land.
+Then it stays in F_Land_Idle on the perch bone.
+
+### 28/04
+The point light now anchors to the center of the moth, not the root origin.
+The trail now emits from the moth’s center/body area instead of above or below it.
+
+
+<img width="346" height="373" alt="Screenshot 2026-04-28 171819" src="https://github.com/user-attachments/assets/8f5b32ef-ec8c-4ab5-b6dc-fb7c337ea326" />
+
+### 28/04
+Debugging and fixing the colsonle, issues Getting issues from the velocity jitter inside moveToward() function, And fixed the yawn logic when doing evasive rotations. 
+Added better transition logic, when moth does break within the 3D space. that interference coming from pointer movement still feeding into aggression pointer curiosity hover-loss while the moth is already committed to behaviours So I made a new complete direct replacement that locks the moth’s interaction state until the sequence is finished.
+
+
+<img width="994" height="784" alt="Screenshot 2026-04-29 182826" src="https://github.com/user-attachments/assets/370b8a31-a513-4533-a5ff-64fd675065b4" />
+
+
+
+### 29/04
+Fixed gittering and FInaly Stabalized the moths rotation in the world, The rotation offset is still an issue, which seems i canno't fix, but sorta unoticable at the current adjusted speed.
+Vortex positioning fixed, so it doesnt spawn far away from  the POV.
+Behaviours feel more connected now, with after feeding on a vortex the moth moves to perch on the branch. the limit timer is 5 seconds perched then the moth returns to patrol, and any interactions the user has with covers or void spawns will priorities the moth to that postion, to perch on a cover or feed on the vortx. 
+The moth also feels more agrivated based on the users mouse speed, and should make eratic movments as well as change color faster. When the moth is fed and moving to Perch is should change color to a dimmer color. If the moth is negletad it now shows a light off white color, that fades to other random colors to show sadness. 
+
+The user's input to spawn the void is also made as double left click and sinlge left click to interact with the moth. 
+The backflip logic was still present and completly removed, which made the moth more stable. 
+Overall, Adding further features are too advanced and does not work well, with the current setup. 
+AND happy the moth is finaly able to navigate the website ok. The oriantation of the moth is something i have tried to fix for ages, and its just not facing its heading in the 3D space. 
+
+### 30/04
+Double-click empty space
+Spawns a binary void.
+Moth feeds on void
+Moth flies to the void and Feeds.
+After feeding
+Moth flies home.
+Sleeping at home
+Moth dims and rests on PerchBone.
+Hover a cover
+Moth takes off and flies toward the hovered cover.
+Click moth
+Moth plays.
+Press M
+Shows/hides moth debug consol.
+Mouse movementScares moth.
